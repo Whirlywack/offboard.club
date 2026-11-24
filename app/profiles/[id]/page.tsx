@@ -32,7 +32,29 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {profile.image && <img src={profile.image} alt="" width={96} height={96} />}
       <dl>
-        {/* The Company (#6) goes here, first. */}
+        {profile.company && (
+          <>
+            <dt>Company</dt>
+            <dd>
+              {/* Hot-linked: the viewer's browser loads the logo from the Company's own website, which so sees the
+                  viewer's IP address, browser and any cookies it set there, but, with no referrer, not which site or
+                  Profile asked. getProfile passes only an https address on the Company's own domain. next/image
+                  would instead make this server fetch the address. */}
+              {profile.company.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={profile.company.logoUrl}
+                  alt=""
+                  width={32}
+                  height={32}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              )}{" "}
+              {profile.company.name}
+            </dd>
+          </>
+        )}
         {profile.position && (
           <>
             <dt>Position</dt>

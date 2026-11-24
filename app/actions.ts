@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth, getSession, linkedInConfigured, requireSignedUp } from "@/lib/auth";
+import { companyForWebsite } from "@/lib/companies";
 import { consentProblem } from "@/lib/consent";
 import { db } from "@/lib/db";
 import { readProfileForm } from "@/lib/profile";
@@ -45,23 +46,32 @@ export async function consent(_previous: string, form: FormData): Promise<string
 }
 
 // After a submission that could not be saved: why, and what was typed, so the form can show it again.
-export type ProfileFormState = { problem: string; typed: Record<"position" | "linkedInUrl" | "openTo", string> } | null;
+export type ProfileFormState = {
+  problem: string;
+  typed: Record<"companyWebsite" | "position" | "linkedInUrl" | "openTo", string>;
+} | null;
 
 // The optional Profile fields, from the step after the welcome step or from the edit page. Nothing in the form
 // says whose Profile it is: the row changed is always the caller's own.
 export async function saveProfile(_previous: ProfileFormState, form: FormData): Promise<ProfileFormState> {
   const { id } = await requireSignedUp();
-  const fields = readProfileForm(form);
-  if (typeof fields === "string") {
+  const refuse = (problem: string): ProfileFormState => {
     const typed = (name: string) => {
       const value = form.get(name);
       return typeof value === "string" ? value : "";
     };
-    return { problem: fields, typed: { position: typed("position"), linkedInUrl: typed("linkedInUrl"), openTo: typed("openTo") } };
-  }
+    const [companyWebsite, position, linkedInUrl, openTo] = ["companyWebsite", "position", "linkedInUrl", "openTo"].map(typed);
+    return { problem, typed: { companyWebsite, position, linkedInUrl, openTo } };
+  };
+  const fields = readProfileForm(form);
+  if (typeof fields === "string") return refuse(fields);
+  // Only once everything else is accepted, as it may create a Company and fetch its website.
+  const company = await companyForWebsite(id, fields.companyWebsite);
+  if ("problem" in company) return refuse(company.problem);
   await db.query(
-    `update "user" set "position" = $2, "linkedInUrl" = $3, "openTo" = $4, "updatedAt" = now() where id = $1`,
-    [id, fields.position, fields.linkedInUrl, fields.openTo],
+    `update "user" set "companyDomain" = $2, "position" = $3, "linkedInUrl" = $4, "openTo" = $5, "updatedAt" = now()
+     where id = $1`,
+    [id, company.domain, fields.position, fields.linkedInUrl, fields.openTo],
   );
   // The step after the welcome step carries on home; the edit page shows the Profile as others see it.
   redirect(form.get("next") === "home" ? "/" : `/profiles/${id}`);

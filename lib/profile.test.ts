@@ -139,13 +139,25 @@ describe("readProfileForm", () => {
   it("trims each field and normalises the link", () => {
     expect(
       readProfileForm(
-        form({ position: "  Backend engineer ", linkedInUrl: " lt.linkedin.com/in/jonas/ ", openTo: " coffee chats " }),
+        form({
+          companyWebsite: " https://www.Vinted.com/careers ",
+          position: "  Backend engineer ",
+          linkedInUrl: " lt.linkedin.com/in/jonas/ ",
+          openTo: " coffee chats ",
+        }),
       ),
-    ).toEqual({ position: "Backend engineer", linkedInUrl: "https://www.linkedin.com/in/jonas", openTo: "coffee chats" });
+    ).toEqual({
+      // The website is only tidied here; lib/companies.ts turns it into a Company.
+      companyWebsite: "https://www.Vinted.com/careers",
+      position: "Backend engineer",
+      linkedInUrl: "https://www.linkedin.com/in/jonas",
+      openTo: "coffee chats",
+    });
   });
 
   it("treats empty and whitespace-only fields as cleared", () => {
-    expect(readProfileForm(form({ position: "", linkedInUrl: "  ", openTo: "\n\t" }))).toEqual({
+    expect(readProfileForm(form({ companyWebsite: " ", position: "", linkedInUrl: "  ", openTo: "\n\t" }))).toEqual({
+      companyWebsite: null,
       position: null,
       linkedInUrl: null,
       openTo: null,
@@ -153,7 +165,7 @@ describe("readProfileForm", () => {
   });
 
   it("treats missing fields as cleared", () => {
-    expect(readProfileForm(form({}))).toEqual({ position: null, linkedInUrl: null, openTo: null });
+    expect(readProfileForm(form({}))).toEqual({ companyWebsite: null, position: null, linkedInUrl: null, openTo: null });
   });
 
   it("makes each run of whitespace or control characters inside a field one space", () => {
@@ -206,7 +218,8 @@ describe("readProfileForm", () => {
   );
 
   it("treats a field of nothing but invisible characters as cleared", () => {
-    expect(readProfileForm(form({ position: "​​​", openTo: "‍﻿ ‍" }))).toEqual({
+    expect(readProfileForm(form({ companyWebsite: "​", position: "​​​", openTo: "‍﻿ ‍" }))).toEqual({
+      companyWebsite: null,
       position: null,
       linkedInUrl: null,
       openTo: null,

@@ -1,9 +1,15 @@
 // What a person adds to their Profile beyond the name and photo from LinkedIn. Every field is optional.
 
-// Null means not given. The Company (#6) joins these.
+import type { Company } from "./companies";
+
+// Null means not given.
 export type ProfileFields = { position: string | null; linkedInUrl: string | null; openTo: string | null };
 
-export type Profile = ProfileFields & { id: string; name: string; image: string | null };
+// The Company is given by its website as typed; companyForWebsite (lib/companies.ts) checks it and finds or creates
+// the Company. This file is also part of the browser's code, so it cannot.
+export type SubmittedProfile = ProfileFields & { companyWebsite: string | null };
+
+export type Profile = ProfileFields & { id: string; name: string; image: string | null; company: Company | null };
 
 export const POSITION_MAX = 80;
 export const OPEN_TO_MAX = 140;
@@ -48,8 +54,10 @@ const tidy = (value: unknown) =>
     : "";
 const characters = (text: string) => [...text].length;
 
-// The fields of a submitted Profile form, tidied, or a message saying why they cannot be saved.
-export function readProfileForm(form: { get(name: string): unknown }): ProfileFields | string {
+// The fields of a submitted Profile form, tidied, or a message saying why they cannot be saved. The Company website is
+// only tidied here.
+export function readProfileForm(form: { get(name: string): unknown }): SubmittedProfile | string {
+  const companyWebsite = tidy(form.get("companyWebsite"));
   const position = tidy(form.get("position"));
   const link = tidy(form.get("linkedInUrl"));
   const openTo = tidy(form.get("openTo"));
@@ -58,5 +66,5 @@ export function readProfileForm(form: { get(name: string): unknown }): ProfileFi
   const linkedInUrl = link ? linkedInProfileUrl(link) : null;
   if (link && !linkedInUrl)
     return "The LinkedIn link must be the address of your LinkedIn profile, such as https://www.linkedin.com/in/your-name.";
-  return { position: position || null, linkedInUrl, openTo: openTo || null };
+  return { companyWebsite: companyWebsite || null, position: position || null, linkedInUrl, openTo: openTo || null };
 }

@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { shownLogoUrl } from "./companies";
 import { mustWelcome } from "./consent";
 import { db } from "./db";
 import type { Profile } from "./profile";
@@ -61,10 +62,15 @@ export async function requireSignedUp() {
 // the welcome step stands in for a Member: requireSignedUp checks the viewer, and this the person shown.
 // #4 narrows both here. Null if there is no such Profile; the email is never read.
 export async function getProfile(id: string): Promise<Profile | null> {
-  const { rows } = await db.query<Profile>(
-    `select id, name, image, "position", "linkedInUrl", "openTo" from "user"
-     where id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null`,
+  type Row = Omit<Profile, "company"> & { companyDomain: string | null; companyName: string; companyLogoUrl: string | null };
+  const { rows } = await db.query<Row>(
+    `select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo",
+       c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl"
+     from "user" u left join "company" c on c."domain" = u."companyDomain"
+     where u.id = $1 and u."publicDisplayConsentAt" is not null and u."houseRulesAcceptedAt" is not null`,
     [id],
   );
-  return rows[0] ?? null;
+  if (!rows[0]) return null;
+  const { companyDomain: domain, companyName: name, companyLogoUrl, ...profile } = rows[0];
+  return { ...profile, company: domain ? { domain, name, logoUrl: shownLogoUrl(domain, companyLogoUrl) } : null };
 }

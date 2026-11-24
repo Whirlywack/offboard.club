@@ -70,12 +70,12 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
     const [lichessId, id] = params;
     return { rows: [...people.values()].filter((p) => p.lichessId === lichessId && p.id !== id).map(() => ({})) };
   }
-  if (/^update "user" set "lichessId" = \$2, "lichessUsername" = \$3, "lichessBlitzRating" = \$4,\s+"lichessConnectedAt" = now\(\), "updatedAt" = now\(\)\s+where id = \$1$/.test(sql)) {
+  if (/^update "user" set "lichessId" = \$2, "lichessUsername" = \$3, "lichessBlitzRating" = \$4,\s+"lichessConnectedAt" = coalesce\("lichessConnectedAt", now\(\)\), "updatedAt" = now\(\)\s+where id = \$1$/.test(sql)) {
     const [id, lichessId, lichessUsername, lichessBlitzRating] = params as [string, string, string, number | null];
     if ([...people.values()].some((p) => p.lichessId === lichessId && p.id !== id))
       throw Object.assign(new Error('duplicate key value violates unique constraint "user_lichessId_key"'), { code: "23505" });
     const row = people.get(id);
-    if (row) Object.assign(row, { lichessId, lichessUsername, lichessBlitzRating, lichessConnectedAt: new Date() });
+    if (row) Object.assign(row, { lichessId, lichessUsername, lichessBlitzRating, lichessConnectedAt: row.lichessConnectedAt ?? new Date() });
     return { rows: [] };
   }
   throw new Error(`unexpected query: ${sql}`);
@@ -486,18 +486,18 @@ describe("swapping to a different Lichess account", () => {
     const before = { ...people.get("member")! };
     expect(await connectAs("newbie")).toBe("/profiles/member");
     const after = people.get("member")!;
-    expect(after).toEqual({
-      ...before,
-      lichessId: "newbie",
-      lichessUsername: "Newbie",
-      lichessBlitzRating: null,
-      lichessConnectedAt: expect.any(Date),
-    });
+    expect(after).toEqual({ ...before, lichessId: "newbie", lichessUsername: "Newbie", lichessBlitzRating: null });
     expect(people.size).toBe(4);
     expect(statements()).toEqual(["select 1", "update \"user\""]);
     expect(updates()[0][1][0]).toBe("member");
     expect(lichess.team.members.has("newbie")).toBe(true);
     expect(revoked()).toBe(true);
+  });
+
+  it("keeps when the Member first connected, which is when they signed up", async () => {
+    await connectAs("newbie");
+    await connectAs("bobby");
+    expect(people.get("member")).toMatchObject({ lichessId: "bobby", lichessConnectedAt: at });
   });
 
   it("leaves the old account in the team for now", async () => {

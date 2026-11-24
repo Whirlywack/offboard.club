@@ -10,6 +10,12 @@ import { ingestTournament } from "@/lib/matchdays";
 const USAGE = "Usage: pnpm ingest <Lichess Swiss tournament id> [--redo]";
 
 async function main(args: string[]): Promise<number> {
+  // The script runs outside production, where the Lichess client follows LICHESS_URL to a fake Lichess: with the live
+  // DATABASE_URL beside it, made-up results would become a real Matchday.
+  if (process.env.LICHESS_URL) {
+    console.error("LICHESS_URL is set, which would ingest from a fake Lichess instead of lichess.org. Unset it and run again. Nothing has been stored.");
+    return 1;
+  }
   const redo = args.includes("--redo");
   const [id, ...rest] = args.filter((arg) => arg !== "--redo");
   if (!id || rest.length > 0 || id.startsWith("-")) {

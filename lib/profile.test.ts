@@ -232,6 +232,18 @@ describe("readProfileForm", () => {
     });
   });
 
+  it("removes the Arabic letter mark, a bidirectional control", () => {
+    expect(readProfileForm(form({ position: "؜CTO؜" }))).toMatchObject({ position: "CTO" });
+  });
+
+  it("tidies a megabyte of spaces and joiners in turn in well under a second", () => {
+    const position = "x" + " ‍".repeat(500_000) + "y";
+    const start = performance.now();
+    expect(readProfileForm(form({ position }))).toMatch(/80 characters/);
+    expect(readProfileForm(form({ position: "CTO" + " ‍".repeat(500_000) }))).toMatchObject({ position: "CTO" });
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+
   it("keeps the zero-width joiner inside emoji", () => {
     expect(readProfileForm(form({ position: "‍👩‍💻 engineer, 🏳️‍🌈‍" }))).toMatchObject({
       position: "👩‍💻 engineer, 🏳️‍🌈",

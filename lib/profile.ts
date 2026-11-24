@@ -41,17 +41,22 @@ const decode = (text: string) => {
 
 // Invisible characters and bidirectional controls, which could make a field look empty or show text reversed.
 // The zero-width joiner (U+200D) is kept, because emoji such as 👩‍💻 are built with it, except at either end.
-const invisible = /[​‌‎‏‪-‮⁦-⁩﻿]/gu;
+const invisible = /[؜​‌‎‏‪-‮⁦-⁩﻿]/gu;
+const end = /[\s‍]/u;
 
-// Without invisible characters, trimmed, and with each run of whitespace or control characters made one space.
-// Empty means cleared.
-const tidy = (value: unknown) =>
-  typeof value === "string"
-    ? value
-        .replace(invisible, "")
-        .replace(/[\s\p{Cc}]+/gu, " ")
-        .replace(/^[\s‍]+|[\s‍]+$/gu, "")
-    : "";
+// Without invisible characters, trimmed, and with each run of whitespace or control characters (NUL included) made
+// one space. Empty means cleared. Also tidies Company names taken from websites (lib/company.ts).
+export function tidy(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(invisible, "").replace(/[\s\p{Cc}]+/gu, " ");
+  // Trimmed one character at a time: a regular expression anchored at the end would be retried from every position,
+  // which a long run of spaces and joiners makes take minutes.
+  let from = 0;
+  let to = text.length;
+  while (from < to && end.test(text[from])) from++;
+  while (to > from && end.test(text[to - 1])) to--;
+  return text.slice(from, to);
+}
 const characters = (text: string) => [...text].length;
 
 // The fields of a submitted Profile form, tidied, or a message saying why they cannot be saved. The Company website is

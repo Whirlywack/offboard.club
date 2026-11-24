@@ -3,6 +3,7 @@
 import { BlockList, isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 import { parse } from "tldts";
+import { tidy } from "./profile";
 
 // "https://www.Vinted.com/careers" -> "vinted.com". Null if it is not a public website address.
 export function companyDomain(input: string): string | null {
@@ -112,7 +113,7 @@ function pageMeta(html: string, base: URL, domain: string) {
   const href = iconTag && attr(iconTag, "href");
   const logo = href ? URL.parse(decode(href), base) : null;
   return {
-    name: [...name].slice(0, MAX_NAME).join("").trim() || domain,
+    name: tidy([...name].slice(0, MAX_NAME).join("")) || domain,
     // Only keep a logo served from the Company's own domain over https.
     logoUrl: logo && logo.protocol === "https:" && companyDomain(logo.hostname) === domain ? logo.href : null,
   };
@@ -132,4 +133,6 @@ const decode = (s: string) =>
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
   });
 
-const text = (s: string) => decode(s).replace(/\s+/g, " ").trim();
+// Decoded and tidied as Profile fields are: control characters such as NUL, which Postgres refuses in text, and
+// invisible or bidirectional characters, which could disguise the name, do not reach the database.
+const text = (s: string) => tidy(decode(s));

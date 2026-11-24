@@ -9,7 +9,7 @@ export const mustWelcome = (person: Consent) => !person.publicDisplayConsentAt |
 // Why a submitted welcome form cannot be accepted, or null when both boxes were ticked.
 export function consentProblem(form: { get(name: string): unknown }): string | null {
   if (form.get("publicDisplay") !== "yes")
-    return "Please agree that your name and Company will appear publicly on Leaderboards.";
-  if (form.get("houseRules") !== "yes") return "Please accept the house rules.";
+    return "To join, please tick the box agreeing that your name and Company will appear publicly on Leaderboards.";
+  if (form.get("houseRules") !== "yes") return "To join, please tick the box accepting the house rules.";
   return null;
 }

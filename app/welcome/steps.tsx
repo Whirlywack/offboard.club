@@ -1,6 +1,6 @@
 import styles from "./welcome.module.css";
 
-const STEPS = ["Agree", "Connect Lichess", "Your Profile"] as const;
+const STEPS = ["Agree", "Connect Lichess", "Profile (optional)"] as const;
 
 // Where the person is in signing up. The third step is optional; after the second they are a Member.
 export function SignUpSteps({ current }: { current: 1 | 2 | 3 }) {

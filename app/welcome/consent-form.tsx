@@ -24,8 +24,8 @@ export function ConsentForm({ name }: { name: string }) {
       <fieldset className={styles.agreement}>
         <legend>Your name in public</legend>
         <p>
-          Leaderboards are public. They show you as {name} and, if you add one later, your Company. Your email is never
-          shown.
+          Leaderboards and Recaps are public: anyone can see them, signed in or not. They show you as {name}, with your
+          Company if you add one. Your email is never shown, and your Profile is for signed-in Members only.
         </p>
         <label className={styles.check}>
           <input
@@ -36,15 +36,16 @@ export function ConsentForm({ name }: { name: string }) {
             aria-invalid={about === "publicDisplay" || undefined}
             aria-describedby={about === "publicDisplay" ? "publicDisplay-error" : undefined}
           />
-          <span>I agree that my name and Company will appear publicly on Leaderboards.</span>
+          <span>I agree that my name, and my Company if I add one, will appear publicly on Leaderboards.</span>
         </label>
         {error("publicDisplay")}
       </fieldset>
 
       <fieldset className={styles.agreement}>
         <legend>House rules</legend>
+        <p>Two rules, so Sundays stay fair and nobody gets sold to.</p>
         <ol className={styles.rules}>
-          <li>No outside help during Games.</li>
+          <li>No outside help during Games, such as an engine, an analysis board or a friend&apos;s advice.</li>
           <li>No sales or recruiting pitches, unless the other person&apos;s &ldquo;open to&rdquo; line invites it.</li>
         </ol>
         <label className={styles.check}>
@@ -62,7 +63,7 @@ export function ConsentForm({ name }: { name: string }) {
       </fieldset>
 
       <div className={ui.actions}>
-        <button disabled={pending}>{pending ? "Saving…" : "Continue"}</button>
+        <button disabled={pending}>{pending ? "Saving…" : "Agree and continue"}</button>
       </div>
     </form>
   );

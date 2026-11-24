@@ -13,10 +13,10 @@ export default function WelcomeProfile() {
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <SignUpSteps current={3} />
-        <h1>Your Profile</h1>
+        <h1>You&apos;re a Member</h1>
         <p className={ui.lede}>
-          You are signed up. If you like, tell other Members a little more about yourself. Only signed-in Members see
-          your Profile, every field is optional, and you can change or clear them at any time from the home page.
+          If you like, tell other Members a little about yourself. Every field is optional, only signed-in Members see
+          your Profile, and you can change any of it later from the home page.
         </p>
       </div>
       <Suspense>

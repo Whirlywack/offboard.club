@@ -11,8 +11,11 @@ export default function NoRecap() {
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <p className={ui.eyebrow}>Recap</p>
-        <h1>No Recap here</h1>
-        <p className={ui.lede}>There is no Recap at this address: no Matchday of that date has been played and collected.</p>
+        <h1>No Recap for that Sunday</h1>
+        <p className={ui.lede}>
+          Either there was no Matchday that day, or its results haven&apos;t come in yet. The list of Recaps has every
+          Matchday so far.
+        </p>
       </div>
       <nav aria-label="More" className={ui.backLinks}>
         <Link href="/recaps">All Recaps</Link>

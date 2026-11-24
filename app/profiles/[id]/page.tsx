@@ -9,7 +9,7 @@ import { getProfile, requireSignedUp } from "@/lib/auth";
 import { companyLabel } from "@/lib/companies";
 import { lichessProfileUrl } from "@/lib/lichess";
 
-export const metadata: Metadata = { title: "Profile" };
+export const metadata: Metadata = { title: "Member Profile" };
 
 export default function ProfilePage({ params }: PageProps<"/profiles/[id]">) {
   return (
@@ -30,6 +30,8 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const profile = await getProfile(id);
   if (!profile) notFound();
+  const own = viewer.id === profile.id;
+  const nothingAdded = !profile.company && !profile.position && !profile.openTo && !profile.linkedInUrl;
   return (
     <article className={`${styles.profile} ${ui.arrive}`}>
       <header className={styles.header}>
@@ -78,13 +80,21 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
           </div>
         )}
       </dl>
-      {viewer.id === profile.id && (
+      {nothingAdded && (
+        <p className={ui.muted}>
+          {own
+            ? "You haven't added where you work, your position or what you're open to yet."
+            : `${profile.name.split(" ")[0]} hasn't added anything else yet.`}
+        </p>
+      )}
+      {own && (
         <p>
           <Link className={ui.quiet} href="/profile">
             Edit your Profile
           </Link>
         </p>
       )}
+      <p className={`${ui.small} ${ui.muted}`}>Only signed-in Members can see this Profile.</p>
     </article>
   );
 }

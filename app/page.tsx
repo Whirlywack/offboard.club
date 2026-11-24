@@ -18,11 +18,14 @@ export default function Home() {
     <main id="main" className={`${ui.wide} ${styles.home}`}>
       <section className={styles.hero} aria-labelledby="title">
         <div className={styles.heroText}>
-          <p className={ui.eyebrow}>Chess Club · Vilnius · Free</p>
+          <p className={ui.eyebrow}>Free chess Club · Vilnius</p>
           <h1 id="title" className={styles.title}>
-            Offboard
+            Sunday chess for people in tech
           </h1>
-          <p className={styles.lede}>A free chess Club for people working in tech in and around Vilnius.</p>
+          <p className={styles.lede}>
+            Five quick Games on Lichess every Sunday at 20:00, against other people who work in tech in and around
+            Vilnius. Chess gets everyone there; meeting people is the point.
+          </p>
         </div>
         <div className={styles.heroSide}>
           <Suspense>
@@ -34,39 +37,80 @@ export default function Home() {
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="why">
-        <h2 id="why">Why</h2>
-        <p className={styles.sectionText}>
-          Chess is the recurring reason to show up; meeting people is the point. There is no fee, no team to put
-          together and no company budget to ask for. Whether you play casually, work at a ten-person startup or are new
-          to the city, you can join on your own.
-        </p>
+      <section className={styles.section} aria-labelledby="who">
+        <h2 id="who">Who it&apos;s for</h2>
+        <div className={styles.sectionText}>
+          <p>
+            Engineers, designers, founders and operators who work in tech in and around Vilnius and would like to know
+            more of each other. It&apos;s meant for casual players: a rating of 900 is as welcome as one of 1900. You
+            join on your own, with no team to find and no company budget to ask for, and it costs nothing.
+          </p>
+        </div>
       </section>
 
       <section className={styles.section} aria-labelledby="how">
         <h2 id="how">How it works</h2>
         <ol className={styles.steps}>
-          <li>Sign in with LinkedIn and connect your Lichess account. That makes you a Member.</li>
           <li>
-            Every Sunday at 20:00 Vilnius time there is a Matchday: five quick Games on Lichess against other Members.
+            <h3>Join</h3>
+            <p>
+              Sign in with LinkedIn, agree to the house rules and to your name appearing on public Leaderboards, then
+              connect your Lichess account. That makes you a Member.
+            </p>
           </li>
-          <li>After each Matchday a Recap shows that night&apos;s Leaderboard.</li>
-          <li>Six Matchdays make a Season, scored on your best four, so missing two Sundays costs you nothing.</li>
+          <li>
+            <h3>Play on Sunday</h3>
+            <p>
+              Every Sunday at 20:00 Vilnius time there&apos;s a Matchday on Lichess: five Games against other Members,
+              each with 5 minutes a side plus 3 seconds a move.
+            </p>
+          </li>
+          <li>
+            <h3>Read the Recap</h3>
+            <p>Afterwards the Matchday gets a Recap with that night&apos;s Leaderboard, open for anyone to read.</p>
+          </li>
+          <li>
+            <h3>Keep your best four</h3>
+            <p>
+              Six Matchdays make a Season, and your Season score adds up your best four. Miss two Sundays and you lose
+              nothing.
+            </p>
+          </li>
         </ol>
       </section>
 
       <section className={styles.section} aria-labelledby="people">
         <h2 id="people">Meeting people</h2>
-        <p className={styles.sectionText}>
-          Profiles show who people are, where they work and what they are open to, so the chess leads to conversations.
-        </p>
+        <div className={styles.sectionText}>
+          <p>
+            Every Member has a Profile with their name and photo, plus whatever they choose to add: where they work,
+            their position, and what they&apos;re open to, like a coffee or hearing about jobs. Only signed-in Members
+            can see Profiles. Leaderboards and Recaps are public and show names and Companies.
+          </p>
+          <p className={styles.plans}>
+            Still to come: Awards in each Recap that a beginner can win as easily as a strong player, and a Telegram
+            group for Members.
+          </p>
+        </div>
+      </section>
+
+      <section className={styles.section} aria-labelledby="rules">
+        <h2 id="rules">House rules</h2>
+        <div className={styles.sectionText}>
+          <p>
+            There are two: no outside help during Games, and no sales or recruiting pitches unless the other
+            person&apos;s &ldquo;open to&rdquo; line invites it.
+          </p>
+        </div>
       </section>
 
       <section className={styles.section} aria-labelledby="recaps">
         <h2 id="recaps">Recaps</h2>
-        <p className={styles.sectionText}>
-          <Link href="/recaps">Recaps of past Matchdays</Link>
-        </p>
+        <div className={styles.sectionText}>
+          <p>
+            <Link href="/recaps">Read the Recaps of past Matchdays</Link>
+          </p>
+        </div>
       </section>
     </main>
   );
@@ -95,7 +139,7 @@ async function NextMatchday() {
         <p className={styles.statusValue}>
           <time dateTime={next.start.toISOString()}>{when}</time>
         </p>
-        <p className={styles.statusNote}>Vilnius time, on Lichess.</p>
+        <p className={styles.statusNote}>Vilnius time, on Lichess. Five Games, 5 minutes a side plus 3 seconds a move.</p>
       </div>
     );
   }
@@ -108,9 +152,11 @@ async function NextMatchday() {
         <span className={ui.marker} aria-hidden="true" /> Season 1
       </p>
       <p className={styles.statusValue}>
-        <span className={styles.count}>{needed}</span> more {needed === 1 ? "sign-up" : "sign-ups"} to go
+        <span className={styles.count}>{needed}</span> more {needed === 1 ? "Member" : "Members"} to go
       </p>
-      <p className={styles.statusNote}>Season 1 starts once sixteen people have signed up.</p>
+      <p className={styles.statusNote}>
+        Season 1 starts once sixteen Members have joined, on the first Sunday at least a week later.
+      </p>
     </div>
   );
 }

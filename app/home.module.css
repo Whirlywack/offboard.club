@@ -175,9 +175,19 @@
 }
 
 .sectionText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   max-width: var(--measure);
   font-size: var(--text-lg);
   line-height: var(--leading-snug);
+}
+
+/* What is planned but not built, said as a plan */
+.plans {
+  color: var(--muted);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
 }
 
 /* How it works: numbered steps, side by side when there is room */
@@ -197,17 +207,27 @@
 
 .steps li {
   counter-increment: step;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
 }
 
 .steps li::before {
-  content: counter(step, decimal-leading-zero);
+  content: counter(step);
+  grid-row: span 2;
   font-family: var(--font-display);
   font-optical-sizing: auto;
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  line-height: var(--leading-tight);
+  color: var(--muted);
+}
+
+.steps h3 {
+  font-size: var(--text-lg);
+}
+
+.steps p {
   color: var(--muted);
 }

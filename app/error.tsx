@@ -11,8 +11,11 @@ export default function PageError({ error, retry }: { error: unknown; retry: () 
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <p className={ui.eyebrow}>Something went wrong</p>
-        <h1>This page did not load</h1>
-        <p className={ui.lede}>Something went wrong on our side. Trying again often fixes it.</p>
+        <h1>This page didn&apos;t load</h1>
+        <p className={ui.lede}>
+          Something broke on Offboard&apos;s side. Trying again usually works; if it doesn&apos;t, give it a
+          few minutes.
+        </p>
       </div>
       <div className={ui.actions}>
         <button onClick={() => retry()}>Try again</button>
@@ -20,7 +23,7 @@ export default function PageError({ error, retry }: { error: unknown; retry: () 
           Home
         </Link>
       </div>
-      {digest && <p className={`${ui.small} ${ui.muted}`}>Error reference: {digest}</p>}
+      {digest && <p className={`${ui.small} ${ui.muted}`}>If you tell the Organiser, mention this reference: {digest}</p>}
     </main>
   );
 }

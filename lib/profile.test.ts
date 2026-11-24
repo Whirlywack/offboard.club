@@ -202,7 +202,7 @@ describe("readProfileForm", () => {
 
   it("refuses a link that is not a LinkedIn profile address with a plain message", () => {
     expect(readProfileForm(form({ linkedInUrl: "https://evil.com/in/x" }))).toMatch(
-      /^The LinkedIn link must be the address of your LinkedIn profile/,
+      /^That isn't a LinkedIn profile address\./,
     );
     expect(readProfileForm(form({ linkedInUrl: "javascript:alert(1)" }))).toBeTypeOf("string");
   });

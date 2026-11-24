@@ -16,15 +16,19 @@ export default function ConnectStep({ searchParams }: PageProps<"/welcome/liches
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <SignUpSteps current={2} />
-        <h1>Connect Lichess</h1>
+        <h1>Connect your Lichess account</h1>
+        <p className={ui.lede}>Matchdays are played on Lichess, so connect the account you&apos;ll play with.</p>
       </div>
       <div className={ui.prose}>
         <p>
-          Matchdays are played on Lichess, so you connect the Lichess account you will play with. Lichess asks you to
-          approve Offboard, which then adds that account to the Club&apos;s private Lichess team for you. Offboard asks
-          Lichess only for permission to join a team, and hands that permission back as soon as you are in.
+          Lichess will ask you to approve Offboard. Once you do, Offboard adds your account to the Club&apos;s private
+          Lichess team, so there&apos;s no team password to type. It asks Lichess for permission to join a team and
+          nothing else, and gives that permission back as soon as you&apos;re in.
         </p>
-        <p>One Lichess account can belong to one Member only. You can swap to a different one later.</p>
+        <p>
+          Each Lichess account can belong to one Member. You can switch to a different account later from your Profile,
+          and your results stay with you.
+        </p>
       </div>
       <Suspense>
         <Step searchParams={searchParams} />
@@ -47,8 +51,8 @@ async function Step({ searchParams }: Pick<PageProps<"/welcome/lichess">, "searc
       )}
       <ConnectLichess label="Connect Lichess" />
       <p className={`${ui.small} ${ui.muted}`}>
-        No Lichess account yet? <a href="https://lichess.org/signup">Create one on Lichess</a>, which is free, then come
-        back here to connect it.
+        No Lichess account yet? <a href="https://lichess.org/signup">Make one on Lichess</a> (it&apos;s free), then come
+        back here and connect it.
       </p>
     </div>
   );

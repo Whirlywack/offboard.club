@@ -14,19 +14,15 @@ const newsreader = Newsreader({
   display: "swap",
 });
 
+const title = "Offboard: Sunday chess for people in tech in Vilnius";
 const description =
-  "Offboard is a free chess Club for people working in tech in and around Vilnius. A Matchday on Lichess every Sunday at 20:00; meeting people is the point.";
+  "A free chess Club for people who work in tech in and around Vilnius. Five quick Games on Lichess every Sunday at 20:00. Chess gets everyone there; meeting people is the point.";
 
 export const metadata: Metadata = {
-  title: { default: "Offboard: chess for people in tech in Vilnius", template: "%s | Offboard" },
+  title: { default: title, template: "%s | Offboard" },
   description,
   applicationName: "Offboard",
-  openGraph: {
-    type: "website",
-    siteName: "Offboard",
-    title: "Offboard: chess for people in tech in Vilnius",
-    description,
-  },
+  openGraph: { type: "website", siteName: "Offboard", title, description },
 };
 
 export const viewport: Viewport = {
@@ -57,8 +53,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </header>
           {children}
           <footer className={site.footer}>
-            <p>Offboard: a free chess Club for people in tech in Vilnius.</p>
-            <p>Games are played on Lichess. Offboard is not affiliated with Lichess or LinkedIn.</p>
+            <p>Offboard is a free chess Club for people who work in tech in and around Vilnius.</p>
+            <p>Games are played on Lichess. Offboard isn&apos;t affiliated with Lichess or LinkedIn.</p>
           </footer>
         </div>
       </body>

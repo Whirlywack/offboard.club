@@ -13,7 +13,9 @@ export default function RecapsPage() {
   return (
     <main id="main" className={ui.page}>
       <h1>Recaps</h1>
-      <p className={`${ui.lede} ${styles.underTitle}`}>After each Matchday, its Recap shows that night&apos;s Leaderboard.</p>
+      <p className={`${ui.lede} ${styles.underTitle}`}>
+        Every Matchday gets a Recap with that night&apos;s Leaderboard. Newest first.
+      </p>
       <Suspense>
         <RecapList />
       </Suspense>
@@ -31,9 +33,13 @@ async function RecapList() {
     console.error("The Recaps page could not read the Matchdays:", error.message);
     return null;
   });
-  if (dates === null) return <p className={ui.alert}>The Recaps cannot be shown just now. Please try again later.</p>;
+  if (dates === null) return <p className={ui.alert}>The Recaps can&apos;t be shown right now. Please try again in a minute.</p>;
   if (dates.length === 0)
-    return <p className={`${styles.empty} ${ui.arrive}`}>There are no Recaps yet: the first comes after the first Matchday.</p>;
+    return (
+      <p className={`${styles.empty} ${ui.arrive}`}>
+        No Recaps yet. The first one appears here after the first Matchday.
+      </p>
+    );
   return (
     <ul className={`${styles.list} ${ui.arrive}`}>
       {dates.map((date) => (

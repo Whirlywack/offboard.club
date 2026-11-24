@@ -52,8 +52,8 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
       <div className={styles.field}>
         <label htmlFor="companyWebsite">Company website</label>
         <p id="companyWebsite-hint" className={styles.hint}>
-          The website of the company you work for. Members who give the same website share one Company, and its name is
-          taken from that website.
+          Where you work, by its website. Everyone who gives the same website shares one Company, whose name comes from
+          that site. It shows next to your name on Leaderboards. Freelance or between jobs? Leave it empty.
         </p>
         {error("companyWebsite")}
         <input
@@ -62,44 +62,47 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="vinted.com"
+          placeholder="e.g. vinted.com"
         />
       </div>
 
       <div className={styles.field}>
         <label htmlFor="position">Position</label>
         <p id="position-hint" className={styles.hint}>
-          Up to {POSITION_MAX} characters.
+          What you do, in up to {POSITION_MAX} characters.
         </p>
         {error("position")}
-        <input {...describe("position", "position-hint")} autoComplete="organization-title" />
+        <input {...describe("position", "position-hint")} autoComplete="organization-title" placeholder="e.g. Backend engineer" />
       </div>
 
       <div className={styles.field}>
         <label htmlFor="linkedInUrl">LinkedIn profile link</label>
+        <p id="linkedInUrl-hint" className={styles.hint}>
+          So Members can find you on LinkedIn after a Game.
+        </p>
         {error("linkedInUrl")}
         <input
-          {...describe("linkedInUrl")}
+          {...describe("linkedInUrl", "linkedInUrl-hint")}
           inputMode="url"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="https://www.linkedin.com/in/your-name"
+          placeholder="linkedin.com/in/your-name"
         />
       </div>
 
       <div className={styles.field}>
         <label htmlFor="openTo">Open to</label>
         <p id="openTo-hint" className={styles.hint}>
-          Up to {OPEN_TO_MAX} characters: what you would welcome from other Members, such as coffee chats, mentoring or
-          hearing about jobs. Sales and recruiting pitches are only allowed if this line invites them.
+          What you&apos;d welcome from other Members, in up to {OPEN_TO_MAX} characters. Sales and recruiting pitches
+          are only allowed if this line invites them.
         </p>
         {error("openTo")}
-        <input {...describe("openTo", "openTo-hint")} />
+        <input {...describe("openTo", "openTo-hint")} placeholder="e.g. A coffee, mentoring, hearing about jobs" />
       </div>
 
       <div className={ui.actions}>
-        <button disabled={pending}>{pending ? "Saving…" : welcome ? "Save and continue" : "Save"}</button>
+        <button disabled={pending}>{pending ? "Saving…" : welcome ? "Save and continue" : "Save changes"}</button>
         {welcome && (
           <Link className={ui.quiet} href="/">
             Skip for now

@@ -15,6 +15,7 @@ export default function Welcome() {
       <div className={ui.intro}>
         <SignUpSteps current={1} />
         <h1>Welcome to Offboard</h1>
+        <p className={ui.lede}>Two things to agree to, then you connect Lichess and you&apos;re a Member.</p>
       </div>
       <Suspense>
         <Consent />

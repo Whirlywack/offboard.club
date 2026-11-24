@@ -19,8 +19,9 @@ export function SignIn() {
       )}
       {/* LinkedIn's API terms: say what the site receives before the person connects. */}
       <p id="linkedin-notice" className={styles.notice}>
-        LinkedIn gives Offboard your name, photo and email address. Your email is never shown. Once you agree, your
-        name and Company appear publicly on Leaderboards. You can ask the Organiser to delete your data at any time.
+        Signing in gives Offboard your name, photo and email address from LinkedIn. Your email is never shown to
+        anyone, and only signed-in Members see your photo. Once you agree on the next page, your name, and your Company
+        if you add one, appear publicly on Leaderboards. You can ask the Organiser to delete your data at any time.
       </p>
     </form>
   );

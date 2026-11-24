@@ -43,7 +43,8 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
     }),
     viewerIsMember(),
   ]);
-  if (recap === undefined) return <p className={ui.alert}>This Recap cannot be shown just now. Please try again later.</p>;
+  if (recap === undefined)
+    return <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>;
   if (!recap) notFound();
   return (
     <article className={styles.recap}>
@@ -55,7 +56,7 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
         {member && (
           <p className={styles.lichessLink}>
             <a href={lichessSwissUrl(recap.lichessTournamentId)} target="_blank" rel="noopener noreferrer">
-              The Matchday on Lichess
+              Open this Matchday on Lichess
             </a>
           </p>
         )}
@@ -87,6 +88,9 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
               ))}
             </tbody>
           </table>
+        )}
+        {!member && recap.leaderboard.length > 0 && (
+          <p className={`${ui.small} ${ui.muted}`}>Names open Profiles, which only signed-in Members can see.</p>
         )}
       </section>
     </article>

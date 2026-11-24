@@ -17,8 +17,8 @@ export default function EditProfile({ searchParams }: PageProps<"/profile">) {
       <div className={ui.intro}>
         <h1>Edit your Profile</h1>
         <p className={ui.lede}>
-          Members see your name and photo from LinkedIn and whatever you fill in here. Every field is optional: empty one
-          and save to clear it.
+          Other Members see your name and photo from LinkedIn, plus anything you fill in here. Every field is optional;
+          empty one and save to clear it.
         </p>
       </div>
       <Suspense>
@@ -37,7 +37,7 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
       <ProfileForm saved={profile} />
 
       <section aria-labelledby="lichess" className={`${styles.lichess} ${ui.arrive}`}>
-        <h2 id="lichess">Lichess</h2>
+        <h2 id="lichess">Your Lichess account</h2>
         {profile && (
           <p>
             You play as{" "}
@@ -48,19 +48,19 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
           </p>
         )}
         <p className={ui.muted}>
-          To play with a different Lichess account, sign in to Lichess with it, then connect it here. Your Matchdays,
-          Games and Profile stay yours.
+          To play with a different account, sign in to Lichess with it first, then switch here. Your Matchdays, Games and
+          Profile stay with you.
         </p>
         {problem && (
           <p role="alert" className={ui.alert}>
             {problem}
           </p>
         )}
-        <ConnectLichess label="Connect a different Lichess account" quiet />
+        <ConnectLichess label="Switch Lichess account" quiet />
       </section>
 
       <nav aria-label="More" className={ui.backLinks}>
-        <Link href={`/profiles/${id}`}>See your Profile</Link>
+        <Link href={`/profiles/${id}`}>See your Profile as Members see it</Link>
         <Link href="/">Home</Link>
       </nav>
     </>

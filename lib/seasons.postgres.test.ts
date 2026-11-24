@@ -26,11 +26,12 @@ describe.skipIf(!process.env.DATABASE_URL)("the Postgres store", () => {
     // Seen from inside the transaction only.
     await client.query(`delete from "season"`);
     await client.query(`delete from "skippedSunday"`);
-    // Sixteen sign-ups in January 2026, before any real one, and one person who has not finished the welcome step.
+    // Sixteen Members who connected Lichess in January 2026, before any real one, and one person part-way through.
     const addPerson = (n: number, finishedAt: string | null) =>
       client.query(
-        `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt") values ($1, $1, $2, false, $3, $3)`,
-        [`store-test-${n}`, `store-test-${n}@example.invalid`, finishedAt],
+        `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt", "lichessId", "lichessConnectedAt")
+         values ($1, $1, $2, false, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', $3, $4)`,
+        [`store-test-${n}`, `store-test-${n}@example.invalid`, finishedAt && `store-test-${n}`, finishedAt],
       );
     for (let n = 1; n <= 16; n++) await addPerson(n, `2026-01-${String(n).padStart(2, "0")}T12:00:00Z`);
     await addPerson(17, null);

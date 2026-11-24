@@ -6,17 +6,18 @@ import { viewerIsMember } from "@/lib/auth";
 import { companyLabel } from "@/lib/companies";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
-import { isCalendarDate } from "@/lib/schedule";
+import { isRecapDate } from "@/lib/schedule";
 import { longDate } from "../dates";
 
 export async function generateMetadata({ params }: PageProps<"/recaps/[date]">): Promise<Metadata> {
   const { date } = await params;
-  return { title: isCalendarDate(date) ? `Recap of ${longDate(date)}` : "Recap" };
+  return { title: isRecapDate(date) ? `Recap of ${longDate(date)}` : "Recap" };
 }
 
 // The Recap of the Matchday of a Vilnius day, at /recaps/YYYY-MM-DD. Public, like every Leaderboard: names and
 // Companies only. Each name links to the Member's Profile, which only Members can open, and only Members see the link
-// to the tournament on Lichess.
+// to the tournament on Lichess. An address that cannot be a Matchday's date never gets here: proxy.ts answers it with
+// a 404.
 export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
   return (
     <main>

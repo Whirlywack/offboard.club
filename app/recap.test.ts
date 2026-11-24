@@ -113,12 +113,17 @@ describe("a Recap", () => {
     for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
   });
 
-  it("is not found for a date with no ingested Matchday, or no date at all", async () => {
+  it("is not found for a Sunday with no ingested Matchday", async () => {
     await expect(open("2026-11-22")).rejects.toThrow("not found");
     matchdays.set("2026-12-06", { date: "2026-12-06", lichessTournamentId: "NEXTWEEK", ingestedAt: null });
     await expect(open("2026-12-06")).rejects.toThrow("not found");
+  });
+
+  it("is not found, without reading the database, for an address that cannot be a Matchday's", async () => {
+    // proxy.ts answers these with a 404 before the page; the page refuses them too.
     db.query.mockClear();
-    for (const date of ["2026-02-30", "latest", "2026-11-29T00:00", "../admin"]) await expect(open(date)).rejects.toThrow("not found");
+    for (const date of ["abc", "2026-02-30", "2026-11-24", "2025-12-28", "2100-01-03", "2026-11-29T00:00", "../admin"])
+      await expect(open(date)).rejects.toThrow("not found");
     expect(db.query).not.toHaveBeenCalled();
   });
 

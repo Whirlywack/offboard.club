@@ -85,20 +85,28 @@ export async function ingestTournament(tournamentId: string, { redo = false } = 
   const played = scores.map((s) => lichessIdOf.get(s.memberId)!);
   const accounts = await getPublicAccounts(played);
 
-  const stored = await inTransaction(async (q) => {
-    if (redone) {
-      if (!(await reclaim(q, date, tournamentId))) return false;
-      const recorded = await clear(q, date);
-      await storeResults(q, date, scores);
-      await keepCompanies(q, date, recorded);
-    } else {
-      if (!(await claim(q, date, tournamentId))) return false;
-      await storeResults(q, date, scores);
-    }
-    await storeGames(q, date, games);
-    await refreshAccounts(q, played, accounts);
-    return true;
-  });
+  let stored: boolean;
+  try {
+    stored = await inTransaction(async (q) => {
+      if (redone) {
+        if (!(await reclaim(q, date, tournamentId))) return false;
+        const recorded = await clear(q, date);
+        await storeResults(q, date, scores);
+        await keepCompanies(q, date, recorded);
+      } else {
+        if (!(await claim(q, date, tournamentId))) return false;
+        await storeResults(q, date, scores);
+      }
+      await storeGames(q, date, games);
+      await refreshAccounts(q, played, accounts);
+      return true;
+    });
+  } catch (error) {
+    // registerTournament put the tournament under another day between the checks above and the claim.
+    if (!isUniqueViolation(error) || (error as { constraint?: string }).constraint !== "matchday_lichessTournamentId_key") throw error;
+    const now = await matchdayOf(tournamentId);
+    return refused(`Tournament ${tournamentId} became the Matchday of ${now?.date ?? "another day"} while it was being ingested.`);
+  }
   if (stored) return { outcome: "ingested", date, participants, members: scores.length, games: games.length, redone };
   // Another run ingested it first, or the Matchday of that date changed while this one was fetching.
   const now = await matchdayOf(tournamentId);

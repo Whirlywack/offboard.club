@@ -179,4 +179,19 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     expect(await select(`select count(*)::int as n from "matchdayResult"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 0 }]);
   }, 60_000);
+
+  it("refuses plainly when the tournament is registered for another day while it is being fetched", async () => {
+    lichess.override = (call) => {
+      if (call.path === "/api/users") void registerTournament("2026-11-15", TOURNAMENT);
+      return undefined;
+    };
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "refused",
+      problem: "Tournament PF2C2AUC became the Matchday of 2026-11-15 while it was being ingested.",
+    });
+    lichess.override = undefined;
+    expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" from "matchday"`)).toEqual([
+      { date: "2026-11-15", ingestedAt: null },
+    ]);
+  }, 60_000);
 });

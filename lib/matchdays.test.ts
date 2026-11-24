@@ -345,6 +345,20 @@ describe("refusing a tournament, storing nothing", () => {
     expect(requests().filter((r) => /results|games|users/.test(r))).toEqual([]);
   });
 
+  it("refuses a tournament registered for another day while it was being fetched", async () => {
+    // #11 registers it for 15 November after the checks, before the Matchday of the 22nd is claimed.
+    lichess.override = (call) => {
+      if (call.path === "/api/users") void registerTournament("2026-11-15", TOURNAMENT);
+      return undefined;
+    };
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "refused",
+      problem: "Tournament PF2C2AUC became the Matchday of 2026-11-15 while it was being ingested.",
+    });
+    expect([...matchdays.values()]).toEqual([{ date: "2026-11-15", lichessTournamentId: TOURNAMENT, ingestedAt: null }]);
+    expect(results.size + games.size).toBe(0);
+  });
+
   it("refuses a tournament on a skipped Sunday", async () => {
     skippedSundays.set(DATE, { date: DATE });
     expect(await refused(TOURNAMENT)).toBe("Sunday 2026-11-22 is skipped, so it has no Matchday.");

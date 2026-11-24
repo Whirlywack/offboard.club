@@ -2,22 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { recapDates } from "@/lib/recaps";
+import ui from "../ui.module.css";
 import { longDate } from "./dates";
+import styles from "./recaps.module.css";
+import { recapDates } from "@/lib/recaps";
 
 export const metadata: Metadata = { title: "Recaps" };
 
 export default function RecapsPage() {
   return (
-    <main>
+    <main id="main" className={ui.page}>
       <h1>Recaps</h1>
-      <p>After each Matchday, its Recap shows that night&apos;s Leaderboard.</p>
+      <p className={`${ui.lede} ${styles.underTitle}`}>After each Matchday, its Recap shows that night&apos;s Leaderboard.</p>
       <Suspense>
         <RecapList />
       </Suspense>
-      <p>
+      <nav aria-label="More" className={ui.backLinks}>
         <Link href="/">Home</Link>
-      </p>
+      </nav>
     </main>
   );
 }
@@ -29,10 +31,11 @@ async function RecapList() {
     console.error("The Recaps page could not read the Matchdays:", error.message);
     return null;
   });
-  if (dates === null) return <p>The Recaps cannot be shown just now. Please try again later.</p>;
-  if (dates.length === 0) return <p>There are no Recaps yet: the first comes after the first Matchday.</p>;
+  if (dates === null) return <p className={ui.alert}>The Recaps cannot be shown just now. Please try again later.</p>;
+  if (dates.length === 0)
+    return <p className={`${styles.empty} ${ui.arrive}`}>There are no Recaps yet: the first comes after the first Matchday.</p>;
   return (
-    <ul>
+    <ul className={`${styles.list} ${ui.arrive}`}>
       {dates.map((date) => (
         <li key={date}>
           <Link href={`/recaps/${date}`}>

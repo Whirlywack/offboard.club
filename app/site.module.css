@@ -62,9 +62,22 @@
   gap: var(--space-1);
 }
 
+/* The contact link keeps to one line; the two sentences take the rest of the row */
+.contact {
+  flex: none;
+  white-space: nowrap;
+}
+
+.contact a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
 @media (min-width: 48rem) {
   .footer {
     flex-direction: row;
+    align-items: baseline;
     justify-content: space-between;
     gap: var(--space-5);
   }

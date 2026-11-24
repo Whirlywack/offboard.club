@@ -8,6 +8,7 @@ import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
 import { getSession } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
+import { organiserEmail } from "@/lib/contact";
 import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { upcomingMatchday } from "@/lib/seasons";
@@ -164,7 +165,7 @@ async function NextMatchday() {
 
 async function You() {
   const session = await getSession().catch(() => null);
-  if (!session) return <SignIn />;
+  if (!session) return <SignIn contactable={organiserEmail() !== null} />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);
   return (

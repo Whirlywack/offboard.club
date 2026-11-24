@@ -4,6 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 import { LogoMark } from "./logo";
 import site from "./site.module.css";
+import { organiserEmail } from "@/lib/contact";
 
 // Self-hosted by next/font at build time: the browser never asks Google for anything. Latin Extended carries
 // Lithuanian names (ą, č, ė, š, ž...).
@@ -35,6 +36,7 @@ export const viewport: Viewport = {
 
 // Every page puts its content in <main id="main">, which the skip link jumps to.
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const contact = organiserEmail();
   return (
     <html lang="en" className={newsreader.variable}>
       <body>
@@ -55,6 +57,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <footer className={site.footer}>
             <p>Offboard is a free chess Club for people who work in tech in and around Vilnius.</p>
             <p>Games are played on Lichess. Offboard isn&apos;t affiliated with Lichess or LinkedIn.</p>
+            {contact && (
+              <p className={site.contact}>
+                <a href={`mailto:${contact}`}>Contact the Organiser</a>
+              </p>
+            )}
           </footer>
         </div>
       </body>

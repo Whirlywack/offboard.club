@@ -23,7 +23,7 @@ export default function PageError({ error, retry }: { error: unknown; retry: () 
           Home
         </Link>
       </div>
-      {digest && <p className={`${ui.small} ${ui.muted}`}>If you tell the Organiser, mention this reference: {digest}</p>}
+      {digest && <p className={`${ui.small} ${ui.muted}`}>Error reference: {digest}</p>}
     </main>
   );
 }

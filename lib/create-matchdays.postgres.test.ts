@@ -9,12 +9,17 @@ import { lastFailure } from "./jobs";
 import { finishOrganiserConnection, organiserPermission, organiserToken, startOrganiserConnection } from "./organiser-lichess";
 import { addDays, matchdayStart } from "./schedule";
 
+// Point this at a separate development database, never the live one. It holds the "create-matchdays" job's row, and
+// any Season 1 and Organiser permission it adds, locked until its transaction ends, so against the live database the
+// real scheduled job would wait on it.
+//
 // The Organiser's permission, the scheduled job's bookkeeping and the creation of a Matchday, with their real SQL against
 // the database in DATABASE_URL, inside one transaction that is always rolled back, so nothing it does is kept; Lichess is
 // the fake. migrations/007_organiser.sql is applied inside that transaction if the database does not have it yet. The
 // rows it adds are its own (a test person, Season 1 if none is stored, the permission, the job's rows) and it changes no
-// row it did not add. Skipped when DATABASE_URL is not set, as in a plain `pnpm test`. To run it:
-// node --env-file=.env.local node_modules/vitest/vitest.mjs run lib/create-matchdays.postgres.test.ts
+// row it did not add. Skipped unless ALLOW_DB_TESTS=1 as well as DATABASE_URL, so a plain `pnpm test`, or one with
+// .env.local loaded, never runs it. To run it against a development database:
+// ALLOW_DB_TESTS=1 DATABASE_URL=<development database> node node_modules/vitest/vitest.mjs run lib/create-matchdays.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -30,7 +35,7 @@ const TEAM = "offboard-team";
 const ORGANISER = `test-organiser-${randomBytes(6).toString("hex")}`;
 const FIVE_DAYS = 5 * 86_400_000;
 
-describe.skipIf(!process.env.DATABASE_URL)("the Organiser's permission and the job in Postgres", () => {
+describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("the Organiser's permission and the job in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
   const lichess = createFakeLichess({
     teamId: TEAM,
@@ -143,6 +148,7 @@ describe.skipIf(!process.env.DATABASE_URL)("the Organiser's permission and the j
     await runFiveDaysBefore(second);
     vi.stubEnv("LICHESS_TEAM_ID", "");
     await runFiveDaysBefore(second);
+    await runFiveDaysBefore(second); // the same problem again: no new failure
     vi.stubEnv("ORGANISER_USER_ID", ORGANISER);
     vi.stubEnv("LICHESS_TEAM_ID", TEAM);
     const failures = await select(`select "job", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" where "matchdayDate" = $1 order by "id"`, [second]);

@@ -41,7 +41,7 @@ async function RecapList() {
       </p>
     );
   return (
-    <ul className={`${styles.list} ${ui.arrive}`}>
+    <ul className={`${styles.list} ${ui.arrive}`} role="list">
       {dates.map((date) => (
         <li key={date}>
           <Link href={`/recaps/${date}`}>

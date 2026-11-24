@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ConnectLichess } from "../connect-lichess";
+import { ExternalLink } from "../external-link";
 import ui from "../ui.module.css";
 import styles from "./profile.module.css";
 import { ProfileForm } from "./profile-form";
@@ -41,9 +42,9 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
         {profile && (
           <p>
             You play as{" "}
-            <a href={lichessProfileUrl(profile.lichessUsername)} target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={lichessProfileUrl(profile.lichessUsername)}>
               {profile.lichessUsername}
-            </a>{" "}
+            </ExternalLink>{" "}
             on Lichess.
           </p>
         )}

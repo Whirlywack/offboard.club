@@ -196,7 +196,8 @@ a {
   }
 }
 
-/* A link that leaves the site says so, to the eye and to a screen reader */
+/* A link that opens another site in a new tab shows an arrow. It is silent on purpose: ExternalLink
+   (app/external-link.tsx) puts "(opens in a new tab)" in the markup, which every screen reader reads. */
 a[target="_blank"]::after {
   content: "\2009↗" / "";
   font-family: var(--font-text);

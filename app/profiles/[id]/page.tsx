@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Avatar } from "../../avatar";
+import { ExternalLink } from "../../external-link";
 import ui from "../../ui.module.css";
 import styles from "./profile.module.css";
 import { getProfile, requireSignedUp } from "@/lib/auth";
@@ -59,18 +60,18 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
           <div>
             <dt>LinkedIn</dt>
             <dd>
-              <a href={profile.linkedInUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink href={profile.linkedInUrl}>
                 LinkedIn profile
-              </a>
+              </ExternalLink>
             </dd>
           </div>
         )}
         <div>
           <dt>Lichess</dt>
           <dd>
-            <a href={lichessProfileUrl(profile.lichessUsername)} target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={lichessProfileUrl(profile.lichessUsername)}>
               {profile.lichessUsername}
-            </a>
+            </ExternalLink>
           </dd>
         </div>
         {profile.lichessBlitzRating !== null && (

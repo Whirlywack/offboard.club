@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { ExternalLink } from "../../external-link";
 import ui from "../../ui.module.css";
 import { longDate } from "../dates";
 import styles from "../recaps.module.css";
@@ -68,9 +69,9 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
         {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
         {member && (
           <p className={styles.lichessLink}>
-            <a href={lichessSwissUrl(recap.lichessTournamentId)} target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={lichessSwissUrl(recap.lichessTournamentId)}>
               Open this Matchday on Lichess
-            </a>
+            </ExternalLink>
           </p>
         )}
       </div>

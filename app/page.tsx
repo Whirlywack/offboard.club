@@ -51,7 +51,7 @@ export default function Home() {
 
       <section className={styles.section} aria-labelledby="how">
         <h2 id="how">How it works</h2>
-        <ol className={styles.steps}>
+        <ol className={styles.steps} role="list">
           <li>
             <h3>Join</h3>
             <p>

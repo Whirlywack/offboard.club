@@ -102,7 +102,7 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
         <input {...describe("openTo", "openTo-hint")} placeholder="e.g. A coffee, mentoring, hearing about jobs" />
       </div>
 
-      <div className={ui.actions}>
+      <div className={`${ui.actions} ${styles.formActions}`}>
         <button disabled={pending}>{pending ? "Saving…" : welcome ? "Save and continue" : "Save changes"}</button>
         {welcome && (
           <Link className={ui.quiet} href="/">

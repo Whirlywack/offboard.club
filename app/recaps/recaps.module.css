@@ -124,13 +124,38 @@
 }
 
 .table tbody td:last-child {
-  width: 3rem;
   font-weight: 600;
+}
+
+/* On a phone the domain gets its own line, so the four columns fit in 350px without breaking a word */
+.domain {
+  display: block;
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 39.99rem) {
+  .table th,
+  .table td {
+    padding-inline: 0.375rem;
+  }
+
+  .table thead th {
+    letter-spacing: 0.02em;
+  }
+
+  .table tbody td:first-child {
+    width: 1.5rem;
+  }
 }
 
 @media (min-width: 40rem) {
   .table tbody td:first-child {
     width: 3rem;
+  }
+
+  .domain {
+    display: inline;
+    font-size: inherit;
   }
 }
 

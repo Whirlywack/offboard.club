@@ -31,6 +31,13 @@
   line-height: var(--leading-snug);
 }
 
+/* On a phone the form's buttons stack at full width, primary first, rather than wrapping unevenly */
+@media (max-width: 29.99rem) {
+  .formActions > * {
+    flex: 1 1 100%;
+  }
+}
+
 .section {
   display: flex;
   flex-direction: column;

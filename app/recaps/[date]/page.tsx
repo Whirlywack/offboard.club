@@ -34,6 +34,19 @@ export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
   );
 }
 
+// The Company as companyLabel names it, "Vinted (vinted.com)", with the domain in its own span so that a narrow
+// screen can put it on a line of its own.
+function CompanyName({ company }: { company: Parameters<typeof companyLabel>[0] }) {
+  const label = companyLabel(company);
+  const domainAt = label.lastIndexOf(" (");
+  if (domainAt < 0) return label;
+  return (
+    <>
+      {label.slice(0, domainAt)} <span className={styles.domain}>{label.slice(domainAt + 1)}</span>
+    </>
+  );
+}
+
 async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
   const { date } = await params;
   const [recap, member] = await Promise.all([
@@ -82,7 +95,7 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
                   <th scope="row">
                     <Link href={`/profiles/${row.memberId}`}>{row.name}</Link>
                   </th>
-                  <td>{row.company && companyLabel(row.company)}</td>
+                  <td>{row.company && <CompanyName company={row.company} />}</td>
                   <td>{row.points}</td>
                 </tr>
               ))}

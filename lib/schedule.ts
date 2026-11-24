@@ -39,14 +39,18 @@ export function matchdayStart(date: string): Date {
 // How many more sign-ups Season 1 is waiting for, or null once there are enough.
 export const signUpsNeeded = (signUps: number) => (signUps < MEMBERS_TO_START ? MEMBERS_TO_START - signUps : null);
 
+// The first Sunday whose Matchday is at least seven days after an instant.
+export function sundayAWeekAfter(instant: Date): string {
+  const earliest = instant.getTime() + 7 * DAY;
+  const sunday = sundayOnOrAfter(vilniusDate(new Date(earliest)));
+  // An instant on a Sunday after 20:00 is less than a week before the next Sunday's Matchday.
+  return matchdayStart(sunday).getTime() >= earliest ? sunday : addDays(sunday, 7);
+}
+
 // Season 1 starts the first Sunday whose Matchday is at least seven days after the sixteenth sign-up.
 export function firstSeasonStart(signUps: Date[]): string | null {
   const sixteenth = [...signUps].sort((a, b) => a.getTime() - b.getTime())[MEMBERS_TO_START - 1];
-  if (!sixteenth) return null;
-  const earliest = sixteenth.getTime() + 7 * DAY;
-  const sunday = sundayOnOrAfter(vilniusDate(new Date(earliest)));
-  // A sign-up on a Sunday after 20:00 is less than a week before the next Sunday's Matchday.
-  return matchdayStart(sunday).getTime() >= earliest ? sunday : addDays(sunday, 7);
+  return sixteenth ? sundayAWeekAfter(sixteenth) : null;
 }
 
 // A Season is six played Matchdays; a skipped Sunday pushes the rest back a week.

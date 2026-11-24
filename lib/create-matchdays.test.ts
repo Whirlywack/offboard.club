@@ -304,7 +304,7 @@ describe("the Organiser's permission", () => {
   it("cannot be used without its key, or once what is stored has been changed", async () => {
     vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
     const unreadable = cannot(
-      "The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); the Organiser must connect Lichess again on the Organiser page.",
+      "The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); the Organiser must connect Lichess again on the Organiser page, after revoking the old permission by hand on Lichess (https://lichess.org/account/security, signed in as boss).",
     );
     expect(await runAt(DUE)).toEqual(unreadable);
     vi.stubEnv("LICHESS_TOKEN_KEY", KEY);
@@ -327,9 +327,23 @@ describe("the Organiser's permission", () => {
     expect(matchdays.size).toBe(0);
   });
 
-  it("must be a team leader's: Lichess's refusal is recorded as it gave it", async () => {
+  // The site checks only that the account is among the team's leaders Lichess shows; Lichess also wants the team's
+  // permission for tournaments, and refuses creation without it as it refuses someone who is no leader at all.
+  const notGranted = cannot(
+    "Lichess answered POST /api/swiss/new/{teamId} with 404: You're not a leader of that team. The likely cause: boss leads the Club's team but without the team's permission to manage tournaments, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it.",
+  );
+
+  it("must be a leader's with the team's permission for tournaments, which the failure names as the likely cause", async () => {
+    lichess.team.withoutTournaments.add("boss");
+    expect(await runAt(DUE)).toEqual(notGranted);
+    expect(creations()).toHaveLength(1);
+    expect(created()).toEqual([]);
+    expect([...jobFailures.values()]).toMatchObject([{ problem: notGranted.detail }]);
+  });
+
+  it("must still be a leader's: Lichess's refusal is recorded with the same likely cause", async () => {
     lichess.team.leaders.delete("boss");
-    expect(await runAt(DUE)).toEqual(cannot("Lichess answered POST /api/swiss/new/{teamId} with 404: You're not a leader of that team."));
+    expect(await runAt(DUE)).toEqual(notGranted);
     expect(created()).toEqual([]);
   });
 });
@@ -352,6 +366,30 @@ describe("failures", () => {
     breakStatements(`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`);
     expect(await runAt(DUE)).toEqual({ outcome: "failed", detail: "The job stopped: Connection terminated unexpectedly.", matchdayDate: null });
     expect([...jobFailures.values()]).toMatchObject([{ job: JOB, matchdayDate: null }]);
+  });
+
+  it("are recorded once while a problem stands, and again when it changes or comes back", async () => {
+    organiserLichess.clear();
+    for (let hour = 0; hour < 3; hour++) await runAt(new Date(DUE.getTime() + hour * 3_600_000));
+    expect(jobFailures.size).toBe(1);
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: expect.stringContaining("has not connected") });
+
+    vi.stubEnv("LICHESS_TEAM_ID", "");
+    await runAt(DUE);
+    await runAt(DUE);
+    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([
+      expect.stringContaining("has not connected their Lichess account"),
+      expect.stringContaining("LICHESS_TEAM_ID is not set"),
+    ]);
+
+    // Fixed, then broken again in the same way: a new failure.
+    vi.stubEnv("LICHESS_TEAM_ID", TEAM);
+    seasons.clear();
+    expect((await runAt(DUE)).outcome).toBe("skipped");
+    vi.stubEnv("LICHESS_TEAM_ID", "");
+    seasonOne(DATE);
+    await runAt(DUE);
+    expect(jobFailures.size).toBe(3);
   });
 
   it("are not recorded for runs that did what they should", async () => {

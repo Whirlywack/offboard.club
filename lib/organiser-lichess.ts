@@ -37,6 +37,8 @@ export const startOrganiserConnection = (userId: string) => startConnection(user
 // How each attempt ended, as the plain message the Organiser sees. Only these codes travel in a URL.
 export const ORGANISER_MESSAGES = {
   connected: "Lichess is connected. Each Matchday's tournament will be created with this account.",
+  stranded:
+    "Lichess is connected, but the permission given before could not be read with the current LICHESS_TOKEN_KEY, so it was not revoked and stays valid on Lichess until it expires. To end it, revoke Offboard by hand under Security in the Lichess settings of the account that gave it; on the same account that also revokes this new permission, so then connect again.",
   denied: "You did not approve Offboard on Lichess, so nothing has changed.",
   expired: "That attempt to connect Lichess ran out or was started in another browser. Please start again.",
   leader:
@@ -56,7 +58,8 @@ const sealedFor = (userId: string, lichessId: string) => `offboard organiser lic
 
 // The Organiser is back from Lichess (the caller checks it is them). Returns where to send them: the Organiser page,
 // saying how it went. The token is kept only if its account leads the Club's team; otherwise it is revoked. A token
-// kept before is revoked once the new one is stored.
+// kept before is revoked once the new one is stored, if it can still be read; if not, the Organiser is told to revoke
+// it by hand.
 export async function finishOrganiserConnection(
   organiser: { id: string },
   query: URLSearchParams,
@@ -85,7 +88,8 @@ export async function finishOrganiserConnection(
     if (!leaders) throw new Error(`Lichess has no team ${teamId}`);
     if (!leaders.includes(account.id)) return back("leader");
     const expiresAt = new Date(Date.now() + (grant.expiresInSeconds ?? DEFAULT_LIFETIME_SECONDS) * 1000);
-    const previous = await storedToken(key);
+    const before = await storedRow();
+    const previous = before && open(before, key);
     await db.query(
       `insert into "organiserLichess" ("singleton", "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt")
        values (true, $1, $2, $3, $4, $5, now())
@@ -95,7 +99,8 @@ export async function finishOrganiserConnection(
     );
     kept = true;
     if (previous && previous !== token) await revoke(previous, REVOKED_BY_MS - (Date.now() - started));
-    return back("connected");
+    // One that cannot be read cannot be revoked from here: it stays valid on Lichess until it expires.
+    return back(before && !previous ? "stranded" : "connected");
   } catch (error) {
     // A LichessError names the request and the status only; nothing else that is logged holds the token.
     console.error("Connecting the Organiser's Lichess account failed:", error instanceof Error ? error.message : "unknown error");
@@ -106,30 +111,33 @@ export async function finishOrganiserConnection(
   }
 }
 
-type StoredRow = { userId: string; lichessId: string; token: string; expiresAt: Date };
+type StoredRow = { userId: string; lichessId: string; scopes: string; token: string; expiresAt: Date; connectedAt: Date };
 
 async function storedRow(): Promise<StoredRow | null> {
-  const { rows } = await db.query<StoredRow>(`select "userId", "lichessId", "token", "expiresAt" from "organiserLichess"`);
+  const { rows } = await db.query<StoredRow>(
+    `select "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt" from "organiserLichess"`,
+  );
   return rows[0] ?? null;
 }
 
-// The token kept now, whoever's it is, if it can be opened.
-async function storedToken(key: Buffer): Promise<string | null> {
-  const row = await storedRow();
-  return row && openToken(row.token, sealedFor(row.userId, row.lichessId), key);
-}
+const open = (row: StoredRow, key: Buffer | null) => (key ? openToken(row.token, sealedFor(row.userId, row.lichessId), key) : null);
 
-export type OrganiserPermission = { lichessId: string; scopes: string; expiresAt: Date; connectedAt: Date };
+// What the Organiser page shows, never the token: the account, when it was connected and expires, and whether the
+// stored token can still be read with LICHESS_TOKEN_KEY. One that cannot is still valid on Lichess until it expires,
+// and the site can no longer revoke it.
+export type OrganiserPermission = { lichessId: string; scopes: string; expiresAt: Date; connectedAt: Date; readable: boolean };
 
-// The permission as the Organiser page shows it, without the token: null unless the current Organiser connected it.
+// The permission as the Organiser page shows it: null unless the current Organiser connected it.
 export async function organiserPermission(): Promise<OrganiserPermission | null> {
-  const { rows } = await db.query<OrganiserPermission & { userId: string }>(
-    `select "userId", "lichessId", "scopes", "expiresAt", "connectedAt" from "organiserLichess"`,
-  );
-  const row = rows[0];
+  const row = await storedRow();
   if (!row || row.userId !== organiserId()) return null;
-  return { lichessId: row.lichessId, scopes: row.scopes, expiresAt: row.expiresAt, connectedAt: row.connectedAt };
+  const { lichessId, scopes, expiresAt, connectedAt } = row;
+  return { lichessId, scopes, expiresAt, connectedAt, readable: open(row, tokenKey()) !== null };
 }
+
+// Lichess's page where an account sees the sites it has approved and revokes them (lila: GET /account/security, the
+// "Revoke" button beside each third-party app, which revokes every token the account gave that site).
+export const LICHESS_SECURITY_URL = "https://lichess.org/account/security";
 
 const RECONNECT = "the Organiser must connect Lichess again on the Organiser page";
 
@@ -141,16 +149,22 @@ export async function organiserToken(now: Date): Promise<{ token: string; liches
   if (!row || row.userId !== organiserId())
     return { problem: "The Organiser has not connected their Lichess account on the Organiser page." };
   if (row.expiresAt <= now) return { problem: `The Organiser's Lichess permission expired on ${vilniusDate(row.expiresAt)}; ${RECONNECT}.` };
-  const token = openToken(row.token, sealedFor(row.userId, row.lichessId), key);
+  const token = open(row, key);
   if (!token)
     return {
-      problem: `The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); ${RECONNECT}.`,
+      problem: `The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); ${RECONNECT}, after revoking the old permission by hand on Lichess (${LICHESS_SECURITY_URL}, signed in as ${row.lichessId}).`,
     };
   return { token, lichessId: row.lichessId };
 }
 
-// A Lichess refusal of the Organiser's token, as a sentence; null for anything else.
-export const refusedPermission = (error: unknown): string | null =>
-  error instanceof LichessError && error.status === 401
-    ? `Lichess refused the Organiser's permission, which may have been revoked on Lichess; ${RECONNECT}.`
-    : null;
+// A Lichess refusal of the Organiser's token, or of creating the team's tournament with it, as a sentence; null for
+// anything else. The site checks only that the account is shown as one of the team's leaders; lila also wants that
+// leader to have the team's permission for tournaments (Swiss.apiCreate: isGranted(teamId, _.Tour)), and says only
+// "You're not a leader of that team" when they do not.
+export function refusedPermission(error: unknown, lichessId: string): string | null {
+  if (!(error instanceof LichessError)) return null;
+  if (error.status === 401) return `Lichess refused the Organiser's permission, which may have been revoked on Lichess; ${RECONNECT}.`;
+  if (error.request.startsWith("POST /api/swiss/new/") && (error.status === 403 || error.status === 404))
+    return `${error.message}. The likely cause: ${lichessId} leads the Club's team but without the team's permission to manage tournaments, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it`;
+  return null;
+}

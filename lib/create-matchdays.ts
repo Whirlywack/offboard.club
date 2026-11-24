@@ -21,6 +21,10 @@ export const JOB = "create-matchdays";
 export const LEAD_DAYS = 6;
 const DAY_MS = 86_400_000;
 
+// Vercel runs the job every hour (vercel.json), but delivery is best effort and a refused run records nothing: a last
+// run older than this means runs are not getting through.
+export const OVERDUE_MS = 2 * 3_600_000;
+
 // Lichess may take two minutes a request when it rate-limits; the run gives up after 240 s, within the route's
 // maxDuration of 300 s, so that it can still record why.
 export const JOB_DEADLINE_MS = 240_000;
@@ -86,7 +90,7 @@ async function createIfDue(now: Date): Promise<JobRun> {
       date,
     );
   } catch (error) {
-    const why = sentence(refusedPermission(error) ?? (error instanceof Error ? error.message : "unknown error"));
+    const why = sentence(refusedPermission(error, permission.lichessId) ?? (error instanceof Error ? error.message : "unknown error"));
     if (made) return failed(`Tournament ${made.id} was created on Lichess for the Matchday of ${date} but could not be recorded (${why}); the next run records it.`, date);
     return cannot(why);
   } finally {

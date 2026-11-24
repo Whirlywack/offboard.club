@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, db, jobFailures, organiserLichess, people, resetDb } from "@/lib/fake-db";
+import { addPerson, db, jobFailures, organiserLichess, people, resetDb, scheduledJobs } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
@@ -226,10 +226,33 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(await openPage()).toContain(", so Matchdays are not being created until you connect again.");
   });
 
-  it("shows the last failure of a scheduled job in one line", async () => {
-    jobFailures.set("1", { id: 1, job: "create-matchdays", at: new Date("2026-11-24T10:07:00Z"), matchdayDate: "2026-11-29", problem: "The Matchday of 2026-11-29 could not be created: oops." });
-    expect(await openPage()).toContain("Last failure, <time");
-    expect(await openPage()).toContain(": The Matchday of 2026-11-29 could not be created: oops.</p>");
+  it("says when the stored permission cannot be read, instead of saying it is connected, and how to end it on Lichess", async () => {
+    await connectAs("boss");
+    vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
+    const html = await openPage();
+    expect(html).not.toContain("Connected as");
+    expect(html).toContain("cannot be read with the current LICHESS_TOKEN_KEY, so Matchdays are not being created.");
+    expect(html).toContain('open <a href="https://lichess.org/account/security">Security</a> in your Lichess settings and revoke Offboard');
+    expect(html).toContain("First revoke it by hand: signed in to Lichess as boss");
+  });
+
+  it("says the old permission was left valid when it could not be read at reconnecting, and keeps the new one", async () => {
+    await connectAs("boss");
+    const [old] = liveTokens();
+    vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
+    lichess.calls.length = 0;
+    expect(await connectAs("deputy")).toBe("/organiser?lichess=stranded");
+    expect(apiCalls()).not.toContain("DELETE /api/token");
+    expect(liveTokens()).toContain(old); // still valid on Lichess: only the Organiser can revoke it now
+    expect(await organiserToken(new Date())).toMatchObject({ lichessId: "deputy" });
+    expect(await openPage({ lichess: "stranded" })).toContain("so it was not revoked and stays valid on Lichess until it expires.");
+  });
+
+  it("connects a leader Lichess shows publicly, even one without the team's permission for tournaments", async () => {
+    // The site cannot see that permission; the first creation names it as the likely cause (lib/create-matchdays.test.ts).
+    lichess.team.withoutTournaments.add("boss");
+    expect(await connectAs("boss")).toBe("/organiser?lichess=connected");
+    expect(await openPage()).toContain("one with the team&#x27;s permission to manage tournaments");
   });
 
   it("refuses an account that does not lead the Club's team, plainly, keeping nothing", async () => {
@@ -301,5 +324,55 @@ describe("connecting the Organiser's Lichess account", () => {
   it("puts no token in any address it sends the browser to", async () => {
     const to = await connectAs("boss");
     for (const token of allTokens()) expect(to).not.toContain(token);
+  });
+});
+
+describe("the scheduled jobs on the Organiser page", () => {
+  const SECRET = "a-cron-secret-of-forty-characters-123456";
+  const ran = (minutesAgo: number, outcome: "done" | "skipped" | "failed" = "skipped", detail = "No Matchday is scheduled, so there is nothing to create.") =>
+    scheduledJobs.set("create-matchdays", {
+      job: "create-matchdays",
+      lockedBy: null,
+      lockedUntil: null,
+      lastRunAt: new Date(Date.now() - minutesAgo * 60_000),
+      lastOutcome: outcome,
+      lastDetail: detail,
+    });
+
+  beforeEach(() => vi.stubEnv("CRON_SECRET", SECRET));
+
+  it("shows when the job last ran, how it went and why", async () => {
+    ran(30);
+    const html = await openPage();
+    expect(html).toMatch(/Creating Matchdays last ran <time dateTime="[^"]+">[^<]+<\/time>: skipped\. No Matchday is scheduled, so there is nothing to create\.<\/p>/);
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain(SECRET);
+  });
+
+  it("flags plainly a job that has never run", async () => {
+    expect(await openPage()).toContain('<p role="alert">Creating Matchdays has never run.');
+  });
+
+  it("flags plainly a last run more than two hours old", async () => {
+    ran(119);
+    expect(await openPage()).not.toContain("more than two hours ago");
+    ran(121);
+    expect(await openPage()).toContain('<p role="alert">That was more than two hours ago, though it runs every hour: runs are not getting through.');
+  });
+
+  it.each([
+    ["unset", "", "CRON_SECRET is not set, so every scheduled run is refused and no Matchday is created."],
+    ["shorter than 16 characters", "short-secret", "CRON_SECRET is shorter than 16 characters, so every scheduled run is refused and no Matchday is created."],
+  ])("says so when CRON_SECRET is %s, without showing it", async (_, secret, line) => {
+    vi.stubEnv("CRON_SECRET", secret);
+    ran(30);
+    const html = await openPage();
+    expect(html).toContain(`<p role="alert">${line}</p>`);
+    if (secret) expect(html).not.toContain(secret);
+  });
+
+  it("shows the last failure of a scheduled job in one line, from when it began", async () => {
+    jobFailures.set("1", { id: 1, job: "create-matchdays", at: new Date("2026-11-24T10:07:00Z"), matchdayDate: "2026-11-29", problem: "The Matchday of 2026-11-29 could not be created: oops." });
+    expect(await openPage()).toMatch(/Last failure, from <time dateTime="2026-11-24T10:07:00.000Z">[^<]+<\/time>: The Matchday of 2026-11-29 could not be created: oops\.<\/p>/);
   });
 });

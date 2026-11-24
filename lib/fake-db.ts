@@ -450,12 +450,8 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   // --- The Organiser's Lichess permission (lib/organiser-lichess.ts) ---
 
   // storedRow
-  [`select "userId", "lichessId", "token", "expiresAt" from "organiserLichess"`]: () =>
-    answer([...organiserLichess.values()].map(({ userId, lichessId, token, expiresAt }) => ({ userId, lichessId, token, expiresAt }))),
-
-  // organiserPermission: never the token.
-  [`select "userId", "lichessId", "scopes", "expiresAt", "connectedAt" from "organiserLichess"`]: () =>
-    answer([...organiserLichess.values()].map(({ userId, lichessId, scopes, expiresAt, connectedAt }) => ({ userId, lichessId, scopes, expiresAt, connectedAt }))),
+  [`select "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt" from "organiserLichess"`]: () =>
+    answer([...organiserLichess.values()].map((row) => ({ ...row }))),
 
   // finishOrganiserConnection. The person must exist, as the foreign key requires.
   [`insert into "organiserLichess" ("singleton", "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt") values (true, $1, $2, $3, $4, $5, now()) on conflict ("singleton") do update set "userId" = excluded."userId", "lichessId" = excluded."lichessId", "scopes" = excluded."scopes", "token" = excluded."token", "expiresAt" = excluded."expiresAt", "connectedAt" = excluded."connectedAt"`]:
@@ -467,18 +463,25 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // --- Scheduled jobs (lib/jobs.ts) ---
 
-  // runJob's hold: taken only if nobody holds the job, or their hold has lapsed.
-  [`insert into "scheduledJob" ("job", "lockedBy", "lockedUntil") values ($1, $2, now() + interval '15 minutes') on conflict ("job") do update set "lockedBy" = excluded."lockedBy", "lockedUntil" = excluded."lockedUntil" where "scheduledJob"."lockedUntil" is null or "scheduledJob"."lockedUntil" <= now()`]:
+  // runJob's hold: taken only if nobody holds the job, or their hold has lapsed. Returns the previous run's outcome.
+  [`insert into "scheduledJob" ("job", "lockedBy", "lockedUntil") values ($1, $2, now() + interval '15 minutes') on conflict ("job") do update set "lockedBy" = excluded."lockedBy", "lockedUntil" = excluded."lockedUntil" where "scheduledJob"."lockedUntil" is null or "scheduledJob"."lockedUntil" <= now() returning "lastOutcome", "lastDetail"`]:
     (job, lockedBy) => {
       const lockedUntil = new Date(Date.now() + 15 * 60_000);
       const row = scheduledJobs.get(job);
       if (!row) {
         scheduledJobs.set(job, { job, lockedBy, lockedUntil, lastRunAt: null, lastOutcome: null, lastDetail: null });
-        return answer([], 1);
+        return answer([{ lastOutcome: null, lastDetail: null }]);
       }
       if (row.lockedUntil !== null && row.lockedUntil > new Date()) return answer([], 0);
       Object.assign(row, { lockedBy, lockedUntil });
-      return answer([], 1);
+      return answer([{ lastOutcome: row.lastOutcome, lastDetail: row.lastDetail }]);
+    },
+
+  // lastRun
+  [`select "lastRunAt" as "at", "lastOutcome" as "outcome", "lastDetail" as "detail" from "scheduledJob" where "job" = $1 and "lastRunAt" is not null`]:
+    (job) => {
+      const row = scheduledJobs.get(job);
+      return answer(row?.lastRunAt ? [{ at: row.lastRunAt, outcome: row.lastOutcome, detail: row.lastDetail }] : []);
     },
 
   [`insert into "jobFailure" ("job", "matchdayDate", "problem") values ($1, $2, $3)`]: (job, matchdayDate, problem) => {

@@ -9,8 +9,9 @@
 //   first, is what does;
 // - a Swiss tournament's Games come as PGN unless the request accepts ndjson, and without clock times unless asked;
 // - a team's own page lists the leaders shown publicly (`team.leaders`);
-// - a new Swiss tournament needs a token with tournament:write whose account leads the team, else 404 "You're not a
-//   leader of that team"; its form is checked as lila's SwissForm checks it, and it must start after `now()`;
+// - a new Swiss tournament needs a token with tournament:write whose account leads the team with its permission for
+//   tournaments, else 404 "You're not a leader of that team", whatever the team's page shows; its form is checked as
+//   lila's SwissForm checks it, and it must start after `now()`;
 // - a team's tournaments can be listed by exact name, creator and status.
 //
 // Use `fetch` in place of the global one. The authorization page is the browser's, not the site's, so visits to it
@@ -65,7 +66,15 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
   const fake = {
     accounts: new Map(options.accounts.map((account) => [account.id, account])),
     tournaments: new Map((options.tournaments ?? []).map((swiss) => [swiss.id, swiss])),
-    team: { id: options.teamId, password: options.teamPassword, members: new Set<string>(), leaders: new Set<string>() },
+    // `leaders` are shown publicly on the team's page; of those, `withoutTournaments` lack the team's permission for
+    // tournaments, which lila needs to create one (Swiss.apiCreate: isGranted(teamId, _.Tour)).
+    team: {
+      id: options.teamId,
+      password: options.teamPassword,
+      members: new Set<string>(),
+      leaders: new Set<string>(),
+      withoutTournaments: new Set<string>(),
+    },
     calls: [] as FakeCall[],
     tokens,
     signedInAs: null as string | null,
@@ -211,7 +220,8 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
   // POST /api/swiss/new/{teamId}, checked as lila's Swiss.apiCreate and SwissForm check it.
   function createSwiss(call: FakeCall, token: Token, teamId: string): Response {
     if (!token.scope.split(" ").includes("tournament:write")) return json({ error: "Missing scope" }, 403);
-    if (teamId !== fake.team.id || !fake.team.leaders.has(token.accountId)) return json({ error: "You're not a leader of that team" }, 404);
+    const granted = fake.team.leaders.has(token.accountId) && !fake.team.withoutTournaments.has(token.accountId);
+    if (teamId !== fake.team.id || !granted) return json({ error: "You're not a leader of that team" }, 404);
     const form = Object.fromEntries(call.body);
     const int = (key: string) => (/^-?\d+$/.test(form[key] ?? "") ? Number(form[key]) : null);
     const limit = int("clock.limit");

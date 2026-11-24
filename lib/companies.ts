@@ -13,6 +13,10 @@ export const NEW_COMPANIES_PER_DAY = 5;
 // fetchCompanyMeta stops waiting for the website after 5 s, but not for a DNS lookup that never answers.
 const FETCH_WAIT_MS = 8000;
 
+// How many times in all, the first included, a Company's website is fetched before its domain stays its name. Without
+// a limit, Companies whose websites never answer would make the site contact more and more domains every minute.
+export const FETCH_ATTEMPTS = 3;
+
 // The Company a person belongs to now, or null if they have not given one. Matchday ingestion (#7) records this
 // with each result, so a later change of Company leaves past Matchdays as they were.
 export async function currentCompany(personId: string): Promise<Pick<Company, "domain" | "name"> | null> {
@@ -36,12 +40,12 @@ export async function companyForWebsite(
   if (!domain) return { problem: "The Company website must be the address of a public website, such as vinted.com." };
 
   if ((await db.query(`select 1 from "company" where "domain" = $1`, [domain])).rowCount) {
-    // A Company whose website gave nothing but the domain is tried again, at most once a minute, by whoever claims
-    // the retry first. That costs nobody a new Company for the day.
+    // A Company whose website gave nothing but the domain is tried again, at most once a minute and FETCH_ATTEMPTS
+    // times in all, by whoever claims the attempt first. That costs nobody a new Company for the day.
     const retry = await db.query(
-      `update "company" set "fetchTriedAt" = now()
-       where "domain" = $1 and "fetchedAt" is null and "fetchTriedAt" < now() - interval '1 minute'`,
-      [domain],
+      `update "company" set "fetchTriedAt" = now(), "fetchAttempts" = "fetchAttempts" + 1
+       where "domain" = $1 and "fetchedAt" is null and "fetchAttempts" < $2 and "fetchTriedAt" < now() - interval '1 minute'`,
+      [domain, FETCH_ATTEMPTS],
     );
     if (retry.rowCount) await nameFromWebsite(domain);
     return { domain };
@@ -55,7 +59,7 @@ export async function companyForWebsite(
   // The row goes in before the website is fetched, so two people giving the same new website at once make one
   // Company and one fetch: whoever loses the insert simply joins it and has their new Company for the day back.
   const inserted = await db.query(
-    `insert into "company" ("domain", "name") values ($1, $1) on conflict ("domain") do nothing`,
+    `insert into "company" ("domain", "name", "fetchAttempts") values ($1, $1, 1) on conflict ("domain") do nothing`,
     [domain],
   );
   if (inserted.rowCount) await nameFromWebsite(domain);

@@ -27,6 +27,7 @@ export type CompanyRow = {
   logoUrl: string | null;
   fetchedAt: Date | null;
   fetchTriedAt: Date;
+  fetchAttempts: number;
 };
 
 export const people = new Map<string, Person>();
@@ -57,9 +58,9 @@ export function addPerson(id: string, details: Partial<Person> = {}): Person {
   return person;
 }
 
-// A Company whose website was fetched, unless told otherwise.
+// A Company whose website was fetched at the first attempt, unless told otherwise.
 export function addCompany(domain: string, name: string, logoUrl: string | null = null, details: Partial<CompanyRow> = {}) {
-  const company = { domain, name, logoUrl, fetchedAt: new Date(), fetchTriedAt: new Date(), ...details };
+  const company = { domain, name, logoUrl, fetchedAt: new Date(), fetchTriedAt: new Date(), fetchAttempts: 1, ...details };
   companies.set(domain, company);
   return company;
 }
@@ -115,12 +116,14 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   [`select 1 from "company" where "domain" = $1`]: (domain) => answer(companies.has(domain) ? [{}] : []),
 
-  // The retry of a Company whose website gave nothing.
-  [`update "company" set "fetchTriedAt" = now() where "domain" = $1 and "fetchedAt" is null and "fetchTriedAt" < now() - interval '1 minute'`]:
-    (domain) => {
+  // The retry of a Company whose website gave nothing; $2 is the most attempts in all.
+  [`update "company" set "fetchTriedAt" = now(), "fetchAttempts" = "fetchAttempts" + 1 where "domain" = $1 and "fetchedAt" is null and "fetchAttempts" < $2 and "fetchTriedAt" < now() - interval '1 minute'`]:
+    (domain, most) => {
       const company = companies.get(domain);
-      if (!company || company.fetchedAt !== null || !(company.fetchTriedAt < aMinuteAgo())) return answer();
+      if (!company || company.fetchedAt !== null || !(company.fetchAttempts < Number(most))) return answer();
+      if (!(company.fetchTriedAt < aMinuteAgo())) return answer();
       company.fetchTriedAt = new Date();
+      company.fetchAttempts++;
       return answer([], 1);
     },
 
@@ -143,9 +146,9 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], 1);
     },
 
-  [`insert into "company" ("domain", "name") values ($1, $1) on conflict ("domain") do nothing`]: (domain) => {
+  [`insert into "company" ("domain", "name", "fetchAttempts") values ($1, $1, 1) on conflict ("domain") do nothing`]: (domain) => {
     if (companies.has(domain)) return answer([], 0);
-    companies.set(domain, { domain, name: domain, logoUrl: null, fetchedAt: null, fetchTriedAt: new Date() });
+    companies.set(domain, { domain, name: domain, logoUrl: null, fetchedAt: null, fetchTriedAt: new Date(), fetchAttempts: 1 });
     return answer([], 1);
   },
 

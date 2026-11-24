@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getProfile } from "@/lib/auth";
-import { currentCompany, NEW_COMPANIES_PER_DAY } from "@/lib/companies";
+import { currentCompany, FETCH_ATTEMPTS, NEW_COMPANIES_PER_DAY } from "@/lib/companies";
 import { fetchCompanyMeta } from "@/lib/company";
 import { addCompany, addPerson, companies, db, people, resetDb } from "@/lib/fake-db";
 import { saveProfile } from "./actions";
@@ -215,6 +215,42 @@ describe("a website that cannot be read", () => {
     );
     expect(fetchMeta).toHaveBeenCalledTimes(1);
     expect(stored()).toEqual([{ domain: "vinted.com", ...vinted }]);
+    expect(companies.get("vinted.com")?.fetchAttempts).toBe(2);
+  });
+
+  it(`is fetched ${FETCH_ATTEMPTS} times in all, a minute or more apart, and then keeps its domain as its name`, async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-24T12:00:00Z"));
+    addPerson("ana");
+    signedInAs("ana");
+    await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    for (const time of ["12:00:30", "12:01:01", "12:01:59", "12:02:02", "12:03:03", "12:10:00"]) {
+      vi.setSystemTime(new Date(`2026-11-24T${time}Z`));
+      await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    }
+    // At 12:00 when created, 12:01:01 and 12:02:02; never at 12:00:30 or 12:01:59, too soon, nor after the third.
+    expect(fetchMeta).toHaveBeenCalledTimes(FETCH_ATTEMPTS);
+    vi.setSystemTime(new Date("2027-11-24T12:00:00Z"));
+    await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    expect(fetchMeta).toHaveBeenCalledTimes(FETCH_ATTEMPTS);
+    expect(companies.get("vinted.com")).toMatchObject({ name: "vinted.com", fetchedAt: null, fetchAttempts: FETCH_ATTEMPTS });
+  });
+
+  it("is not fetched again once an attempt has named it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-24T12:00:00Z"));
+    addPerson("ana");
+    signedInAs("ana");
+    await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    fetchMeta.mockResolvedValue(vinted);
+    vi.setSystemTime(new Date("2026-11-24T12:01:01Z"));
+    await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    for (const time of ["12:02:02", "12:03:03", "13:00:00"]) {
+      vi.setSystemTime(new Date(`2026-11-24T${time}Z`));
+      await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(saved("ana"));
+    }
+    expect(fetchMeta).toHaveBeenCalledTimes(2);
+    expect(companies.get("vinted.com")).toMatchObject({ ...vinted, fetchAttempts: 2 });
   });
 });
 

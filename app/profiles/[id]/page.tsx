@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getProfile, requireSignedUp } from "@/lib/auth";
+import { companyLabel } from "@/lib/companies";
 import { lichessProfileUrl } from "@/lib/lichess";
 
 export const metadata: Metadata = { title: "Profile" };
@@ -37,12 +38,7 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
           <>
             <dt>Company</dt>
             {/* ponytail: logos are shown once they are served from our own storage, not hot-linked from the Company. */}
-            {/* The domain goes beside the name, which any website can claim. */}
-            <dd>
-              {profile.company.name === profile.company.domain
-                ? profile.company.domain
-                : `${profile.company.name} (${profile.company.domain})`}
-            </dd>
+            <dd>{companyLabel(profile.company)}</dd>
           </>
         )}
         {profile.position && (

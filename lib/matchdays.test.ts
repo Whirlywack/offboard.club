@@ -7,6 +7,7 @@ import { addCompany, addPerson, companies, db, games, matchdays, people, resetDb
 import { createFakeLichess, type FakeAccount, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 import { LichessError } from "./lichess";
 import { ingestTournament, registerTournament } from "./matchdays";
+import { getRecap } from "./recaps";
 
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
@@ -191,6 +192,11 @@ describe("running it again", () => {
     await ingestTournament(TOURNAMENT);
     expect(stored("ana")?.companyDomain).toBe("vinted.com");
     expect(stored("ben")?.companyDomain).toBe("bolt.eu");
+    const recap = await getRecap(DATE);
+    const company = (id: string) => recap?.leaderboard.find((r) => r.memberId === id)?.company;
+    expect(company("ana")).toEqual({ domain: "vinted.com", name: "Vinted" });
+    // ben's account is marked, so he is not on the Leaderboard at all.
+    expect(company("ben")).toBeUndefined();
   });
 
   it("stores the Matchday once when two runs happen at the same moment", async () => {

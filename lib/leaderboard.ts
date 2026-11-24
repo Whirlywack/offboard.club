@@ -31,8 +31,9 @@ function tally(matchdays: MatchdayResult[], excluded: Set<string>) {
 
 // `excluded` holds Members whose Lichess account is marked or closed; they are left out of all three Leaderboards.
 
-// Per Matchday: Lichess's own final order (the ingested rank), renumbered without excluded Members.
-export function matchdayLeaderboard(scores: Score[], excluded = new Set<string>()): Score[] {
+// Per Matchday: Lichess's own final order (the ingested rank), renumbered without excluded Members. Whatever else each
+// score carries, such as the Member's name, is kept.
+export function matchdayLeaderboard<S extends Score>(scores: S[], excluded = new Set<string>()): S[] {
   return [...scores]
     .sort((a, b) => a.rank - b.rank)
     .filter((s) => !excluded.has(s.memberId))

@@ -236,8 +236,14 @@ describe("coming back from Lichess", () => {
       lichessConnectedAt: expect.any(Date),
     });
     expect(lichess.team.members.has("bobby")).toBe(true);
-    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "POST /team/offboard-team/join", "DELETE /api/token"]);
-    const join = lichess.calls[2];
+    expect(apiCalls()).toEqual([
+      "POST /api/token",
+      "GET /api/account",
+      "GET /api/user/bobby",
+      "POST /team/offboard-team/join",
+      "DELETE /api/token",
+    ]);
+    const join = lichess.calls[3];
     expect(join.body.get("password")).toBe("team password");
     expect(join.authorization).toMatch(/^Bearer lio_/);
     expect(lichess.calls.every((c) => c.userAgent?.includes("offboard.club"))).toBe(true);
@@ -338,20 +344,27 @@ describe("coming back from Lichess", () => {
     expect(people.get("newcomer")?.lichessId).toBeNull();
   });
 
-  it.each([
-    ["closed", "closed"],
-    ["marked", "marked"],
-  ])("refuses a %s account, leaves it out of the team and revokes the token", async (account, problem) => {
-    expect(await connectAs(account)).toBe(`/welcome/lichess?lichess=${problem}`);
-    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
+  it("refuses a marked account, which Lichess shows only to others, leaves it out of the team and revokes the token", async () => {
+    expect(await connectAs("marked")).toBe("/welcome/lichess?lichess=marked");
+    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "GET /api/user/marked", "DELETE /api/token"]);
+    expect(lichess.calls[2].authorization).toBeNull(); // asked as anyone, not as the account itself
+    expect(lichess.team.members.has("marked")).toBe(false);
     expect(revoked()).toBe(true);
+    expect(updates()).toEqual([]);
+  });
+
+  it("does not connect a closed account, whose token Lichess refuses", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await connectAs("closed")).toBe("/welcome/lichess?lichess=failed");
+    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
+    expect(lichess.team.members.has("closed")).toBe(false);
     expect(updates()).toEqual([]);
   });
 
   it("refuses an account already connected to someone else, before joining the team", async () => {
     lichess.team.members.delete("taken");
     expect(await connectAs("taken")).toBe("/welcome/lichess?lichess=taken");
-    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
+    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "GET /api/user/taken", "DELETE /api/token"]);
     expect(lichess.team.members.has("taken")).toBe(false);
     expect(revoked()).toBe(true);
     expect(people.get("newcomer")?.lichessId).toBeNull();
@@ -394,6 +407,44 @@ describe("coming back from Lichess", () => {
     expect(await connectAs("bobby")).toBe("/welcome/lichess?lichess=failed");
     expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
     expect(revoked()).toBe(true);
+  });
+
+  it("gives up after 240 s of a slow Lichess, and still revokes the token within the callback's 300 s", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // Each request answers 429 after 25 s, then, after the minute's wait, properly after another 25 s: 110 s a call.
+    const slowed = new Set<string>();
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.method === "DELETE") return lichess.fetch(input, init);
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, 25_000);
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      });
+      const key = `${request.method} ${new URL(request.url).pathname}`;
+      if (!slowed.has(key)) {
+        slowed.add(key);
+        return new Response(null, { status: 429 });
+      }
+      return lichess.fetch(input, init);
+    });
+    const back = await approveOnLichess(await pressConnect(), "bobby");
+    const started = Date.now();
+    let finished = 0;
+    const arrived = arrive(back).finally(() => (finished = Date.now()));
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(await arrived).toBe("/welcome/lichess?lichess=failed");
+    expect(finished - started).toBeGreaterThanOrEqual(240_000);
+    expect(finished - started).toBeLessThan(295_000);
+    // Token and account took 220 s; the marks were still being asked for at 240 s.
+    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
+    expect(revoked()).toBe(true);
+    expect(lichess.team.members.has("bobby")).toBe(false);
+    expect(updates()).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(
+      "Connecting Lichess failed:",
+      expect.objectContaining({ message: expect.stringContaining("240 s") }),
+    );
   });
 
   it("asks nothing more of Lichess when the code is refused", async () => {
@@ -453,7 +504,13 @@ describe("swapping to a different Lichess account", () => {
     lichess.team.members.add("oldie");
     await connectAs("newbie");
     expect(lichess.team.members.has("oldie")).toBe(true);
-    expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "POST /team/offboard-team/join", "DELETE /api/token"]);
+    expect(apiCalls()).toEqual([
+      "POST /api/token",
+      "GET /api/account",
+      "GET /api/user/newbie",
+      "POST /team/offboard-team/join",
+      "DELETE /api/token",
+    ]);
   });
 
   it("keeps the old account when the new one is refused, and says why on the Profile edit page", async () => {

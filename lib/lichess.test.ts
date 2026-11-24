@@ -86,6 +86,54 @@ describe("one request at a time", () => {
   });
 });
 
+describe("giving up", () => {
+  // A fetch that never answers, but stops when its signal aborts, as fetch does.
+  const silent = () =>
+    vi.fn(
+      (_url: URL, init: RequestInit) =>
+        new Promise<Response>((_, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))),
+    );
+
+  it("gives up on an attempt that gets no answer within 30 s", async () => {
+    vi.stubGlobal("fetch", silent());
+    const result = lichess.lichessRequest("/api/account", {}, () => "read");
+    const settled = expect(result).rejects.toThrow(/within 30 s/);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await settled;
+  });
+
+  it("stops when the caller's signal aborts, also while waiting after a 429", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 429 })));
+    const caller = new AbortController();
+    const result = lichess.lichessRequest("/api/account", { signal: caller.signal }, () => "read");
+    const settled = expect(result).rejects.toThrow("given up");
+    await vi.advanceTimersByTimeAsync(10_000);
+    caller.abort(new Error("given up"));
+    await settled;
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a request given up while waiting its turn go, without the next one overtaking the one in flight", async () => {
+    const { fetch, asked } = controlledFetch();
+    vi.stubGlobal("fetch", fetch);
+    const caller = new AbortController();
+    const first = lichess.lichessRequest("/first", {}, (response) => response.status);
+    const abandoned = lichess.lichessRequest("/abandoned", { signal: caller.signal }, (response) => response.status);
+    const third = lichess.lichessRequest("/third", {}, (response) => response.status);
+    caller.abort(new Error("given up"));
+    await expect(abandoned).rejects.toThrow("given up");
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1); // /third still waits for /first
+
+    asked[0].answer(new Response(null, { status: 200 }));
+    expect(await first).toBe(200);
+    await flush();
+    expect(asked.map((a) => new URL(a.url).pathname)).toEqual(["/first", "/third"]);
+    asked[1].answer(new Response(null, { status: 204 }));
+    expect(await third).toBe(204);
+  });
+});
+
 describe("after a rate-limit response", () => {
   it("waits a full minute, then tries once more", async () => {
     const { fetch, asked } = controlledFetch();
@@ -143,11 +191,22 @@ describe("reading Lichess's answers", () => {
   const answering = (body: unknown, status = 200) =>
     vi.stubGlobal("fetch", vi.fn(async () => Response.json(body, { status })));
 
-  it("reads the account's id, username, blitz rating and marks", async () => {
+  it("reads the account's id, username and blitz rating", async () => {
     answering({ id: "bobby", username: "Bobby", perfs: { blitz: { games: 674, rating: 1623, rd: 64, prog: 43 } } });
-    expect(await lichess.getAccount("t")).toEqual({ id: "bobby", username: "Bobby", blitzRating: 1623, closed: false, marked: false });
-    answering({ id: "gone", username: "Gone", disabled: true, tosViolation: true });
-    expect(await lichess.getAccount("t")).toEqual({ id: "gone", username: "Gone", blitzRating: null, closed: true, marked: true });
+    expect(await lichess.getAccount("t")).toEqual({ id: "bobby", username: "Bobby", blitzRating: 1623 });
+    answering({ id: "newbie", username: "Newbie", perfs: {} });
+    expect(await lichess.getAccount("t")).toEqual({ id: "newbie", username: "Newbie", blitzRating: null });
+  });
+
+  it("reads an account's mark from its public profile, asking without a token", async () => {
+    const fetch = vi.fn(async () => Response.json({ id: "cheat", username: "Cheat", tosViolation: true }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await lichess.isMarked("cheat")).toBe(true);
+    const [url, init] = fetch.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(String(url)).toBe("https://fake.lichess.test/api/user/cheat");
+    expect(init.headers).not.toHaveProperty("Authorization");
+    answering({ id: "bobby", username: "Bobby" });
+    expect(await lichess.isMarked("bobby")).toBe(false);
   });
 
   it("refuses an account it cannot make sense of", async () => {

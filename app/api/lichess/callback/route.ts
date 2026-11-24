@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { requireWelcomed } from "@/lib/auth";
 import { clearedPendingCookie, finishConnection, PENDING_COOKIE } from "@/lib/connect-lichess";
 
-// Up to four Lichess requests, each of which may wait a minute after a rate-limit response.
+// Up to five Lichess requests, each of which may wait a minute after a rate-limit response. The connection gives up
+// well before this (CONNECTION_DEADLINE_MS) so that there is still time to revoke the token.
 export const maxDuration = 300;
 
 // Where Lichess sends the person back after they approve (or decline) Offboard. The redirect URI registered with

@@ -1,6 +1,9 @@
-// A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, joining a team
-// and revoking a token, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org
-// does (a wrong team password is a 400 there, a 403 in the spec).
+// A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, a public user,
+// joining a team and revoking a token, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs,
+// as lichess.org's source (lila) does:
+// - a wrong team password is a 400 there, a 403 in the spec;
+// - "tosViolation" is shown to everyone except the account itself, so never on /api/account;
+// - a closed ("disabled") account's token is refused, and its public user is only { id, username, disabled }.
 //
 // Use `fetch` in place of the global one. The authorization page is the browser's, not the site's, so visits to it
 // are not recorded in `calls`; it approves as `signedInAs`, or declines when that is null.
@@ -57,16 +60,21 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
       if (overridden) return overridden;
 
       if (call.method === "POST" && call.path === "/api/token") return exchange(call.body);
+      const user = /^\/api\/user\/([^/]+)$/.exec(call.path);
+      if (call.method === "GET" && user) {
+        const account = fake.accounts.get(decodeURIComponent(user[1]).toLowerCase());
+        if (!account) return json({ error: "Not found" }, 404);
+        if (account.disabled) return json({ id: account.id, username: account.username, disabled: true });
+        const viewer = bearer(call)?.accountId;
+        return json({ ...shown(account), ...(account.tosViolation && viewer !== account.id && { tosViolation: true }) });
+      }
       const token = bearer(call);
       if (!token) return json({ error: "No such token" }, 401);
       if (call.method === "DELETE" && call.path === "/api/token") {
         token.revoked = true;
         return new Response(null, { status: 204 });
       }
-      if (call.method === "GET" && call.path === "/api/account") {
-        const account = fake.accounts.get(token.accountId)!;
-        return json({ ...account, url: `https://lichess.org/@/${account.username}` });
-      }
+      if (call.method === "GET" && call.path === "/api/account") return json(shown(fake.accounts.get(token.accountId)!));
       const join = /^\/team\/([^/]+)\/join$/.exec(call.path);
       if (call.method === "POST" && join) {
         if (!token.scope.split(" ").includes("team:write")) return json({ error: "Missing scope" }, 403);
@@ -123,9 +131,15 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
     return json({ token_type: "Bearer", access_token: token, expires_in: 31_536_000 });
   }
 
+  // A valid token, unless it is revoked or its account has been closed.
   function bearer(call: FakeCall): Token | null {
     const token = tokens.get(call.authorization?.replace(/^Bearer /, "") ?? "");
-    return token && !token.revoked ? token : null;
+    return token && !token.revoked && !fake.accounts.get(token.accountId)?.disabled ? token : null;
+  }
+
+  // An account as Lichess shows it, its marks left out.
+  function shown({ id, username, perfs }: FakeAccount) {
+    return { id, username, perfs: perfs ?? {}, url: `https://lichess.org/@/${username}` };
   }
 
   return fake;

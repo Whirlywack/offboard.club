@@ -12,9 +12,11 @@ import {
   authorizationUrl,
   exchangeCode,
   getAccount,
+  isMarked,
   joinTeam,
   LichessError,
   revokeToken,
+  timeLimit,
   type LichessAccount,
 } from "./lichess";
 import { mustConnectLichess } from "./members";
@@ -24,6 +26,11 @@ export const CLIENT_ID = "offboard.club";
 export const SCOPE = "team:write";
 export const CALLBACK_PATH = "/api/lichess/callback";
 const PENDING_SECONDS = 600;
+
+// The callback may run for 300 s (its maxDuration). Rate limits can stretch each Lichess call to two minutes, so the
+// connection gives up after 240 s, and revoking the token may use what is left up to 295 s.
+export const CONNECTION_DEADLINE_MS = 240_000;
+const REVOKED_BY_MS = 295_000;
 
 // Until the Organiser supplies the team's id and password, the connect step says so instead of failing.
 export const lichessConfigured = () => Boolean(process.env.LICHESS_TEAM_ID && process.env.LICHESS_TEAM_PASSWORD);
@@ -96,7 +103,7 @@ export function startConnection(userId: string): { url: string; cookie: string }
 export const PROBLEMS = {
   denied: "You did not approve Offboard on Lichess, so nothing has changed. You can try again whenever you like.",
   expired: "That attempt to connect Lichess ran out or was started in another browser. Please start again.",
-  closed: "That Lichess account is closed, so it cannot be connected.",
+  // No message for a closed account: Lichess refuses a closed account's token, so that ends as "failed".
   marked: "Lichess has marked that account for breaking its terms of service, so it cannot be connected.",
   taken:
     "That Lichess account is already connected to another Member, and a Lichess account can belong to one Member only. If you have another Lichess account, sign in to Lichess with it and try again.",
@@ -125,15 +132,17 @@ export async function finishConnection(
   if (!code) return problem(query.get("error") === "access_denied" ? "denied" : "failed");
   if (!lichessConfigured()) return problem("failed");
 
+  const started = Date.now();
+  const deadline = timeLimit(CONNECTION_DEADLINE_MS, `Connecting Lichess took more than ${CONNECTION_DEADLINE_MS / 1000} s`);
+  const signal = deadline.signal;
   let token: string | null = null;
   try {
-    token = await exchangeCode({ code, verifier: pending.verifier, redirectUri: redirectUri(), clientId: CLIENT_ID });
-    const account = await getAccount(token);
-    if (account.closed) return problem("closed");
-    if (account.marked) return problem("marked");
+    token = await exchangeCode({ code, verifier: pending.verifier, redirectUri: redirectUri(), clientId: CLIENT_ID }, signal);
+    const account = await getAccount(token, signal);
+    if (await isMarked(account.id, signal)) return problem("marked");
     if (await connectedToSomeoneElse(account.id, person.id)) return problem("taken");
     try {
-      await joinTeam(token, process.env.LICHESS_TEAM_ID!, process.env.LICHESS_TEAM_PASSWORD!);
+      await joinTeam(token, process.env.LICHESS_TEAM_ID!, process.env.LICHESS_TEAM_PASSWORD!, signal);
     } catch (error) {
       if (!(error instanceof LichessError && (error.status === 400 || error.status === 403))) throw error;
       console.error("Lichess refused to add an account to the Club's team:", error.message);
@@ -147,12 +156,15 @@ export async function finishConnection(
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);
     return problem("failed");
   } finally {
-    if (token) await revoke(token);
+    deadline.clear();
+    if (token) await revoke(token, REVOKED_BY_MS - (Date.now() - started));
   }
 }
 
-async function revoke(token: string) {
-  const revoked = await revokeToken(token).catch(() => false);
+async function revoke(token: string, ms: number) {
+  const limit = timeLimit(ms, "Revoking a Lichess token took too long");
+  const revoked = await revokeToken(token, limit.signal).catch(() => false);
+  limit.clear();
   if (!revoked) console.error("A Lichess token could not be revoked. It lapses by itself in about a year.");
 }
 

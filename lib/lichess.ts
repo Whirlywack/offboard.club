@@ -1,6 +1,7 @@
 // The Lichess client. Every request to Lichess goes through `lichessRequest`, which follows Lichess's API rules
 // (https://lichess.org/api): one request at a time, a User-Agent that names the site, and a minute's wait after a
-// rate-limit response. Endpoints and fields are as in Lichess's OpenAPI spec (github.com/lichess-org/api).
+// rate-limit response. Endpoints and fields are as in Lichess's OpenAPI spec (lichess-org/api on GitHub), checked
+// against what lichess.org itself does (its source, lichess-org/lila) where the two differ.
 //
 // Tokens travel only in the Authorization header and request bodies, never in a URL, and nothing here logs a request,
 // a body or a token: errors name the endpoint and the status only.
@@ -29,46 +30,86 @@ export class LichessError extends Error {
   }
 }
 
-type Options = { method?: "GET" | "POST" | "DELETE"; token?: string; form?: Record<string, string> };
+// `signal` lets the caller give up: on a request still waiting its turn, in flight, or waiting after a 429.
+type Options = { method?: "GET" | "POST" | "DELETE"; token?: string; form?: Record<string, string>; signal?: AbortSignal };
+
+// A signal that aborts after `ms`, or as soon as `within` does. Call `clear` once it is no longer needed.
+export function timeLimit(ms: number, reason: string, within?: AbortSignal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(reason)), ms);
+  const follow = () => controller.abort(within!.reason);
+  if (within?.aborted) follow();
+  else within?.addEventListener("abort", follow, { once: true });
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer);
+      within?.removeEventListener("abort", follow);
+    },
+  };
+}
+
+// Settles with `promise`, or rejects as soon as `signal` aborts.
+function unlessAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })),
+  ]);
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function send(path: string, { method = "GET", token, form }: Options) {
+// One attempt, the request and the reading of its answer, within 30 seconds.
+async function attempt<T>(
+  path: string,
+  { method = "GET", token, form, signal }: Options,
+  read: (response: Response) => Promise<T> | T,
+): Promise<T> {
+  const limit = timeLimit(TIMEOUT_MS, `Lichess did not answer ${method} ${path} within ${TIMEOUT_MS / 1000} s`, signal);
   const headers: Record<string, string> = { "User-Agent": USER_AGENT, Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(lichessUrl(path), {
-    method,
-    headers,
-    body: form && new URLSearchParams(form),
-    // A redirect would carry the token somewhere unchecked; Lichess's API does not redirect.
-    redirect: "manual",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  try {
+    const response = await fetch(lichessUrl(path), {
+      method,
+      headers,
+      body: form && new URLSearchParams(form),
+      // A redirect would carry the token somewhere unchecked; Lichess's API does not redirect.
+      redirect: "manual",
+      signal: limit.signal,
+    });
+    try {
+      return await unlessAborted(Promise.resolve(read(response)), limit.signal);
+    } finally {
+      if (!response.bodyUsed) await response.body?.cancel().catch(() => undefined);
+    }
+  } finally {
+    limit.clear();
+  }
 }
 
-// The request in progress, if any. Each request waits for the previous one, its body included, to finish.
+// Settles once the request in progress, if any, has finished, its body included.
 // ponytail: one at a time within one server instance only; if Lichess rate-limits the site while several instances
 // run at once, send every request through one shared queue instead.
 let previous: Promise<unknown> = Promise.resolve();
 
-// Sends one request and hands the response to `read`, which must finish with the body before the next request
-// goes out. After a 429 it waits a minute and tries once more; `read` gets whatever that second answer is.
+const RATE_LIMITED = Symbol("429");
+
+// Sends one request once the previous one has finished, and hands the response to `read`, which must be done with
+// the body before the next request goes out. After a 429 it waits a minute and tries once more; `read` gets
+// whatever that second answer is.
 export function lichessRequest<T>(path: string, options: Options, read: (response: Response) => Promise<T> | T): Promise<T> {
-  const run = async () => {
-    let response = await send(path, options);
-    if (response.status === 429) {
-      await response.body?.cancel();
-      await sleep(RATE_LIMIT_WAIT_MS);
-      response = await send(path, options);
-    }
-    try {
-      return await read(response);
-    } finally {
-      if (!response.bodyUsed) await response.body?.cancel();
-    }
-  };
-  const result = previous.then(run);
-  previous = result.catch(() => undefined);
+  const turn = previous;
+  const result = (async () => {
+    await unlessAborted(turn, options.signal);
+    const first = await attempt(path, options, (response) => (response.status === 429 ? RATE_LIMITED : read(response)));
+    if (first !== RATE_LIMITED) return first;
+    await unlessAborted(sleep(RATE_LIMIT_WAIT_MS), options.signal);
+    return attempt(path, options, read);
+  })();
+  // A request given up while waiting its turn still holds the next one back until the one before it has finished.
+  previous = Promise.allSettled([turn, result]);
   return result;
 }
 
@@ -105,7 +146,10 @@ export function authorizationUrl({ clientId, redirectUri, scope, challenge, stat
 const TOKEN = /^[A-Za-z0-9_]{1,4096}$/;
 
 // POST /api/token: the code from the redirect, and the verifier its challenge came from, for an access token.
-export const exchangeCode = (p: { code: string; verifier: string; redirectUri: string; clientId: string }) =>
+export const exchangeCode = (
+  p: { code: string; verifier: string; redirectUri: string; clientId: string },
+  signal?: AbortSignal,
+) =>
   lichessRequest(
     "/api/token",
     {
@@ -117,6 +161,7 @@ export const exchangeCode = (p: { code: string; verifier: string; redirectUri: s
         redirect_uri: p.redirectUri,
         client_id: p.clientId,
       },
+      signal,
     },
     async (response) => {
       if (!response.ok) throw await refused("POST /api/token", response);
@@ -128,43 +173,46 @@ export const exchangeCode = (p: { code: string; verifier: string; redirectUri: s
   );
 
 // DELETE /api/token: revokes the token the request is made with. True once Lichess has revoked it.
-export const revokeToken = (token: string) =>
-  lichessRequest("/api/token", { method: "DELETE", token }, (response) => response.ok);
+export const revokeToken = (token: string, signal?: AbortSignal) =>
+  lichessRequest("/api/token", { method: "DELETE", token, signal }, (response) => response.ok);
 
-// --- Account ---
+// --- Accounts ---
 
-export type LichessAccount = {
-  id: string;
-  username: string;
-  blitzRating: number | null;
-  closed: boolean; // Lichess's "disabled"
-  marked: boolean; // Lichess's "tosViolation": marked for breaking Lichess's terms of service
-};
+export type LichessAccount = { id: string; username: string; blitzRating: number | null };
 
 const NAME = /^[A-Za-z0-9_-]{2,30}$/;
 
-// GET /api/account: the account the token belongs to.
-export const getAccount = (token: string) =>
-  lichessRequest("/api/account", { token }, async (response): Promise<LichessAccount> => {
+// GET /api/account: the account the token belongs to. Lichess leaves out "tosViolation" when an account looks at
+// itself, so this cannot tell whether it is marked: see isMarked. A closed account's token is refused (401).
+export const getAccount = (token: string, signal?: AbortSignal) =>
+  lichessRequest("/api/account", { token, signal }, async (response): Promise<LichessAccount> => {
     if (!response.ok) throw await refused("GET /api/account", response);
     const body = await response.json();
     if (typeof body?.id !== "string" || typeof body.username !== "string" || !NAME.test(body.id) || !NAME.test(body.username))
       throw new LichessError("GET /api/account", response.status, "no usable account");
     const rating = body.perfs?.blitz?.rating;
-    return {
-      id: body.id,
-      username: body.username,
-      blitzRating: Number.isInteger(rating) ? rating : null,
-      closed: body.disabled === true,
-      marked: body.tosViolation === true,
-    };
+    return { id: body.id, username: body.username, blitzRating: Number.isInteger(rating) ? rating : null };
+  });
+
+// GET /api/user/{id}, deliberately without a token: whether Lichess has marked the account for breaking its terms
+// of service (an engine or boosting mark), which it shows to everyone except the account itself.
+export const isMarked = (id: string, signal?: AbortSignal) =>
+  lichessRequest(`/api/user/${encodeURIComponent(id)}`, { signal }, async (response) => {
+    if (!response.ok) throw await refused("GET /api/user/{id}", response);
+    const body = await response.json();
+    if (typeof body?.id !== "string" || body.id !== id) throw new LichessError("GET /api/user/{id}", response.status, "another account");
+    return body.tosViolation === true;
   });
 
 // --- Teams ---
 
 // POST /team/{teamId}/join, needing the team:write scope. Lichess answers 200 when the account is already a member
 // too. A wrong password is refused with 403 in the spec (400 "This team requires a password." in practice).
-export const joinTeam = (token: string, teamId: string, password: string) =>
-  lichessRequest(`/team/${encodeURIComponent(teamId)}/join`, { method: "POST", token, form: { password } }, async (response) => {
-    if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
-  });
+export const joinTeam = (token: string, teamId: string, password: string, signal?: AbortSignal) =>
+  lichessRequest(
+    `/team/${encodeURIComponent(teamId)}/join`,
+    { method: "POST", token, form: { password }, signal },
+    async (response) => {
+      if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
+    },
+  );

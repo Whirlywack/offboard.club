@@ -7,7 +7,11 @@
 // - POST /api/users takes the first 300 ids and leaves out accounts it does not have;
 // - a Swiss tournament's own JSON does not say which team it is on; the team's list of tournaments, latest start
 //   first, is what does;
-// - a Swiss tournament's Games come as PGN unless the request accepts ndjson, and without clock times unless asked.
+// - a Swiss tournament's Games come as PGN unless the request accepts ndjson, and without clock times unless asked;
+// - a team's own page lists the leaders shown publicly (`team.leaders`);
+// - a new Swiss tournament needs a token with tournament:write whose account leads the team, else 404 "You're not a
+//   leader of that team"; its form is checked as lila's SwissForm checks it, and it must start after `now()`;
+// - a team's tournaments can be listed by exact name, creator and status.
 //
 // Use `fetch` in place of the global one. The authorization page is the browser's, not the site's, so visits to it
 // are not recorded in `calls`; it approves as `signedInAs`, or declines when that is null.
@@ -22,7 +26,8 @@ export type FakeAccount = {
   tosViolation?: boolean;
 };
 
-// A Swiss tournament, with its exports as Lichess sends them: `results` and `games` are ndjson text.
+// A Swiss tournament, with its exports as Lichess sends them: `results` and `games` are ndjson text. One created through
+// the API also keeps the form it was created with.
 export type FakeSwiss = {
   id: string;
   teamId: string;
@@ -30,6 +35,9 @@ export type FakeSwiss = {
   startsAt: string;
   results: string;
   games: string;
+  name?: string;
+  createdBy?: string;
+  form?: Record<string, string>;
 };
 
 export type FakeCall = {
@@ -57,10 +65,12 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
   const fake = {
     accounts: new Map(options.accounts.map((account) => [account.id, account])),
     tournaments: new Map((options.tournaments ?? []).map((swiss) => [swiss.id, swiss])),
-    team: { id: options.teamId, password: options.teamPassword, members: new Set<string>() },
+    team: { id: options.teamId, password: options.teamPassword, members: new Set<string>(), leaders: new Set<string>() },
     calls: [] as FakeCall[],
     tokens,
     signedInAs: null as string | null,
+    // Lichess's clock, for whether a tournament starts in the future.
+    now: () => Date.now(),
     // Answers a call in place of the fake's own behaviour when it returns a Response.
     override: undefined as ((call: FakeCall) => Response | undefined) | undefined,
 
@@ -100,14 +110,25 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
       if (call.method === "GET" && swiss) return swissAnswer(call, decodeURIComponent(swiss[1]), swiss[2]);
       const teamSwiss = /^\/api\/team\/([^/]+)\/swiss$/.exec(call.path);
       if (call.method === "GET" && teamSwiss) {
+        const [name, createdBy, status] = ["name", "createdBy", "status"].map((key) => call.query.get(key));
         const listed = [...fake.tournaments.values()]
           .filter((t) => t.teamId === decodeURIComponent(teamSwiss[1]))
+          .filter((t) => (name === null || swissJson(t).name === name) && (createdBy === null || swissJson(t).createdBy === createdBy))
+          .filter((t) => status === null || t.status === status)
           .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
           .slice(0, Number(call.query.get("max") ?? 100));
         return ndjson(listed.map(swissJson));
       }
+      const team = /^\/api\/team\/([^/]+)$/.exec(call.path);
+      if (call.method === "GET" && team) {
+        if (decodeURIComponent(team[1]) !== fake.team.id) return json({ error: "Not found" }, 404);
+        const leaders = [...fake.team.leaders].map((id) => ({ id, name: fake.accounts.get(id)?.username ?? id }));
+        return json({ id: fake.team.id, name: "Offboard", open: false, leader: leaders[0], nbMembers: fake.team.members.size, leaders });
+      }
       const token = bearer(call);
       if (!token) return json({ error: "No such token" }, 401);
+      const newSwiss = /^\/api\/swiss\/new\/([^/]+)$/.exec(call.path);
+      if (call.method === "POST" && newSwiss) return createSwiss(call, token, decodeURIComponent(newSwiss[1]));
       if (call.method === "DELETE" && call.path === "/api/token") {
         token.revoked = true;
         return new Response(null, { status: 204 });
@@ -187,22 +208,58 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
     return { ...shown(account), ...(account.tosViolation && viewer !== account.id && { tosViolation: true }) };
   }
 
-  // A tournament as GET /api/swiss/{id} shows it: no team.
-  function swissJson({ id, status, startsAt }: FakeSwiss) {
+  // POST /api/swiss/new/{teamId}, checked as lila's Swiss.apiCreate and SwissForm check it.
+  function createSwiss(call: FakeCall, token: Token, teamId: string): Response {
+    if (!token.scope.split(" ").includes("tournament:write")) return json({ error: "Missing scope" }, 403);
+    if (teamId !== fake.team.id || !fake.team.leaders.has(token.accountId)) return json({ error: "You're not a leader of that team" }, 404);
+    const form = Object.fromEntries(call.body);
+    const int = (key: string) => (/^-?\d+$/.test(form[key] ?? "") ? Number(form[key]) : null);
+    const limit = int("clock.limit");
+    const increment = int("clock.increment");
+    const rounds = int("nbRounds");
+    const startsAt = form.startsAt === undefined ? fake.now() + 600_000 : int("startsAt");
+    const name = form.name;
+    const problems = [
+      limit === null || ![0, 15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 600, 900].includes(limit) ? "clock.limit" : null,
+      increment === null || increment < 0 || increment > 120 ? "clock.increment" : null,
+      rounds === null || rounds < 3 || rounds > 100 ? "nbRounds" : null,
+      startsAt === null || startsAt <= fake.now() ? "startsAt" : null,
+      name !== undefined && (!/^[\p{L}\p{N}\-\s:.,;'°ª+]{2,30}$/u.test(name) || /lichess/i.test(name)) ? "name" : null,
+      ...["rated", "conditions.playYourGames"].map((key) => (key in form && !["true", "false"].includes(form[key]) ? key : null)),
+    ].filter(Boolean);
+    if (problems.length > 0) return json({ error: Object.fromEntries(problems.map((key) => [key, ["Invalid value"]])) }, 400);
+    const swiss: FakeSwiss = {
+      id: randomBytes(6).toString("base64url").replace(/[-_]/g, "x").slice(0, 8),
+      teamId,
+      status: "created",
+      startsAt: new Date(startsAt!).toISOString(),
+      results: "",
+      games: "",
+      name: name ?? "Random Grandmaster",
+      createdBy: token.accountId,
+      form,
+    };
+    fake.tournaments.set(swiss.id, swiss);
+    return json(swissJson(swiss));
+  }
+
+  // A tournament as GET /api/swiss/{id} shows it: no team. One created through the API shows what it was created with.
+  function swissJson({ id, status, startsAt, name = "Offboard Matchday", createdBy = "organiser", form = {} }: FakeSwiss) {
+    const nbRounds = Number(form.nbRounds ?? 5);
     return {
       id,
-      createdBy: "organiser",
+      createdBy,
       startsAt,
-      name: "Offboard Matchday",
-      clock: { limit: 300, increment: 3 },
+      name,
+      clock: { limit: Number(form["clock.limit"] ?? 300), increment: Number(form["clock.increment"] ?? 3) },
       variant: "standard",
-      round: status === "created" ? 0 : 5,
-      nbRounds: 5,
+      round: status === "created" ? 0 : nbRounds,
+      nbRounds,
       nbPlayers: 0,
       nbOngoing: status === "started" ? 1 : 0,
       status,
       verdicts: { list: [], accepted: true },
-      rated: true,
+      rated: form.rated !== "false",
     };
   }
 

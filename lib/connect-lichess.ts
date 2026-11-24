@@ -30,13 +30,20 @@ const PENDING_SECONDS = 600;
 // The callback may run for 300 s (its maxDuration). Rate limits can stretch each Lichess call to two minutes, so the
 // connection gives up after 240 s, and revoking the token may use what is left up to 295 s.
 export const CONNECTION_DEADLINE_MS = 240_000;
-const REVOKED_BY_MS = 295_000;
+export const REVOKED_BY_MS = 295_000;
 
 // Until the Organiser supplies the team's id and password, the connect step says so instead of failing.
 export const lichessConfigured = () => Boolean(process.env.LICHESS_TEAM_ID && process.env.LICHESS_TEAM_PASSWORD);
 
+// One way of connecting Lichess: the Member's, here, or the Organiser's (lib/organiser-lichess.ts). Each has its own
+// callback, cookie and signature, so that an attempt started for one can never finish as the other.
+export type Flow = { callbackPath: string; cookie: string; purpose: string; scope: string };
+
+export const PENDING_COOKIE = "offboard-lichess";
+const MEMBER: Flow = { callbackPath: CALLBACK_PATH, cookie: PENDING_COOKIE, purpose: "offboard lichess connect", scope: SCOPE };
+
 // Built from the site's own configured address, never from the request.
-export const redirectUri = () => new URL(CALLBACK_PATH, process.env.BETTER_AUTH_URL).toString();
+export const redirectUri = (flow = MEMBER) => new URL(flow.callbackPath, process.env.BETTER_AUTH_URL).toString();
 
 // PKCE S256 (RFC 7636): BASE64URL(SHA256(verifier)).
 export const codeChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
@@ -46,38 +53,36 @@ const random = () => randomBytes(32).toString("base64url");
 
 // --- The pending connection, kept in the browser between leaving for Lichess and coming back. ---
 // It holds the state, the verifier and whose connection it is, signed so that nobody else can make one up. It is
-// sent only to the callback, cleared there whatever happens, and lapses after ten minutes.
+// sent only to the flow's callback, cleared there whatever happens, and lapses after ten minutes.
 
-export const PENDING_COOKIE = "offboard-lichess";
-
-const cookieAttributes = () => ({
+const cookieAttributes = (flow: Flow) => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const, // sent on the top-level return from lichess.org
-  path: CALLBACK_PATH,
+  path: flow.callbackPath,
 });
-export const pendingCookie = (value: string) => ({ name: PENDING_COOKIE, value, maxAge: PENDING_SECONDS, ...cookieAttributes() });
-export const clearedPendingCookie = () => ({ name: PENDING_COOKIE, ...cookieAttributes() });
+export const pendingCookie = (value: string, flow = MEMBER) => ({ name: flow.cookie, value, maxAge: PENDING_SECONDS, ...cookieAttributes(flow) });
+export const clearedPendingCookie = (flow = MEMBER) => ({ name: flow.cookie, ...cookieAttributes(flow) });
 
 type Pending = { state: string; verifier: string; userId: string; expires: number };
 
-const sign = (body: string) =>
-  createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "").update(`offboard lichess connect\n${body}`).digest("base64url");
+const sign = (flow: Flow, body: string) =>
+  createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "").update(`${flow.purpose}\n${body}`).digest("base64url");
 
-const sameText = (a: string, b: string) => {
+export const sameText = (a: string, b: string) => {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-function seal(pending: Pending): string {
+function seal(flow: Flow, pending: Pending): string {
   const body = Buffer.from(JSON.stringify(pending)).toString("base64url");
-  return `${body}.${sign(body)}`;
+  return `${body}.${sign(flow, body)}`;
 }
 
-function unseal(value: string | undefined): Pending | null {
+function unseal(flow: Flow, value: string | undefined): Pending | null {
   const [body, signature, ...rest] = value?.split(".") ?? [];
-  if (!body || !signature || rest.length > 0 || !sameText(signature, sign(body))) return null;
+  if (!body || !signature || rest.length > 0 || !sameText(signature, sign(flow, body))) return null;
   try {
     const pending = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
     const valid = ["state", "verifier", "userId"].every((key) => typeof pending[key] === "string");
@@ -88,13 +93,30 @@ function unseal(value: string | undefined): Pending | null {
 }
 
 // Where to send the person on Lichess, and the cookie that must come back with them.
-export function startConnection(userId: string): { url: string; cookie: string } {
+export function startConnection(userId: string, flow = MEMBER): { url: string; cookie: string } {
   const state = random();
   const verifier = random();
   return {
-    url: authorizationUrl({ clientId: CLIENT_ID, redirectUri: redirectUri(), scope: SCOPE, challenge: codeChallenge(verifier), state }),
-    cookie: seal({ state, verifier, userId, expires: Date.now() + PENDING_SECONDS * 1000 }),
+    url: authorizationUrl({ clientId: CLIENT_ID, redirectUri: redirectUri(flow), scope: flow.scope, challenge: codeChallenge(verifier), state }),
+    cookie: seal(flow, { state, verifier, userId, expires: Date.now() + PENDING_SECONDS * 1000 }),
   };
+}
+
+// The person arriving back from Lichess with `query`: the code to exchange and its verifier, or why not. "expired" if
+// the attempt was not started by this person in this browser for this flow within ten minutes, or its state does not
+// match; "denied" if they declined on Lichess. Asks Lichess nothing.
+export function returnedFrom(
+  flow: Flow,
+  personId: string,
+  query: URLSearchParams,
+  pendingCookieValue: string | undefined,
+): { code: string; verifier: string } | { problem: "expired" | "denied" | "failed" } {
+  const pending = unseal(flow, pendingCookieValue);
+  const state = query.get("state");
+  if (!pending || pending.userId !== personId || !state || !sameText(state, pending.state)) return { problem: "expired" };
+  const code = query.get("code");
+  if (!code) return { problem: query.get("error") === "access_denied" ? "denied" : "failed" };
+  return { code, verifier: pending.verifier };
 }
 
 // --- Coming back from Lichess ---
@@ -125,11 +147,8 @@ export async function finishConnection(
   const swap = !mustConnectLichess(person);
   const problem = (code: Problem) => `${swap ? "/profile" : "/welcome/lichess"}?lichess=${code}`;
 
-  const pending = unseal(pendingCookieValue);
-  const state = query.get("state");
-  if (!pending || pending.userId !== person.id || !state || !sameText(state, pending.state)) return problem("expired");
-  const code = query.get("code");
-  if (!code) return problem(query.get("error") === "access_denied" ? "denied" : "failed");
+  const returned = returnedFrom(MEMBER, person.id, query, pendingCookieValue);
+  if ("problem" in returned) return problem(returned.problem);
   if (!lichessConfigured()) return problem("failed");
 
   const started = Date.now();
@@ -137,7 +156,10 @@ export async function finishConnection(
   const signal = deadline.signal;
   let token: string | null = null;
   try {
-    token = await exchangeCode({ code, verifier: pending.verifier, redirectUri: redirectUri(), clientId: CLIENT_ID }, signal);
+    ({ accessToken: token } = await exchangeCode(
+      { code: returned.code, verifier: returned.verifier, redirectUri: redirectUri(), clientId: CLIENT_ID },
+      signal,
+    ));
     const account = await getAccount(token, signal);
     if (await isMarked(account.id, signal)) return problem("marked");
     if (await connectedToSomeoneElse(account.id, person.id)) return problem("taken");
@@ -150,7 +172,8 @@ export async function finishConnection(
     }
     if (!(await saveConnection(person.id, account))) return problem("taken");
     // ponytail: on a swap the old account (person.lichessId) stays in the Club's Lichess team, because removing it
-    // needs the Organiser's Lichess permission; once #11 keeps that, remove the old account from the team here.
+    // needs the Organiser's Lichess permission (kept since #11, with team:lead); remove it here along with #15's
+    // removal from the team.
     return swap ? `/profiles/${person.id}` : "/welcome/profile";
   } catch (error) {
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);
@@ -161,7 +184,8 @@ export async function finishConnection(
   }
 }
 
-async function revoke(token: string, ms: number) {
+// Revokes a token within `ms`, saying so in the log, without the token, if it cannot.
+export async function revoke(token: string, ms: number) {
   const limit = timeLimit(ms, "Revoking a Lichess token took too long");
   const revoked = await revokeToken(token, limit.signal).catch(() => false);
   limit.clear();

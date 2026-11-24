@@ -1,7 +1,13 @@
 // What a person adds to their Profile beyond the name and photo from LinkedIn. Every field is optional.
 
-// Null means not given. The Company (#6) joins these.
+import type { Company } from "./companies";
+
+// Null means not given.
 export type ProfileFields = { position: string | null; linkedInUrl: string | null; openTo: string | null };
+
+// The Company is given by its website as typed; companyForWebsite (lib/companies.ts) checks it and finds or creates
+// the Company. This file is also part of the browser's code, so it cannot.
+export type SubmittedProfile = ProfileFields & { companyWebsite: string | null };
 
 // The blitz rating is null when the Lichess account had none when it was connected.
 export type Profile = ProfileFields & {
@@ -10,6 +16,7 @@ export type Profile = ProfileFields & {
   image: string | null;
   lichessUsername: string;
   lichessBlitzRating: number | null;
+  company: Company | null;
 };
 
 export const POSITION_MAX = 80;
@@ -42,21 +49,28 @@ const decode = (text: string) => {
 
 // Invisible characters and bidirectional controls, which could make a field look empty or show text reversed.
 // The zero-width joiner (U+200D) is kept, because emoji such as 👩‍💻 are built with it, except at either end.
-const invisible = /[​‌‎‏‪-‮⁦-⁩﻿]/gu;
+const invisible = /[؜​‌‎‏‪-‮⁦-⁩﻿]/gu;
+const end = /[\s‍]/u;
 
-// Without invisible characters, trimmed, and with each run of whitespace or control characters made one space.
-// Empty means cleared.
-const tidy = (value: unknown) =>
-  typeof value === "string"
-    ? value
-        .replace(invisible, "")
-        .replace(/[\s\p{Cc}]+/gu, " ")
-        .replace(/^[\s‍]+|[\s‍]+$/gu, "")
-    : "";
+// Without invisible characters, trimmed, and with each run of whitespace or control characters (NUL included) made
+// one space. Empty means cleared. Also tidies Company names taken from websites (lib/company.ts).
+export function tidy(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(invisible, "").replace(/[\s\p{Cc}]+/gu, " ");
+  // Trimmed one character at a time: a regular expression anchored at the end would be retried from every position,
+  // which a long run of spaces and joiners makes take minutes.
+  let from = 0;
+  let to = text.length;
+  while (from < to && end.test(text[from])) from++;
+  while (to > from && end.test(text[to - 1])) to--;
+  return text.slice(from, to);
+}
 const characters = (text: string) => [...text].length;
 
-// The fields of a submitted Profile form, tidied, or a message saying why they cannot be saved.
-export function readProfileForm(form: { get(name: string): unknown }): ProfileFields | string {
+// The fields of a submitted Profile form, tidied, or a message saying why they cannot be saved. The Company website is
+// only tidied here.
+export function readProfileForm(form: { get(name: string): unknown }): SubmittedProfile | string {
+  const companyWebsite = tidy(form.get("companyWebsite"));
   const position = tidy(form.get("position"));
   const link = tidy(form.get("linkedInUrl"));
   const openTo = tidy(form.get("openTo"));
@@ -65,5 +79,5 @@ export function readProfileForm(form: { get(name: string): unknown }): ProfileFi
   const linkedInUrl = link ? linkedInProfileUrl(link) : null;
   if (link && !linkedInUrl)
     return "The LinkedIn link must be the address of your LinkedIn profile, such as https://www.linkedin.com/in/your-name.";
-  return { position: position || null, linkedInUrl, openTo: openTo || null };
+  return { companyWebsite: companyWebsite || null, position: position || null, linkedInUrl, openTo: openTo || null };
 }

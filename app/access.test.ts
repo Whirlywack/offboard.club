@@ -4,12 +4,13 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getProfile } from "@/lib/auth";
+import { addPerson, db, people, resetDb } from "@/lib/fake-db";
 import { countSignUps } from "@/lib/signups";
 import { saveProfile } from "./actions";
 import ProfilePage from "./profiles/[id]/page";
 import ConnectStep from "./welcome/lichess/page";
 
-const { getSession, query } = vi.hoisted(() => ({ getSession: vi.fn(), query: vi.fn() }));
+const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
@@ -21,7 +22,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("not found");
   },
 }));
-vi.mock("@/lib/db", () => ({ db: { query } }));
+vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const at = new Date("2026-11-24T18:00:00Z");
 // How far through signing up: "member" has done it all, "welcomed" has not connected Lichess, "unwelcomed" has not
@@ -32,38 +33,13 @@ const stage = (id: string, how: Stage) => ({
   houseRulesAcceptedAt: how === "unwelcomed" ? null : at,
   lichessId: how === "member" ? `lichess-${id}` : null,
 });
-const person = (id: string, how: Stage) => ({
-  id,
-  name: `Person ${id}`,
-  email: `${id}@example.com`,
-  image: null,
-  position: "CTO",
-  linkedInUrl: null,
-  openTo: null,
-  lichessUsername: how === "member" ? `Lichess-${id}` : null,
-  lichessBlitzRating: how === "member" ? 1500 : null,
-  ...stage(id, how),
-});
-const table: Record<string, unknown>[] = [
-  person("member", "member"),
-  person("welcomed", "welcomed"),
-  person("unwelcomed", "unwelcomed"),
-  person("another", "member"),
-];
-
-// Answers a select on "user" as Postgres would: the rows (with id $1, if the query names one) for which every
-// "is not null" condition holds, with only the columns selected, or their count. Any other statement changes nothing
-// here; the tests read its arguments instead.
-async function fakeQuery(sql: string, [id]: unknown[] = []) {
-  if (!sql.startsWith("select")) return { rows: [] };
-  const conditions = [...sql.matchAll(/"(\w+)" is not null/g)].map((m) => m[1]);
-  const matching = table.filter(
-    (row) => (!/where id = \$1/.test(sql) || row.id === id) && conditions.every((c) => row[c] != null),
-  );
-  if (/^select count\(\*\)::int as n from/.test(sql)) return { rows: [{ n: matching.length }] };
-  const columns = sql.match(/select ([\s\S]*?) from/)![1].split(",").map((c) => c.trim().replaceAll('"', ""));
-  return { rows: matching.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]]))) };
-}
+const person = (id: string, how: Stage) =>
+  addPerson(id, {
+    position: "CTO",
+    lichessUsername: how === "member" ? `Lichess-${id}` : null,
+    lichessBlitzRating: how === "member" ? 1500 : null,
+    ...stage(id, how),
+  });
 
 const signedInAs = (id: string, how: Stage = "member") => getSession.mockResolvedValue({ user: { id, ...stage(id, how) } });
 
@@ -74,36 +50,42 @@ const form = (fields: Record<string, string>) => {
 };
 
 beforeEach(() => {
+  resetDb();
+  person("member", "member");
+  person("welcomed", "welcomed");
+  person("unwelcomed", "unwelcomed");
+  person("another", "member");
   getSession.mockReset().mockResolvedValue(null);
-  query.mockReset().mockImplementation(fakeQuery);
 });
 
 describe("saveProfile", () => {
   it("sends a signed-out caller home and writes nothing", async () => {
     await expect(saveProfile(null, form({ position: "CTO" }))).rejects.toThrow(/^redirect \/$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("sends a caller who has not finished the welcome step there and writes nothing", async () => {
     signedInAs("unwelcomed", "unwelcomed");
     await expect(saveProfile(null, form({ position: "CTO" }))).rejects.toThrow(/^redirect \/welcome$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("sends a caller who has not connected Lichess to the connect step and writes nothing", async () => {
     signedInAs("welcomed", "welcomed");
     await expect(saveProfile(null, form({ position: "CTO" }))).rejects.toThrow(/^redirect \/welcome\/lichess$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("writes only the caller's own row, whatever id the form carries", async () => {
     signedInAs("member");
     const attempt = form({ position: "Hijacked", id: "another", userId: "another", user: "another" });
     await expect(saveProfile(null, attempt)).rejects.toThrow(/^redirect \/profiles\/member$/);
-    expect(query).toHaveBeenCalledTimes(1);
-    const [sql, params] = query.mock.calls[0];
-    expect(sql).toMatch(/^update "user" set .* where id = \$1$/);
-    expect(params).toEqual(["member", "Hijacked", null, null]);
+    expect(db.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toMatch(/^update "user" set [\s\S]* where id = \$1$/);
+    expect(params).toEqual(["member", null, "Hijacked", null, null]);
+    expect(people.get("member")?.position).toBe("Hijacked");
+    expect(people.get("another")?.position).toBe("CTO");
   });
 });
 
@@ -118,6 +100,7 @@ describe("getProfile", () => {
       openTo: null,
       lichessUsername: "Lichess-member",
       lichessBlitzRating: 1500,
+      company: null,
     });
   });
 
@@ -144,19 +127,19 @@ describe("the Profile page", () => {
 
   it("sends a signed-out visitor home before looking anyone up", async () => {
     await expect(open("member")).rejects.toThrow(/^redirect \/$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("sends a viewer who has not finished the welcome step there before looking anyone up", async () => {
     signedInAs("unwelcomed", "unwelcomed");
     await expect(open("member")).rejects.toThrow(/^redirect \/welcome$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("sends a viewer who has not connected Lichess to the connect step before looking anyone up", async () => {
     signedInAs("welcomed", "welcomed");
     await expect(open("member")).rejects.toThrow(/^redirect \/welcome\/lichess$/);
-    expect(query).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   it("shows a Member to a Member, and nobody else", async () => {

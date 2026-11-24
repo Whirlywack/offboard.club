@@ -33,7 +33,18 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {profile.image && <img src={profile.image} alt="" width={96} height={96} />}
       <dl>
-        {/* The Company (#6) goes here, first. */}
+        {profile.company && (
+          <>
+            <dt>Company</dt>
+            {/* ponytail: logos are shown once they are served from our own storage, not hot-linked from the Company. */}
+            {/* The domain goes beside the name, which any website can claim. */}
+            <dd>
+              {profile.company.name === profile.company.domain
+                ? profile.company.domain
+                : `${profile.company.name} (${profile.company.domain})`}
+            </dd>
+          </>
+        )}
         {profile.position && (
           <>
             <dt>Position</dt>

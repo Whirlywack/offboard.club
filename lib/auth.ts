@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { shownLogoUrl } from "./companies";
 import { mustWelcome } from "./consent";
 import { db } from "./db";
 import { MEMBER_SQL, mustConnectLichess } from "./members";
@@ -74,10 +75,16 @@ export async function requireSignedUp() {
 // Profiles are for Members, to open and to have: requireSignedUp checks the viewer, and this the person shown.
 // Null if there is no such Profile; the email is never read.
 export async function getProfile(id: string): Promise<Profile | null> {
-  const { rows } = await db.query<Profile>(
-    `select id, name, image, "position", "linkedInUrl", "openTo", "lichessUsername", "lichessBlitzRating" from "user"
-     where id = $1 and ${MEMBER_SQL}`,
+  type Row = Omit<Profile, "company"> & { companyDomain: string | null; companyName: string; companyLogoUrl: string | null };
+  // MEMBER_SQL names columns of "user" alone; "company" has none of those names.
+  const { rows } = await db.query<Row>(
+    `select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo", u."lichessUsername", u."lichessBlitzRating",
+       c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl"
+     from "user" u left join "company" c on c."domain" = u."companyDomain"
+     where u.id = $1 and ${MEMBER_SQL}`,
     [id],
   );
-  return rows[0] ?? null;
+  if (!rows[0]) return null;
+  const { companyDomain: domain, companyName: name, companyLogoUrl, ...profile } = rows[0];
+  return { ...profile, company: domain ? { domain, name, logoUrl: shownLogoUrl(domain, companyLogoUrl) } : null };
 }

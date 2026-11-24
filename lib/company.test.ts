@@ -271,6 +271,21 @@ describe("fetchCompanyMeta", () => {
     expect((await fetchCompanyMeta("vinted.com")).name).toBe(name);
   });
 
+  it.each([
+    ["NUL, which Postgres refuses in text", "Vin\u0000ted", "Vin ted"],
+    ["a NUL written as an entity", "Vin&#0;ted", "Vin&#0;ted"],
+    ["other control characters", "Vin\u0001ted\u007f Co\u0085", "Vin ted Co"],
+    ["a control character written as an entity", "Vin&#1;ted", "Vin ted"],
+    ["a right-to-left override", "‮detniV", "detniV"],
+    ["a right-to-left override written as an entity", "&#x202E;detniV &#8206;Co", "detniV Co"],
+    ["invisible characters", "﻿Vin​ted⁦", "Vinted"],
+  ])("strips %s from the name", async (_, raw, name) => {
+    fetchMock.mockResolvedValue(page(`<meta property="og:site_name" content="${raw}">`));
+    expect((await fetchCompanyMeta("vinted.com")).name).toBe(name);
+    fetchMock.mockResolvedValue(page(`<title>${raw} | Home</title>`));
+    expect((await fetchCompanyMeta("vinted.com")).name).toBe(name);
+  });
+
   it("collapses whitespace and caps the name at 80 characters", async () => {
     fetchMock.mockResolvedValue(page(`<meta property="og:site_name" content="  Acme\n\t  Holdings ${"é".repeat(200)}">`));
     const { name } = await fetchCompanyMeta("vinted.com");
@@ -286,6 +301,8 @@ describe("fetchCompanyMeta", () => {
     ["an unterminated attribute", `<meta property="og:site_name" content="` + `a`.repeat(200_000)],
     ["repeated attributes in one tag", `<meta` + ` content= property=`.repeat(11_000) + `>`],
     ["an unterminated entity", `<title>&#x` + `1`.repeat(200_000)],
+    ["spaces and joiners in turn", `<title>x` + ` ‍`.repeat(100_000) + `y`],
+    ["a name ending in spaces and joiners", `<meta property="og:site_name" content="x` + ` ‍`.repeat(100_000) + `">`],
   ])("reads 200 KB of hostile HTML (%s) in well under a second", async (_, html) => {
     expect(html.length).toBeGreaterThanOrEqual(200_000);
     fetchMock.mockResolvedValue(page(html));

@@ -139,13 +139,25 @@ describe("readProfileForm", () => {
   it("trims each field and normalises the link", () => {
     expect(
       readProfileForm(
-        form({ position: "  Backend engineer ", linkedInUrl: " lt.linkedin.com/in/jonas/ ", openTo: " coffee chats " }),
+        form({
+          companyWebsite: " https://www.Vinted.com/careers ",
+          position: "  Backend engineer ",
+          linkedInUrl: " lt.linkedin.com/in/jonas/ ",
+          openTo: " coffee chats ",
+        }),
       ),
-    ).toEqual({ position: "Backend engineer", linkedInUrl: "https://www.linkedin.com/in/jonas", openTo: "coffee chats" });
+    ).toEqual({
+      // The website is only tidied here; lib/companies.ts turns it into a Company.
+      companyWebsite: "https://www.Vinted.com/careers",
+      position: "Backend engineer",
+      linkedInUrl: "https://www.linkedin.com/in/jonas",
+      openTo: "coffee chats",
+    });
   });
 
   it("treats empty and whitespace-only fields as cleared", () => {
-    expect(readProfileForm(form({ position: "", linkedInUrl: "  ", openTo: "\n\t" }))).toEqual({
+    expect(readProfileForm(form({ companyWebsite: " ", position: "", linkedInUrl: "  ", openTo: "\n\t" }))).toEqual({
+      companyWebsite: null,
       position: null,
       linkedInUrl: null,
       openTo: null,
@@ -153,7 +165,7 @@ describe("readProfileForm", () => {
   });
 
   it("treats missing fields as cleared", () => {
-    expect(readProfileForm(form({}))).toEqual({ position: null, linkedInUrl: null, openTo: null });
+    expect(readProfileForm(form({}))).toEqual({ companyWebsite: null, position: null, linkedInUrl: null, openTo: null });
   });
 
   it("makes each run of whitespace or control characters inside a field one space", () => {
@@ -206,7 +218,8 @@ describe("readProfileForm", () => {
   );
 
   it("treats a field of nothing but invisible characters as cleared", () => {
-    expect(readProfileForm(form({ position: "​​​", openTo: "‍﻿ ‍" }))).toEqual({
+    expect(readProfileForm(form({ companyWebsite: "​", position: "​​​", openTo: "‍﻿ ‍" }))).toEqual({
+      companyWebsite: null,
       position: null,
       linkedInUrl: null,
       openTo: null,
@@ -217,6 +230,18 @@ describe("readProfileForm", () => {
     expect(readProfileForm(form({ openTo: "jobs ‮serif on‬ please" }))).toMatchObject({
       openTo: "jobs serif on please",
     });
+  });
+
+  it("removes the Arabic letter mark, a bidirectional control", () => {
+    expect(readProfileForm(form({ position: "؜CTO؜" }))).toMatchObject({ position: "CTO" });
+  });
+
+  it("tidies a megabyte of spaces and joiners in turn in well under a second", () => {
+    const position = "x" + " ‍".repeat(500_000) + "y";
+    const start = performance.now();
+    expect(readProfileForm(form({ position }))).toMatch(/80 characters/);
+    expect(readProfileForm(form({ position: "CTO" + " ‍".repeat(500_000) }))).toMatchObject({ position: "CTO" });
+    expect(performance.now() - start).toBeLessThan(500);
   });
 
   it("keeps the zero-width joiner inside emoji", () => {

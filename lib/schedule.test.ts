@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { firstSeasonStart, matchdayStart, nextSeasonStart, seasonMatchdays, vilniusDate } from "./schedule";
+import { firstSeasonStart, matchdayStart, nextSeasonStart, seasonMatchdays, signUpsNeeded, vilniusDate } from "./schedule";
+
+describe("signUpsNeeded", () => {
+  it("needs all sixteen when nobody has signed up", () => {
+    expect(signUpsNeeded(0)).toBe(16);
+  });
+
+  it("needs one more at fifteen", () => {
+    expect(signUpsNeeded(15)).toBe(1);
+  });
+
+  it("needs none at exactly sixteen", () => {
+    expect(signUpsNeeded(16)).toBeNull();
+  });
+
+  it("needs none past sixteen", () => {
+    expect(signUpsNeeded(17)).toBeNull();
+  });
+});
 
 // Expected instants were checked against Python's zoneinfo for Europe/Vilnius.
 describe("matchdayStart", () => {

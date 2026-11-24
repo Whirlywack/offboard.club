@@ -1,9 +1,25 @@
+import Link from "next/link";
+import { connection } from "next/server";
+import { Suspense } from "react";
+import { signOut } from "./actions";
+import { SignIn } from "./sign-in";
+import { getSession } from "@/lib/auth";
+import { mustWelcome } from "@/lib/consent";
+import { signUpsNeeded } from "@/lib/schedule";
+import { countSignUps } from "@/lib/signups";
+
 export default function Home() {
   return (
     <>
       <header>
         <h1>Offboard</h1>
         <p>A free chess Club for people working in tech in and around Vilnius.</p>
+        <Suspense>
+          <SignUpsNeeded />
+        </Suspense>
+        <Suspense>
+          <You />
+        </Suspense>
       </header>
 
       <main>
@@ -43,5 +59,42 @@ export default function Home() {
         </section>
       </main>
     </>
+  );
+}
+
+// Shown until Season 1 has its sixteen sign-ups; left out if the database cannot be reached.
+async function SignUpsNeeded() {
+  await connection();
+  const signUps = await countSignUps().catch(() => null);
+  const needed = signUps === null ? null : signUpsNeeded(signUps);
+  if (needed === null) return null;
+  return (
+    <p>
+      Season 1 starts once sixteen people have signed up: {needed} more {needed === 1 ? "sign-up" : "sign-ups"} to
+      go.
+    </p>
+  );
+}
+
+async function You() {
+  const session = await getSession().catch(() => null);
+  if (!session) return <SignIn />;
+  const { name, image } = session.user;
+  return (
+    <section aria-label="You">
+      <p>
+        {/* LinkedIn serves the photo at a small fixed size already. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {image && <img src={image} alt="" width={48} height={48} />} Signed in as {name}
+      </p>
+      {mustWelcome(session.user) && (
+        <p>
+          <Link href="/welcome">Finish signing up</Link>
+        </p>
+      )}
+      <form action={signOut}>
+        <button>Sign out</button>
+      </form>
+    </section>
   );
 }

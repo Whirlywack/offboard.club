@@ -32,6 +32,9 @@ export function matchdayStart(date: string): Date {
   return new Date(wall - offsetAt(wall - offsetAt(wall)));
 }
 
+// How many more sign-ups Season 1 is waiting for, or null once there are enough.
+export const signUpsNeeded = (signUps: number) => (signUps < MEMBERS_TO_START ? MEMBERS_TO_START - signUps : null);
+
 // Season 1 starts the first Sunday whose Matchday is at least seven days after the sixteenth sign-up.
 export function firstSeasonStart(signUps: Date[]): string | null {
   const sixteenth = [...signUps].sort((a, b) => a.getTime() - b.getTime())[MEMBERS_TO_START - 1];

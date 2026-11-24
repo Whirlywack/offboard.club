@@ -69,6 +69,14 @@
   overflow-wrap: anywhere;
 }
 
+/* What they would welcome is what starts a conversation, so it reads a size up */
+.openTo dd {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+}
+
 .number {
   font-variant-numeric: tabular-nums;
 }

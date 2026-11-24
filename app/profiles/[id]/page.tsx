@@ -48,7 +48,7 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
           </div>
         )}
         {profile.openTo && (
-          <div>
+          <div className={styles.openTo}>
             <dt>Open to</dt>
             <dd>{profile.openTo}</dd>
           </div>

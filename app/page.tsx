@@ -128,6 +128,9 @@ async function You() {
           <span className={styles.whoLabel}>Signed in as</span>
           <span className={styles.whoName}>{name}</span>
         </p>
+        <form action={signOut} className={styles.signOut}>
+          <button>Sign out</button>
+        </form>
       </div>
       <div className={ui.actions}>
         {unfinished ? (
@@ -144,9 +147,6 @@ async function You() {
             </Link>
           </>
         )}
-        <form action={signOut} className={styles.signOut}>
-          <button className={ui.quiet}>Sign out</button>
-        </form>
       </div>
     </section>
   );

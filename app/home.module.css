@@ -56,7 +56,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-5);
+  padding: var(--space-panel);
   border-radius: var(--radius-lg);
   background: var(--raised);
   box-shadow: var(--shadow-raised);
@@ -143,8 +143,20 @@
   font-weight: 600;
 }
 
+/* Signing out is rare: a small text button at the end of the row, still a full-size target */
 .signOut {
-  display: contents;
+  margin-left: auto;
+}
+
+.signOut button {
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.22em;
 }
 
 /* The sections below the opening */

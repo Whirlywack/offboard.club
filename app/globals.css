@@ -58,6 +58,7 @@
   --space-8: 4rem;
   --space-9: 6rem;
   --gutter: clamp(1.25rem, 0.75rem + 2.5vw, 2.5rem);
+  --space-panel: clamp(1rem, 0.5rem + 2.5vw, 1.5rem); /* inside a panel: tighter on a phone, so forms keep their width */
   --measure: 38rem; /* a comfortable line of text */
   --page: 68rem; /* the widest anything gets */
 
@@ -222,7 +223,7 @@ button {
   justify-content: center;
   gap: var(--space-2);
   min-height: var(--tap);
-  padding: 0 var(--space-5);
+  padding: var(--space-2) var(--space-5);
   border: 0;
   border-radius: var(--radius-md);
   background: var(--button);
@@ -231,6 +232,8 @@ button {
   font-size: var(--text-base);
   font-weight: 600;
   line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;

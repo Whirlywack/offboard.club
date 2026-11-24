@@ -44,7 +44,7 @@
 }
 
 .empty {
-  padding: var(--space-5);
+  padding: var(--space-panel);
   border-radius: var(--radius-lg);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--muted);
@@ -99,30 +99,39 @@
 }
 
 .table tbody td:first-child {
-  width: 2.5rem;
+  width: 2rem;
   color: var(--muted);
 }
 
+/* Words wrap whole: a long name breaks at its spaces and hyphens, a domain stays in one piece */
 .table tbody th {
+  position: relative;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
-/* The name's link fills its cell, so the target is the row's height */
-.table tbody th a {
-  display: inline-block;
-  padding-block: var(--space-1);
+/* The whole name cell is the link's target, however short the name */
+.table tbody th a::before {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
 .table tbody td:nth-child(3) {
   color: var(--muted);
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .table tbody td:last-child {
-  width: 3.5rem;
+  width: 3rem;
   font-weight: 600;
+}
+
+@media (min-width: 40rem) {
+  .table tbody td:first-child {
+    width: 3rem;
+  }
 }
 
 /* Rows settle in one after another the first time a Recap opens: a weekly page, so a little ceremony is fine */

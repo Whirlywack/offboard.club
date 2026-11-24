@@ -72,6 +72,14 @@ export async function requireSignedUp() {
   return person;
 }
 
+// For pages anyone may open that show Members a little more: whether the viewer is a Member, by the same checks as
+// requireSignedUp but without sending anyone away. False for signed-out visitors, anyone part-way through signing up,
+// and whenever the session cannot be read.
+export async function viewerIsMember(): Promise<boolean> {
+  const session = await getSession().catch(() => null);
+  return !!session && !mustWelcome(session.user) && !mustConnectLichess(session.user);
+}
+
 // Profiles are for Members, to open and to have: requireSignedUp checks the viewer, and this the person shown.
 // Null if there is no such Profile; the email is never read.
 export async function getProfile(id: string): Promise<Profile | null> {

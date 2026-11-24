@@ -79,7 +79,22 @@ describe("a Recap", () => {
       ["3", "Cora Jonaitė", "", "0.5"],
     ]);
     expect(html).not.toContain("Marked Account");
-    expect(html).toContain('href="https://lichess.org/swiss/PF2C2AUC"');
+  });
+
+  it("links the tournament on Lichess, whose standings show Lichess names, for signed-in Members only", async () => {
+    const link = 'href="https://lichess.org/swiss/PF2C2AUC"';
+    expect(await open(DATE)).not.toContain(link); // signed out
+    const signedInAs = (stage: { publicDisplayConsentAt: Date | null; houseRulesAcceptedAt: Date | null; lichessId: string | null }) =>
+      getSession.mockResolvedValue({ user: { id: "viewer", ...stage } });
+    const at = new Date("2026-11-24T18:00:00Z");
+    signedInAs({ publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null }); // before the welcome step
+    expect(await open(DATE)).not.toContain(link);
+    signedInAs({ publicDisplayConsentAt: at, houseRulesAcceptedAt: at, lichessId: null }); // before connecting Lichess
+    expect(await open(DATE)).not.toContain(link);
+    signedInAs({ publicDisplayConsentAt: at, houseRulesAcceptedAt: at, lichessId: "viewer" }); // a Member
+    expect(await open(DATE)).toContain(link);
+    getSession.mockRejectedValue(new Error("connect ETIMEDOUT")); // a session that cannot be read
+    expect(await open(DATE)).not.toContain(link);
   });
 
   it("links each name to the Member's Profile, which a signed-out visitor cannot open", async () => {
@@ -95,8 +110,7 @@ describe("a Recap", () => {
 
   it("shows nothing else about anyone: no email, photo, LinkedIn link, position or open-to line", async () => {
     const html = await open(DATE);
-    for (const hidden of ["@", "licdn", "linkedin", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
-    expect(getSession).not.toHaveBeenCalled();
+    for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
   });
 
   it("is not found for a date with no ingested Matchday, or no date at all", async () => {
@@ -108,9 +122,9 @@ describe("a Recap", () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  it("says no Member played a Matchday nobody from the Club took part in", async () => {
-    ingested("2026-12-06", []);
-    expect(await open("2026-12-06")).toContain("No Members played this Matchday.");
+  it("says so when everyone who played has since left the Leaderboard", async () => {
+    ingested("2026-12-06", [["cheat", 1]]);
+    expect(await open("2026-12-06")).toContain("Nobody is on this Matchday&#x27;s Leaderboard.");
   });
 
   it("says plainly that it cannot be shown when the database cannot be read", async () => {

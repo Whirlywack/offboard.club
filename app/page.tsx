@@ -64,10 +64,11 @@ export default function Home() {
 }
 
 // The next Matchday once Season 1 is scheduled; until then, how many more sign-ups it is waiting for.
-// Left out if the database cannot be reached.
+// Left out, and logged, if the database cannot be read.
 async function NextMatchday() {
   await connection();
-  const next = await upcomingMatchday(new Date()).catch(() => undefined);
+  const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
+  const next = await upcomingMatchday(new Date()).catch(unreadable);
   if (next) {
     const when = next.start.toLocaleString("en-GB", {
       timeZone: ZONE,
@@ -83,8 +84,8 @@ async function NextMatchday() {
       </p>
     );
   }
-  const signUps = next === null ? await countSignUps().catch(() => null) : null;
-  const needed = signUps === null ? null : signUpsNeeded(signUps);
+  const signUps = next === null ? await countSignUps().catch(unreadable) : undefined;
+  const needed = signUps === undefined ? null : signUpsNeeded(signUps);
   if (needed === null) return null;
   return (
     <p>

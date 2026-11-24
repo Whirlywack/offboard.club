@@ -9,7 +9,15 @@ export type ProfileFields = { position: string | null; linkedInUrl: string | nul
 // the Company. This file is also part of the browser's code, so it cannot.
 export type SubmittedProfile = ProfileFields & { companyWebsite: string | null };
 
-export type Profile = ProfileFields & { id: string; name: string; image: string | null; company: Company | null };
+// The blitz rating is null when the Lichess account had none when it was connected.
+export type Profile = ProfileFields & {
+  id: string;
+  name: string;
+  image: string | null;
+  lichessUsername: string;
+  lichessBlitzRating: number | null;
+  company: Company | null;
+};
 
 export const POSITION_MAX = 80;
 export const OPEN_TO_MAX = 140;

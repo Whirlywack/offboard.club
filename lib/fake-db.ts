@@ -14,6 +14,9 @@ export type Person = {
   openTo: string | null;
   publicDisplayConsentAt: Date | null;
   houseRulesAcceptedAt: Date | null;
+  lichessId: string | null;
+  lichessUsername: string | null;
+  lichessBlitzRating: number | null;
   companyDomain: string | null;
   companiesCreatedOn: string | null;
   companiesCreatedThatDay: number;
@@ -31,7 +34,7 @@ export const companies = new Map<string, CompanyRow>();
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
-// Someone who has finished the welcome step and filled in nothing else, unless told otherwise.
+// A Member, who has finished the welcome step and connected Lichess, and filled in nothing else, unless told otherwise.
 export function addPerson(id: string, details: Partial<Person> = {}): Person {
   const person: Person = {
     id,
@@ -42,6 +45,9 @@ export function addPerson(id: string, details: Partial<Person> = {}): Person {
     openTo: null,
     publicDisplayConsentAt: welcomedAt,
     houseRulesAcceptedAt: welcomedAt,
+    lichessId: `lichess-${id}`,
+    lichessUsername: `Lichess-${id}`,
+    lichessBlitzRating: 1500,
     companyDomain: null,
     companiesCreatedOn: null,
     companiesCreatedThatDay: 0,
@@ -65,16 +71,19 @@ export function resetDb() {
 }
 
 const answer = (rows: object[] = [], rowCount = rows.length) => ({ rows, rowCount });
+// lib/members.ts, written out again so that a change to it shows here.
+const isMember = (person?: Person): person is Person =>
+  !!person && person.publicDisplayConsentAt !== null && person.houseRulesAcceptedAt !== null && person.lichessId !== null;
 const aMinuteAgo = () => new Date(Date.now() - 60_000);
 
 type Params = [string, string, unknown, unknown, unknown];
 const statements: Record<string, (...params: Params) => ReturnType<typeof answer>> = {
   // getProfile
-  [`select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo", c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl" from "user" u left join "company" c on c."domain" = u."companyDomain" where u.id = $1 and u."publicDisplayConsentAt" is not null and u."houseRulesAcceptedAt" is not null`]:
+  [`select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo", u."lichessUsername", u."lichessBlitzRating", c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl" from "user" u left join "company" c on c."domain" = u."companyDomain" where u.id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
     (id) => {
       const person = people.get(id);
-      if (!person || person.publicDisplayConsentAt === null || person.houseRulesAcceptedAt === null) return answer();
-      const { name, image, position, linkedInUrl, openTo, companyDomain } = person;
+      if (!isMember(person)) return answer();
+      const { name, image, position, linkedInUrl, openTo, lichessUsername, lichessBlitzRating, companyDomain } = person;
       const company = companyDomain ? companies.get(companyDomain) : undefined;
       return answer([
         {
@@ -84,12 +93,18 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           position,
           linkedInUrl,
           openTo,
+          lichessUsername,
+          lichessBlitzRating,
           companyDomain: company?.domain ?? null,
           companyName: company?.name ?? null,
           companyLogoUrl: company?.logoUrl ?? null,
         },
       ]);
     },
+
+  // countSignUps
+  [`select count(*)::int as n from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    () => answer([{ n: [...people.values()].filter(isMember).length }]),
 
   // currentCompany
   [`select c."domain", c."name" from "user" u join "company" c on c."domain" = u."companyDomain" where u.id = $1`]: (id) => {

@@ -1,4 +1,7 @@
-import { Pool } from "pg";
+import { Pool, type ClientBase } from "pg";
+
+// The pool, or a single connection such as one holding a transaction.
+export type Queryable = Pick<ClientBase, "query">;
 
 // One pool per server instance; Neon's pooled connection string handles the rest.
 // Give up on an unreachable database after 5 s instead of holding the request open.

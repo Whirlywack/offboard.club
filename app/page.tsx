@@ -5,7 +5,9 @@ import { signOut } from "./actions";
 import { SignIn } from "./sign-in";
 import { getSession } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
-import { signUpsNeeded } from "@/lib/schedule";
+import { mustConnectLichess } from "@/lib/members";
+import { signUpsNeeded, ZONE } from "@/lib/schedule";
+import { upcomingMatchday } from "@/lib/seasons";
 import { countSignUps } from "@/lib/signups";
 
 export default function Home() {
@@ -15,7 +17,7 @@ export default function Home() {
         <h1>Offboard</h1>
         <p>A free chess Club for people working in tech in and around Vilnius.</p>
         <Suspense>
-          <SignUpsNeeded />
+          <NextMatchday />
         </Suspense>
         <Suspense>
           <You />
@@ -62,11 +64,29 @@ export default function Home() {
   );
 }
 
-// Shown until Season 1 has its sixteen sign-ups; left out if the database cannot be reached.
-async function SignUpsNeeded() {
+// The next Matchday once Season 1 is scheduled; until then, how many more sign-ups it is waiting for.
+// Left out, and logged, if the database cannot be read.
+async function NextMatchday() {
   await connection();
-  const signUps = await countSignUps().catch(() => null);
-  const needed = signUps === null ? null : signUpsNeeded(signUps);
+  const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
+  const next = await upcomingMatchday(new Date()).catch(unreadable);
+  if (next) {
+    const when = next.start.toLocaleString("en-GB", {
+      timeZone: ZONE,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return (
+      <p>
+        Next Matchday: <time dateTime={next.start.toISOString()}>{when}</time> Vilnius time.
+      </p>
+    );
+  }
+  const signUps = next === null ? await countSignUps().catch(unreadable) : undefined;
+  const needed = signUps === undefined ? null : signUpsNeeded(signUps);
   if (needed === null) return null;
   return (
     <p>
@@ -87,9 +107,9 @@ async function You() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {image && <img src={image} alt="" width={48} height={48} />} Signed in as {name}
       </p>
-      {mustWelcome(session.user) ? (
+      {mustWelcome(session.user) || mustConnectLichess(session.user) ? (
         <p>
-          <Link href="/welcome">Finish signing up</Link>
+          <Link href={mustWelcome(session.user) ? "/welcome" : "/welcome/lichess"}>Finish signing up</Link>
         </p>
       ) : (
         <ul>

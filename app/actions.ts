@@ -1,9 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth, getSession, linkedInConfigured, requireSignedUp } from "@/lib/auth";
+import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed } from "@/lib/auth";
 import { companyForWebsite } from "@/lib/companies";
+import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect-lichess";
 import { consentProblem } from "@/lib/consent";
 import { db } from "@/lib/db";
 import { readProfileForm } from "@/lib/profile";
@@ -42,7 +43,17 @@ export async function consent(_previous: string, form: FormData): Promise<string
      where id = $1`,
     [session.user.id],
   );
-  redirect("/welcome/profile");
+  redirect("/welcome/lichess");
+}
+
+// The connect step, and swapping to a different Lichess account from the Profile edit page: off to Lichess to approve.
+// Returns a message when connecting cannot start. Lichess sends the person back to app/api/lichess/callback.
+export async function connectLichess(): Promise<string> {
+  const { id } = await requireWelcomed();
+  if (!lichessConfigured()) return "Connecting Lichess is not set up yet. Please try again later.";
+  const { url, cookie } = startConnection(id);
+  (await cookies()).set(pendingCookie(cookie));
+  redirect(url);
 }
 
 // After a submission that could not be saved: why, and what was typed, so the form can show it again.

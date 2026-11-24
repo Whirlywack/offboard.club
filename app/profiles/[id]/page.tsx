@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getProfile, requireSignedUp } from "@/lib/auth";
+import { lichessProfileUrl } from "@/lib/lichess";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -64,6 +65,18 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
                 LinkedIn profile
               </a>
             </dd>
+          </>
+        )}
+        <dt>Lichess</dt>
+        <dd>
+          <a href={lichessProfileUrl(profile.lichessUsername)} target="_blank" rel="noopener noreferrer">
+            {profile.lichessUsername}
+          </a>
+        </dd>
+        {profile.lichessBlitzRating !== null && (
+          <>
+            <dt>Blitz rating</dt>
+            <dd>{profile.lichessBlitzRating}</dd>
           </>
         )}
       </dl>

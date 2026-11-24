@@ -29,10 +29,18 @@ vi.mock("@/lib/company", async (original) => ({
 
 const fetchMeta = vi.mocked(fetchCompanyMeta);
 const at = new Date("2026-11-24T18:00:00Z");
-const session = (id: string, welcomed = true) => ({
-  user: { id, publicDisplayConsentAt: welcomed ? at : null, houseRulesAcceptedAt: welcomed ? at : null },
+// "member" has finished the welcome step and connected Lichess, "welcomed" has not connected Lichess, "unwelcomed" has
+// not finished the welcome step.
+type Stage = "member" | "welcomed" | "unwelcomed";
+const session = (id: string, how: Stage = "member") => ({
+  user: {
+    id,
+    publicDisplayConsentAt: how === "unwelcomed" ? null : at,
+    houseRulesAcceptedAt: how === "unwelcomed" ? null : at,
+    lichessId: how === "member" ? `lichess-${id}` : null,
+  },
 });
-const signedInAs = (id: string, welcomed = true) => getSession.mockResolvedValue(session(id, welcomed));
+const signedInAs = (id: string, how: Stage = "member") => getSession.mockResolvedValue(session(id, how));
 
 const form = (fields: Record<string, string>) => {
   const data = new FormData();
@@ -282,9 +290,17 @@ describe("who can give a Company website", () => {
   });
 
   it("sends a caller who has not finished signing up to the welcome step without writing or fetching anything", async () => {
-    addPerson("una", { publicDisplayConsentAt: null, houseRulesAcceptedAt: null });
-    signedInAs("una", false);
+    addPerson("una", { publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null });
+    signedInAs("una", "unwelcomed");
     await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(/^redirect \/welcome$/);
+    expect(db.query).not.toHaveBeenCalled();
+    expect(fetchMeta).not.toHaveBeenCalled();
+  });
+
+  it("sends a caller who has not connected Lichess to the connect step without writing or fetching anything", async () => {
+    addPerson("lin", { lichessId: null });
+    signedInAs("lin", "welcomed");
+    await expect(save({ companyWebsite: "vinted.com" })).rejects.toThrow(/^redirect \/welcome\/lichess$/);
     expect(db.query).not.toHaveBeenCalled();
     expect(fetchMeta).not.toHaveBeenCalled();
   });

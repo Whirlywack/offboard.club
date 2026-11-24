@@ -1,3 +1,15 @@
+## Next.js
+
+This is Next.js 16, which has breaking changes from older versions: APIs, conventions and file structure may differ from what you know. Read the relevant guide in `node_modules/next/dist/docs/` before writing any Next.js code.
+
+## Commands
+
+- `pnpm dev`: run the site locally
+- `pnpm test`: run the tests once (vitest)
+- `pnpm typecheck`: generate Next.js route types, then run `tsc --noEmit`
+- `pnpm lint`: run ESLint
+- `pnpm build`: production build
+
 ## Agent skills
 
 ### Issue tracker

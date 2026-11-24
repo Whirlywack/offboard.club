@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
-    "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs"
+    "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
+    "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.27",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.1"
   },

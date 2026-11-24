@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { mustWelcome } from "./consent";
 import { db } from "./db";
+import type { Profile } from "./profile";
 
 // Until the Organiser supplies LinkedIn credentials, sign-in says so instead of failing.
 export const linkedInConfigured = Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
@@ -54,4 +55,16 @@ export async function requireSignedUp() {
   if (!session) redirect("/");
   if (mustWelcome(session.user)) redirect("/welcome");
   return session.user;
+}
+
+// Profiles are for Members, to open and to have. Until Lichess can be connected (#4), everyone who has finished
+// the welcome step stands in for a Member: requireSignedUp checks the viewer, and this the person shown.
+// #4 narrows both here. Null if there is no such Profile; the email is never read.
+export async function getProfile(id: string): Promise<Profile | null> {
+  const { rows } = await db.query<Profile>(
+    `select id, name, image, "position", "linkedInUrl", "openTo" from "user"
+     where id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null`,
+    [id],
+  );
+  return rows[0] ?? null;
 }

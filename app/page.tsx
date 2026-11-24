@@ -106,10 +106,19 @@ async function You() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {image && <img src={image} alt="" width={48} height={48} />} Signed in as {name}
       </p>
-      {mustWelcome(session.user) && (
+      {mustWelcome(session.user) ? (
         <p>
           <Link href="/welcome">Finish signing up</Link>
         </p>
+      ) : (
+        <ul>
+          <li>
+            <Link href={`/profiles/${session.user.id}`}>Your Profile</Link>
+          </li>
+          <li>
+            <Link href="/profile">Edit your Profile</Link>
+          </li>
+        </ul>
       )}
       <form action={signOut}>
         <button>Sign out</button>

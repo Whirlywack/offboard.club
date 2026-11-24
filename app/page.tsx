@@ -5,6 +5,8 @@ import { signOut } from "./actions";
 import { SignIn } from "./sign-in";
 import { getSession } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
+import { lichessSwissUrl } from "@/lib/lichess";
+import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { upcomingMatchday } from "@/lib/seasons";
@@ -82,9 +84,18 @@ async function NextMatchday() {
       hour: "2-digit",
       minute: "2-digit",
     });
+    const tournament = await tournamentForMembers(next.date).catch(unreadable);
     return (
       <p>
         Next Matchday: <time dateTime={next.start.toISOString()}>{when}</time> Vilnius time.
+        {tournament && (
+          <>
+            {" "}
+            <a href={lichessSwissUrl(tournament)} target="_blank" rel="noopener noreferrer">
+              Join it on Lichess
+            </a>
+          </>
+        )}
       </p>
     );
   }
@@ -97,6 +108,14 @@ async function NextMatchday() {
       go.
     </p>
   );
+}
+
+// The Lichess tournament of the Matchday of `date`, once the site has created it, for a Member to join; null for anyone
+// else. Only the Club's team can join it, and each Member is in the team, so a visitor gets the time alone.
+async function tournamentForMembers(date: string): Promise<string | null> {
+  const session = await getSession().catch(() => null);
+  if (!session || mustWelcome(session.user) || mustConnectLichess(session.user)) return null;
+  return (await matchdayOn(date))?.lichessTournamentId ?? null;
 }
 
 async function You() {

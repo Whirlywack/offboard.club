@@ -25,7 +25,8 @@ export async function currentCompany(personId: string): Promise<Pick<Company, "d
 
 // The Company for a website typed on a person's Profile form: its domain, after creating the Company if nobody has
 // given that website before. A null domain, for no website, clears the person's Company. The person is not linked
-// here: the caller saves the domain with the rest of their Profile, so a refused form changes nothing.
+// here: the caller saves the domain with the rest of their Profile, so a refused form changes nothing. At most one
+// fetch of the website happens per call.
 export async function companyForWebsite(
   personId: string,
   website: string | null,
@@ -33,28 +34,50 @@ export async function companyForWebsite(
   if (!website) return { domain: null };
   const domain = companyDomain(website);
   if (!domain) return { problem: "The Company website must be the address of a public website, such as vinted.com." };
-  if ((await db.query(`select 1 from "company" where "domain" = $1`, [domain])).rowCount) return { domain };
-  if (!(await takeNewCompanySlot(personId)))
+
+  if ((await db.query(`select 1 from "company" where "domain" = $1`, [domain])).rowCount) {
+    // A Company whose website gave nothing but the domain is tried again, at most once a minute, by whoever claims
+    // the retry first. That costs nobody a new Company for the day.
+    const retry = await db.query(
+      `update "company" set "fetchTriedAt" = now()
+       where "domain" = $1 and "fetchedAt" is null and "fetchTriedAt" < now() - interval '1 minute'`,
+      [domain],
+    );
+    if (retry.rowCount) await nameFromWebsite(domain);
+    return { domain };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (!(await takeNewCompanySlot(personId, today)))
     return {
       problem: `Nobody has given this website before, and you have already added ${NEW_COMPANIES_PER_DAY} new Companies today, the most allowed in a day. Please try again tomorrow.`,
     };
   // The row goes in before the website is fetched, so two people giving the same new website at once make one
-  // Company and one fetch: whoever loses the insert simply joins it.
+  // Company and one fetch: whoever loses the insert simply joins it and has their new Company for the day back.
   const inserted = await db.query(
     `insert into "company" ("domain", "name") values ($1, $1) on conflict ("domain") do nothing`,
     [domain],
   );
-  if (inserted.rowCount) {
-    const { name, logoUrl } = await withinWait(fetchCompanyMeta(domain), { name: domain, logoUrl: null });
-    await db.query(`update "company" set "name" = $2, "logoUrl" = $3 where "domain" = $1`, [domain, name, logoUrl]);
-  }
+  if (inserted.rowCount) await nameFromWebsite(domain);
+  else await giveBackNewCompanySlot(personId, today);
   return { domain };
+}
+
+// Names the Company from its website and marks it fetched, unless the fetch gave only the domain and no logo, which is
+// what fetchCompanyMeta returns when the website fails; then the Company keeps the domain as its name until a retry.
+// Never replaces a result already fetched.
+async function nameFromWebsite(domain: string) {
+  const { name, logoUrl } = await withinWait(fetchCompanyMeta(domain), { name: domain, logoUrl: null });
+  if (name === domain && !logoUrl) return;
+  await db.query(
+    `update "company" set "name" = $2, "logoUrl" = $3, "fetchedAt" = now() where "domain" = $1 and "fetchedAt" is null`,
+    [domain, name, logoUrl],
+  );
 }
 
 // Counts one new Company against the person's day, if they have any left. A single statement on their own row, so
 // saves sent at the same moment take turns and cannot both take the last one.
-async function takeNewCompanySlot(personId: string): Promise<boolean> {
-  const today = new Date().toISOString().slice(0, 10);
+async function takeNewCompanySlot(personId: string, today: string): Promise<boolean> {
   const { rowCount } = await db.query(
     `update "user" set
        "companiesCreatedThatDay" = case when "companiesCreatedOn" = $2 then "companiesCreatedThatDay" + 1 else 1 end,
@@ -63,6 +86,16 @@ async function takeNewCompanySlot(personId: string): Promise<boolean> {
     [personId, today, NEW_COMPANIES_PER_DAY],
   );
   return rowCount === 1;
+}
+
+// Undoes takeNewCompanySlot after someone else created the Company first. Until then the slot was held, so the count
+// can only ever be too high for a moment, never too low.
+async function giveBackNewCompanySlot(personId: string, today: string) {
+  await db.query(
+    `update "user" set "companiesCreatedThatDay" = "companiesCreatedThatDay" - 1
+     where id = $1 and "companiesCreatedOn" = $2 and "companiesCreatedThatDay" > 0`,
+    [personId, today],
+  );
 }
 
 // A slow or broken website must not hold up or fail the save, so after FETCH_WAIT_MS, or on any error, the fallback.

@@ -35,23 +35,12 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
         {profile.company && (
           <>
             <dt>Company</dt>
+            {/* ponytail: logos are shown once they are served from our own storage, not hot-linked from the Company. */}
+            {/* The domain goes beside the name, which any website can claim. */}
             <dd>
-              {/* Hot-linked: the viewer's browser loads the logo from the Company's own website, which so sees the
-                  viewer's IP address, browser and any cookies it set there, but, with no referrer, not which site or
-                  Profile asked. getProfile passes only an https address on the Company's own domain. next/image
-                  would instead make this server fetch the address. */}
-              {profile.company.logoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={profile.company.logoUrl}
-                  alt=""
-                  width={32}
-                  height={32}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                />
-              )}{" "}
-              {profile.company.name}
+              {profile.company.name === profile.company.domain
+                ? profile.company.domain
+                : `${profile.company.name} (${profile.company.domain})`}
             </dd>
           </>
         )}

@@ -9,7 +9,6 @@
   background: var(--sunken);
   color: var(--muted);
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   font-weight: 500;
   line-height: 1;
   user-select: none;

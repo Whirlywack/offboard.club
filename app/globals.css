@@ -125,7 +125,6 @@ h2,
 h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   font-weight: 500;
   line-height: var(--leading-tight);
   letter-spacing: -0.012em;

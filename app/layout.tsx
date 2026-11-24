@@ -6,11 +6,12 @@ import { LogoMark } from "./logo";
 import site from "./site.module.css";
 import { organiserEmail } from "@/lib/contact";
 
-// Self-hosted by next/font at build time: the browser never asks Google for anything. Latin Extended carries
-// Lithuanian names (ą, č, ė, š, ž...).
+// Self-hosted by next/font at build time: the browser never asks Google for anything. Headings only, so the weight
+// axis alone: the optical-size axis more than doubled the files preloaded on every page (218 KB against 94 KB) for a
+// display cut that is only a touch finer, visible side by side at the largest heading. Latin Extended is kept because
+// headings show Members' names, and Lithuanian ones need ą, č, ė, š, ž.
 const newsreader = Newsreader({
   subsets: ["latin", "latin-ext"],
-  axes: ["opsz"],
   variable: "--font-newsreader",
   display: "swap",
 });

@@ -64,7 +64,6 @@
   width: 100%;
   margin-bottom: var(--space-3);
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   font-size: var(--text-xl);
   font-weight: 500;
   line-height: var(--leading-tight);

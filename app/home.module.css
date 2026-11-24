@@ -75,7 +75,6 @@
 
 .statusValue {
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   font-size: var(--text-xl);
   line-height: var(--leading-snug);
   font-variant-numeric: tabular-nums;
@@ -217,7 +216,6 @@
   content: counter(step);
   grid-row: span 2;
   font-family: var(--font-display);
-  font-optical-sizing: auto;
   font-size: var(--text-lg);
   font-variant-numeric: tabular-nums;
   line-height: var(--leading-tight);

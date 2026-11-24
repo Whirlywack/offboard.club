@@ -395,6 +395,27 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           }),
       ),
 
+  // getRecap: the Matchday's decisive Games, for its Awards, in the order they finished.
+  [`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt" from "game" where "matchdayDate" = $1 and "winner" is not null order by "finishedAt", "lichessGameId"`]:
+    (date) =>
+      answer(
+        [...games.values()]
+          .filter((g) => g.matchdayDate === date && g.winner !== null)
+          .sort((a, b) => a.finishedAt.getTime() - b.finishedAt.getTime() || (a.lichessGameId < b.lichessGameId ? -1 : 1))
+          .map((g) => ({
+            lichessGameId: g.lichessGameId,
+            whiteId: g.whiteId,
+            blackId: g.blackId,
+            winner: g.winner,
+            status: g.status,
+            plies: g.plies,
+            whiteRating: g.whiteRating,
+            blackRating: g.blackRating,
+            winnerClockCentis: g.winnerClockCentis,
+            finishedAt: new Date(g.finishedAt),
+          })),
+      ),
+
   // recapDates
   [`select to_char("date", 'YYYY-MM-DD') as "date" from "matchday" where "ingestedAt" is not null order by "date" desc`]: () =>
     answer(

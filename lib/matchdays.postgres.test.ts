@@ -138,6 +138,8 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
         { memberId: "ingest-test-ana", rank: 1, points: 9.5, rating: 1917, name: "ingest-test-ana", company: { domain: "ingest-test.example", name: "Ingest Test" } },
         { memberId: "ingest-test-cora", rank: 2, points: 5, rating: 1584, name: "ingest-test-cora", company: null },
       ],
+      // Both Games were ben's, and his account is marked.
+      awards: [],
     });
     expect(await getRecap("2026-11-23")).toBeNull();
 

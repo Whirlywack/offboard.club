@@ -2,11 +2,11 @@
 // Every function takes the time it treats as now. Tests replace the database with a fake Store.
 
 import { db, type Queryable } from "./db";
-import { addDays, firstSeasonStart, isSunday, matchdayStart, nextSeasonStart, seasonMatchdays, sundayAWeekAfter, vilniusDate } from "./schedule";
+import { addDays, firstSeasonStart, isSunday, MAX_SEASONS, matchdayStart, nextSeasonStart, seasonMatchdays, sundayAWeekAfter, vilniusDate } from "./schedule";
 import { signUpTimes } from "./signups";
 
-// Over twenty years of Seasons. Nothing is scheduled past the last one.
-export const MAX_SEASONS = 200;
+// Kept in lib/schedule.ts, which proxy.ts can use without the database.
+export { MAX_SEASONS };
 // How far ahead a Sunday can be skipped or a Season's start set.
 export const DAYS_AHEAD = 730;
 
@@ -104,6 +104,25 @@ const isSeasonNumber = (number: number) => Number.isInteger(number) && number >=
 export async function matchdaysOfSeason(number: number, now: Date, store = postgres): Promise<string[] | null> {
   if (!isSeasonNumber(number)) return null;
   return findSeason(await load(store, now), number)?.matchdays ?? null;
+}
+
+export type Place = { season: number; number: number };
+
+// Which Season each date's Matchday belongs to, and which of its six it is. A date that is none of a Season's six, such
+// as a Sunday before Season 1 or the week off between two Seasons, belongs to no Season and is left out. Reads the
+// schedule no further than the latest date given.
+export async function seasonsOf(dates: string[], now: Date, store = postgres): Promise<Map<string, Place>> {
+  const placed = new Map<string, Place>();
+  if (dates.length === 0) return placed;
+  const wanted = new Set(dates);
+  const latest = dates.reduce((a, b) => (a > b ? a : b));
+  for (const { number: season, matchdays } of seasons(await load(store, now))) {
+    matchdays.forEach((date, i) => {
+      if (wanted.has(date)) placed.set(date, { season, number: i + 1 });
+    });
+    if (matchdays.at(-1)! >= latest) break;
+  }
+  return placed;
 }
 
 // The Matchdays that have started by `now`.

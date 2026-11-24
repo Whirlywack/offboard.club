@@ -20,6 +20,7 @@ export type Person = {
   lichessId: string | null;
   lichessUsername: string | null;
   lichessBlitzRating: number | null;
+  lichessConnectedAt: Date | null;
   lichessMarked: boolean;
   lichessClosed: boolean;
   companyDomain: string | null;
@@ -64,6 +65,7 @@ export const matchdays = new Map<string, MatchdayRow>(); // by date
 export const results = new Map<string, ResultRow>(); // by `${matchdayDate} ${userId}`
 export const games = new Map<string, GameRow>(); // by lichessGameId
 export const skippedSundays = new Map<string, { date: string }>(); // by date
+export const seasons = new Map<number, { number: number; start: string }>(); // the "season" table, by number
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -81,6 +83,7 @@ export function addPerson(id: string, details: Partial<Person> = {}): Person {
     lichessId: `lichess-${id}`,
     lichessUsername: `Lichess-${id}`,
     lichessBlitzRating: 1500,
+    lichessConnectedAt: welcomedAt,
     lichessMarked: false,
     lichessClosed: false,
     companyDomain: null,
@@ -99,7 +102,7 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games, skippedSundays };
+const tables = { people, companies, matchdays, results, games, skippedSundays, seasons };
 
 export function resetDb() {
   for (const table of Object.values(tables)) table.clear();
@@ -403,6 +406,62 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .map((m) => ({ date: m.date })),
     ),
+
+  // --- Season and all-time Leaderboards (lib/leaderboards.ts) and the schedule they are read against ---
+
+  // The Seasons whose start is fixed (lib/seasons.ts, postgresStore)
+  [`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`]: () => answer([...seasons.values()]),
+
+  // signUpTimes (lib/signups.ts)
+  [`select "lichessConnectedAt" as at from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    () => answer([...people.values()].filter(isMember).map((p) => ({ at: p.lichessConnectedAt }))),
+
+  // getSeason: the Members' results on the Season's dates, oldest first, each with the Company of that night. $1 is an
+  // array of dates.
+  [`select to_char(r."matchdayDate", 'YYYY-MM-DD') as "date", r."userId" as "memberId", r."points", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = r."companyDomain" where r."matchdayDate" = any($1::date[]) and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null order by r."matchdayDate"`]:
+    (...params) => {
+      const [dates] = given<[string[]]>(params);
+      return answer(
+        [...results.values()]
+          .filter((r) => dates.includes(r.matchdayDate) && isMember(people.get(r.userId)))
+          .sort((a, b) => (a.matchdayDate < b.matchdayDate ? -1 : a.matchdayDate > b.matchdayDate ? 1 : 0))
+          .map((r) => {
+            const person = people.get(r.userId)!;
+            const company = r.companyDomain ? companies.get(r.companyDomain) : undefined;
+            return {
+              date: r.matchdayDate,
+              memberId: r.userId,
+              points: r.points,
+              name: person.name,
+              companyDomain: company?.domain ?? null,
+              companyName: company?.name ?? null,
+              excluded: person.lichessMarked || person.lichessClosed,
+            };
+          }),
+      );
+    },
+
+  // getAllTime: every Member's results, each with the Company they are at now. Postgres gives no order without
+  // "order by", so neither does this: newest first, the reverse of how they were stored.
+  [`select to_char(r."matchdayDate", 'YYYY-MM-DD') as "date", r."userId" as "memberId", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = u."companyDomain" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    () =>
+      answer(
+        [...results.values()]
+          .filter((r) => isMember(people.get(r.userId)))
+          .reverse()
+          .map((r) => {
+            const person = people.get(r.userId)!;
+            const company = person.companyDomain ? companies.get(person.companyDomain) : undefined;
+            return {
+              date: r.matchdayDate,
+              memberId: r.userId,
+              name: person.name,
+              companyDomain: company?.domain ?? null,
+              companyName: company?.name ?? null,
+              excluded: person.lichessMarked || person.lichessClosed,
+            };
+          }),
+      ),
 };
 
 async function run(sql: string, params: unknown[] = []) {

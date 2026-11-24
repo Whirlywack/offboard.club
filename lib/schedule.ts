@@ -22,6 +22,13 @@ export const isSunday = (date: string) =>
 // century. proxy.ts checks it, so this file must stay free of the database.
 export const isRecapDate = (date: string) => isSunday(date) && date >= "2026-01-01" && date < "2100-01-01";
 
+// Over twenty years of Seasons. Nothing is scheduled past the last one.
+export const MAX_SEASONS = 200;
+
+// Whether a path segment is a Season's number as its Leaderboard's address writes it, /seasons/1 to /seasons/200: digits
+// without a leading zero. proxy.ts checks it too.
+export const isSeasonAddress = (segment: string) => /^[1-9]\d*$/.test(segment) && Number(segment) <= MAX_SEASONS;
+
 // The Vilnius calendar day of an instant.
 export const vilniusDate = (instant: Date) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(instant);

@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { signOut } from "./actions";
 import { SignIn } from "./sign-in";
-import { getSession } from "@/lib/auth";
+import { getSession, viewerIsMember } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
@@ -113,8 +113,7 @@ async function NextMatchday() {
 // The Lichess tournament of the Matchday of `date`, once the site has created it, for a Member to join; null for anyone
 // else. Only the Club's team can join it, and each Member is in the team, so a visitor gets the time alone.
 async function tournamentForMembers(date: string): Promise<string | null> {
-  const session = await getSession().catch(() => null);
-  if (!session || mustWelcome(session.user) || mustConnectLichess(session.user)) return null;
+  if (!(await viewerIsMember())) return null;
   return (await matchdayOn(date))?.lichessTournamentId ?? null;
 }
 

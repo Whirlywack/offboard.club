@@ -14,6 +14,10 @@ export const addDays = (date: string, days: number) => fromMs(toMs(date) + days 
 
 const sundayOnOrAfter = (date: string) => addDays(date, (7 - new Date(toMs(date)).getUTCDay()) % 7);
 
+// Whether a "YYYY-MM-DD" string is a real calendar day and a Sunday.
+export const isSunday = (date: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(toMs(date)) && sundayOnOrAfter(date) === date;
+
 // The Vilnius calendar day of an instant.
 export const vilniusDate = (instant: Date) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(instant);

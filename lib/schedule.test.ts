@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstSeasonStart, matchdayStart, nextSeasonStart, seasonMatchdays, signUpsNeeded, vilniusDate } from "./schedule";
+import { firstSeasonStart, isSunday, matchdayStart, nextSeasonStart, seasonMatchdays, signUpsNeeded, vilniusDate } from "./schedule";
 
 describe("signUpsNeeded", () => {
   it("needs all sixteen when nobody has signed up", () => {
@@ -126,5 +126,24 @@ describe("nextSeasonStart", () => {
   it("starts after the break even when the previous Season ran long", () => {
     const last = seasonMatchdays("2026-12-13", ["2026-12-27"]).at(-1)!; // Sunday 24 January
     expect(nextSeasonStart(last)).toBe("2027-02-07");
+  });
+});
+
+describe("isSunday", () => {
+  it("accepts a Sunday", () => {
+    expect(isSunday("2026-12-13")).toBe(true);
+  });
+
+  it("refuses other days", () => {
+    expect(isSunday("2026-12-14")).toBe(false);
+    expect(isSunday("2026-12-12")).toBe(false);
+  });
+
+  it("refuses days that do not exist and text that is not a date", () => {
+    // Would roll over to Sunday 1 March 2026.
+    expect(isSunday("2026-02-29")).toBe(false);
+    expect(isSunday("2026-13-01")).toBe(false);
+    expect(isSunday("2026-12-13T00:00")).toBe(false);
+    expect(isSunday("")).toBe(false);
   });
 });

@@ -1,25 +1,40 @@
 // Ingests one finished Lichess Swiss tournament on the Club's team as a Matchday, by hand:
-//   pnpm ingest <tournament id>
+//   pnpm ingest <tournament id>          stores it; running it again changes nothing
+//   pnpm ingest <tournament id> --redo   fetches it again and replaces its Matchday's results and Games, for when a
+//                                        Member was missed, such as one who connected Lichess only after playing
 // The id is the last part of lichess.org/swiss/<id>. DATABASE_URL and LICHESS_TEAM_ID come from .env.local or the
-// environment. Running it again for the same tournament changes nothing. Exits with 1 if the tournament is refused or
-// ingestion fails, in which case nothing has been stored.
+// environment. Exits with 1 if the tournament is refused or ingestion fails, in which case nothing has been stored.
 import { db } from "@/lib/db";
 import { ingestTournament } from "@/lib/matchdays";
 
+const USAGE = "Usage: pnpm ingest <Lichess Swiss tournament id> [--redo]";
+
 async function main(args: string[]): Promise<number> {
-  if (args.length !== 1) {
-    console.error("Usage: pnpm ingest <Lichess Swiss tournament id>");
+  // The script runs outside production, where the Lichess client follows LICHESS_URL to a fake Lichess: with the live
+  // DATABASE_URL beside it, made-up results would become a real Matchday.
+  if (process.env.LICHESS_URL) {
+    console.error("LICHESS_URL is set, which would ingest from a fake Lichess instead of lichess.org. Unset it and run again. Nothing has been stored.");
     return 1;
   }
-  const ingestion = await ingestTournament(args[0]);
+  const redo = args.includes("--redo");
+  const [id, ...rest] = args.filter((arg) => arg !== "--redo");
+  if (!id || rest.length > 0 || id.startsWith("-")) {
+    console.error(USAGE);
+    return 1;
+  }
+  const ingestion = await ingestTournament(id, { redo });
   switch (ingestion.outcome) {
-    case "ingested":
+    case "ingested": {
+      const { date, participants, members, games, redone } = ingestion;
       console.log(
-        `Ingested the Matchday of ${ingestion.date}: ${ingestion.members} Members and ${ingestion.games} Games. Its Recap is at /recaps/${ingestion.date}.`,
+        `${redone ? "Ingested again" : "Ingested"} the Matchday of ${date}: ${members} of the ${participants} participants are Members and ${participants - members} are not; ${games} Games between Members. Its Recap is at /recaps/${date}.`,
       );
       return 0;
+    }
     case "unchanged":
-      console.log(`Already ingested as the Matchday of ${ingestion.date}; nothing has changed.`);
+      console.log(
+        `Already ingested as the Matchday of ${ingestion.date}; nothing has changed. If a Member was missed, run pnpm ingest ${id} --redo.`,
+      );
       return 0;
     case "refused":
       console.error(`${ingestion.problem} Nothing has been stored.`);

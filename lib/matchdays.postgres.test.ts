@@ -33,7 +33,8 @@ vi.mock("@/lib/db", async () => {
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const TOURNAMENT = "PF2C2AUC";
-const DATE = "2026-11-24";
+// The recorded exports, standing for the Matchday of Sunday 22 November.
+const DATE = "2026-11-22";
 
 describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
@@ -50,7 +51,7 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
         id: TOURNAMENT,
         teamId: "offboard-team",
         status: "finished",
-        startsAt: "2026-11-24T13:30:00Z",
+        startsAt: "2026-11-22T18:00:00Z",
         results: fixture("results.ndjson"),
         games: fixture("games.ndjson"),
       },
@@ -82,6 +83,7 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     await client.query(`delete from "game"`);
     await client.query(`delete from "matchdayResult"`);
     await client.query(`delete from "matchday"`);
+    await client.query(`delete from "skippedSunday"`);
     await client.query(`insert into "company" ("domain", "name") values ('ingest-test.example', 'Ingest Test')`);
     // Three Members who played the recorded tournament, and someone part-way through signing up who did too.
     const addPerson = (id: string, lichessId: string, welcomed = true, companyDomain: string | null = null) =>
@@ -97,7 +99,14 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
 
     expect(await registerTournament(DATE, TOURNAMENT)).toBe(true);
     expect(await registerTournament(DATE, "OTHER123")).toBe(false);
-    expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "ingested", date: DATE, members: 3, games: 2 });
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "ingested",
+      date: DATE,
+      participants: 65,
+      members: 3,
+      games: 2,
+      redone: false,
+    });
     expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "unchanged", date: DATE });
 
     expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId", "ingestedAt" is not null as "ingested" from "matchday"`)).toEqual([
@@ -132,11 +141,23 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     });
     expect(await getRecap("2026-11-23")).toBeNull();
 
+    // gil finishes signing up after playing; a redo takes him in, and ana keeps the Company recorded the first time.
+    await client.query(`update "user" set "publicDisplayConsentAt" = now(), "houseRulesAcceptedAt" = now() where id = 'ingest-test-gil'`);
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 4, games: 3, redone: true });
+    expect(await select(`select "userId", "rank", "companyDomain" from "matchdayResult" order by "rank"`)).toEqual([
+      { userId: "ingest-test-ana", rank: 1, companyDomain: "ingest-test.example" },
+      { userId: "ingest-test-ben", rank: 2, companyDomain: null },
+      { userId: "ingest-test-cora", rank: 3, companyDomain: null },
+      { userId: "ingest-test-gil", rank: 4, companyDomain: null },
+    ]);
+    expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 3 }]);
+
     // cora deletes her account (#15): her result goes, and her Game stays in ben's history with her side empty.
     await client.query(`delete from "user" where id = 'ingest-test-cora'`);
     expect(await select(`select "userId" from "matchdayResult" order by "rank"`)).toEqual([
       { userId: "ingest-test-ana" },
       { userId: "ingest-test-ben" },
+      { userId: "ingest-test-gil" },
     ]);
     expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'wmKSbb6v'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },
@@ -157,5 +178,20 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     expect(await select(`select count(*)::int as n from "matchday"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "matchdayResult"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 0 }]);
+  }, 60_000);
+
+  it("refuses plainly when the tournament is registered for another day while it is being fetched", async () => {
+    lichess.override = (call) => {
+      if (call.path === "/api/users") void registerTournament("2026-11-15", TOURNAMENT);
+      return undefined;
+    };
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "refused",
+      problem: "Tournament PF2C2AUC became the Matchday of 2026-11-15 while it was being ingested.",
+    });
+    lichess.override = undefined;
+    expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" from "matchday"`)).toEqual([
+      { date: "2026-11-15", ingestedAt: null },
+    ]);
   }, 60_000);
 });

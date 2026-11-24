@@ -274,6 +274,42 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   [`insert into "matchday" ("date", "lichessTournamentId", "ingestedAt") values ($1, $2, now()) on conflict ("date") do update set "lichessTournamentId" = excluded."lichessTournamentId", "ingestedAt" = excluded."ingestedAt" where "matchday"."ingestedAt" is null and ("matchday"."lichessTournamentId" is null or "matchday"."lichessTournamentId" = excluded."lichessTournamentId")`]:
     (date, id) => upsertMatchday(date, id, new Date(), (row) => row.ingestedAt === null && sameTournamentOrNone(row, id)),
 
+  // A redo's claim on its Matchday.
+  [`update "matchday" set "ingestedAt" = now() where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is not null`]: (date, id) => {
+    const row = matchdays.get(date);
+    if (!row || row.lichessTournamentId !== id || row.ingestedAt === null) return answer();
+    row.ingestedAt = new Date();
+    return answer([], 1);
+  },
+
+  // A redo clearing its Matchday, keeping each result's Company first.
+  [`select "userId", "companyDomain" from "matchdayResult" where "matchdayDate" = $1`]: (date) =>
+    answer([...results.values()].filter((r) => r.matchdayDate === date).map(({ userId, companyDomain }) => ({ userId, companyDomain }))),
+  [`delete from "game" where "matchdayDate" = $1`]: (date) => {
+    const gone = [...games.values()].filter((g) => g.matchdayDate === date);
+    for (const game of gone) games.delete(game.lichessGameId);
+    return answer([], gone.length);
+  },
+  [`delete from "matchdayResult" where "matchdayDate" = $1`]: (date) => {
+    const gone = [...results.values()].filter((r) => r.matchdayDate === date);
+    for (const result of gone) results.delete(`${date} ${result.userId}`);
+    return answer([], gone.length);
+  },
+
+  // keepCompanies
+  [`update "matchdayResult" r set "companyDomain" = k."companyDomain" from unnest($2::text[], $3::text[]) as k ("userId", "companyDomain") where r."matchdayDate" = $1 and r."userId" = k."userId"`]:
+    (...params) => {
+      const [date, userIds, domains] = given<[string, string[], (string | null)[]]>(params);
+      let changed = 0;
+      userIds.forEach((userId, i) => {
+        const result = results.get(`${date} ${userId}`);
+        if (!result) return;
+        result.companyDomain = domains[i];
+        changed++;
+      });
+      return answer([], changed);
+    },
+
   // matchdayOf
   [`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" is not null as "ingested" from "matchday" where "lichessTournamentId" = $1`]:
     (id) => answer([...matchdays.values()].filter((m) => m.lichessTournamentId === id).map((m) => ({ date: m.date, ingested: m.ingestedAt !== null }))),
@@ -283,6 +319,9 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     const row = matchdays.get(date);
     return answer(row ? [{ lichessTournamentId: row.lichessTournamentId, ingested: row.ingestedAt !== null }] : []);
   },
+
+  // The skipped Sundays (lib/seasons.ts, postgresStore)
+  [`select to_char("date", 'YYYY-MM-DD') as "date" from "skippedSunday"`]: () => answer([...skippedSundays.values()]),
 
   // allMembers
   [`select id as "memberId", "lichessId" from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
@@ -396,8 +435,6 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   // --- The schedule (lib/seasons.ts, lib/signups.ts) ---
 
   [`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`]: () => answer([...seasons.values()].map((s) => ({ ...s }))),
-
-  [`select to_char("date", 'YYYY-MM-DD') as "date" from "skippedSunday"`]: () => answer([...skippedSundays.values()].map((s) => ({ ...s }))),
 
   // signUpTimes
   [`select "lichessConnectedAt" as at from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:

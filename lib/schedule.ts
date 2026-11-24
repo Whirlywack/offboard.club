@@ -14,13 +14,13 @@ export const addDays = (date: string, days: number) => fromMs(toMs(date) + days 
 
 const sundayOnOrAfter = (date: string) => addDays(date, (7 - new Date(toMs(date)).getUTCDay()) % 7);
 
-// Whether a string is a real calendar day as "YYYY-MM-DD": not "2026-02-30", which Date would take as 2 March.
-export const isCalendarDate = (date: string) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(toMs(date)) && fromMs(toMs(date)) === date;
-
 // Whether a "YYYY-MM-DD" string is a real calendar day and a Sunday.
 export const isSunday = (date: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(toMs(date)) && sundayOnOrAfter(date) === date;
+
+// Whether a date could be a Matchday's, and so a Recap's address: a Sunday from the Club's first year to the end of the
+// century. proxy.ts checks it, so this file must stay free of the database.
+export const isRecapDate = (date: string) => isSunday(date) && date >= "2026-01-01" && date < "2100-01-01";
 
 // The Vilnius calendar day of an instant.
 export const vilniusDate = (instant: Date) =>

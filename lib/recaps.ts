@@ -8,14 +8,14 @@ import { matchdayLeaderboard } from "./leaderboard";
 import type { Score } from "./matchday";
 import { matchdayOn } from "./matchdays";
 import { MEMBER_SQL } from "./members";
-import { isCalendarDate } from "./schedule";
+import { isRecapDate } from "./schedule";
 
 export type RecapRow = Score & { name: string; company: Pick<Company, "domain" | "name"> | null };
 export type Recap = { date: string; lichessTournamentId: string; leaderboard: RecapRow[] };
 
 // The Recap of the Matchday of `date`, as "YYYY-MM-DD", or null if no Matchday of that date has been ingested.
 export async function getRecap(date: string): Promise<Recap | null> {
-  if (!isCalendarDate(date)) return null;
+  if (!isRecapDate(date)) return null;
   const matchday = await matchdayOn(date);
   if (!matchday?.ingested || !matchday.lichessTournamentId) return null;
   type Row = Score & { name: string; companyDomain: string | null; companyName: string | null; excluded: boolean };

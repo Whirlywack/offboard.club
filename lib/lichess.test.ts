@@ -221,6 +221,83 @@ describe("reading Lichess's answers", () => {
     await expect(refusal).rejects.not.toMatchObject({ message: expect.stringContaining("hunter2") });
   });
 
+  it("asks for accounts 300 at a time, as plain text and without a token, and reads their ratings and marks", async () => {
+    const fetch = vi.fn(async (_url: URL, init: RequestInit) =>
+      Response.json(
+        String(init.body)
+          .split(",")
+          .map((id) =>
+            id === "closed" ? { id, username: id, disabled: true } : { id, username: id, perfs: { blitz: { rating: 1500 } }, ...(id === "cheat" && { tosViolation: true }) },
+          ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const ids = ["cheat", "closed", ...Array.from({ length: 299 }, (_, i) => `player${i}`)];
+    const accounts = await lichess.getPublicAccounts(ids);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [[url, init], [, second]] = fetch.mock.calls;
+    expect(String(url)).toBe("https://fake.lichess.test/api/users?profile=false");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ "Content-Type": "text/plain" });
+    expect(init.headers).not.toHaveProperty("Authorization");
+    expect(String(init.body).split(",")).toHaveLength(300);
+    expect(String(second.body)).toBe("player298");
+    expect(accounts).toHaveLength(301);
+    expect(accounts.slice(0, 3)).toEqual([
+      { id: "cheat", blitzRating: 1500, marked: true, closed: false },
+      { id: "closed", blitzRating: null, marked: false, closed: true },
+      { id: "player0", blitzRating: 1500, marked: false, closed: false },
+    ]);
+  });
+
+  it("refuses an answer with accounts it did not ask for", async () => {
+    answering([{ id: "someone-else", username: "x" }]);
+    await expect(lichess.getPublicAccounts(["bobby"])).rejects.toThrow(lichess.LichessError);
+  });
+
+  it("tells a Swiss tournament Lichess does not have from one it cannot read", async () => {
+    answering({ id: "PF2C2AUC", status: "finished", startsAt: "2026-11-24T13:30:00Z", name: "x" });
+    expect(await lichess.getSwiss("PF2C2AUC")).toEqual({ id: "PF2C2AUC", status: "finished", startsAt: new Date("2026-11-24T13:30:00Z") });
+    answering({ error: "Not found" }, 404);
+    expect(await lichess.getSwiss("PF2C2AUC")).toBeNull();
+    answering({ id: "PF2C2AUC", status: "paused", startsAt: "2026-11-24T13:30:00Z" });
+    await expect(lichess.getSwiss("PF2C2AUC")).rejects.toThrow(lichess.LichessError);
+    answering({ error: "oops" }, 500);
+    await expect(lichess.getSwiss("PF2C2AUC")).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("stops reading a team's tournaments, latest first, once past the start of the one it looks for", async () => {
+    const swiss = { id: "Target01", status: "finished" as const, startsAt: new Date("2026-11-22T18:00:00Z") };
+    // Weekly tournaments from 6 December back to March, one starting at the same moment as the one looked for.
+    const listing = Array.from({ length: 40 }, (_, i) => {
+      const startsAt = new Date(Date.parse("2026-12-06T18:00:00Z") - i * 7 * 86_400_000).toISOString();
+      return { id: i === 2 ? "Other022" : `Swiss${String(i).padStart(3, "0")}`, status: "finished", startsAt };
+    });
+    // One line at a time, as Lichess streams them, counting how many were sent before reading stopped.
+    let sent = 0;
+    let cancelled = false;
+    const stream = () =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent === listing.length) return controller.close();
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify(listing[sent++])}\n`));
+        },
+        cancel: () => void (cancelled = true),
+      });
+    const fetch = vi.fn(async () => new Response(stream(), { headers: { "content-type": "application/x-ndjson" } }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await lichess.teamHasSwiss("offboard", swiss)).toBe(false);
+    expect(sent).toBeLessThan(listing.length);
+    expect(cancelled).toBe(true);
+    const [[url, init]] = fetch.mock.calls as unknown as [URL, RequestInit][];
+    expect(String(url)).toBe("https://fake.lichess.test/api/team/offboard/swiss?max=300");
+    expect(init.headers).toMatchObject({ Accept: "application/x-ndjson" });
+
+    sent = 0;
+    listing[2].id = "Target01";
+    expect(await lichess.teamHasSwiss("offboard", swiss)).toBe(true);
+  });
+
   it("refuses a token that is not in Lichess's token format", async () => {
     answering({ token_type: "Bearer", access_token: "abc\r\nX-Evil: 1", expires_in: 1 });
     await expect(lichess.exchangeCode({ code: "c", verifier: "v", redirectUri: "r", clientId: "x" })).rejects.toThrow(

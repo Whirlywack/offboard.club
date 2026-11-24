@@ -16,8 +16,10 @@ const base = () =>
 
 export const lichessUrl = (path: string) => new URL(path, base());
 
-// Where people see a Lichess account. Always the real site: it is a link for people, not a request.
+// Where people see a Lichess account, or a Swiss tournament. Always the real site: these are links for people, not
+// requests.
 export const lichessProfileUrl = (username: string) => `https://lichess.org/@/${encodeURIComponent(username)}`;
+export const lichessSwissUrl = (id: string) => `https://lichess.org/swiss/${encodeURIComponent(id)}`;
 
 export class LichessError extends Error {
   constructor(
@@ -30,8 +32,17 @@ export class LichessError extends Error {
   }
 }
 
-// `signal` lets the caller give up: on a request still waiting its turn, in flight, or waiting after a 429.
-type Options = { method?: "GET" | "POST" | "DELETE"; token?: string; form?: Record<string, string>; signal?: AbortSignal };
+// `signal` lets the caller give up: on a request still waiting its turn, in flight, or waiting after a 429. A body is
+// either a form or plain text. `accept` defaults to JSON; `timeoutMs` to 30 s for each attempt, its reading included.
+type Options = {
+  method?: "GET" | "POST" | "DELETE";
+  token?: string;
+  form?: Record<string, string>;
+  text?: string;
+  accept?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
 
 // A signal that aborts after `ms`, or as soon as `within` does. Call `clear` once it is no longer needed.
 export function timeLimit(ms: number, reason: string, within?: AbortSignal) {
@@ -61,20 +72,21 @@ function unlessAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T>
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// One attempt, the request and the reading of its answer, within 30 seconds.
+// One attempt, the request and the reading of its answer, within 30 seconds unless the caller allows longer.
 async function attempt<T>(
   path: string,
-  { method = "GET", token, form, signal }: Options,
+  { method = "GET", token, form, text, accept = "application/json", timeoutMs = TIMEOUT_MS, signal }: Options,
   read: (response: Response) => Promise<T> | T,
 ): Promise<T> {
-  const limit = timeLimit(TIMEOUT_MS, `Lichess did not answer ${method} ${path} within ${TIMEOUT_MS / 1000} s`, signal);
-  const headers: Record<string, string> = { "User-Agent": USER_AGENT, Accept: "application/json" };
+  const limit = timeLimit(timeoutMs, `Lichess did not answer ${method} ${path} within ${timeoutMs / 1000} s`, signal);
+  const headers: Record<string, string> = { "User-Agent": USER_AGENT, Accept: accept };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (text !== undefined) headers["Content-Type"] = "text/plain";
   try {
     const response = await fetch(lichessUrl(path), {
       method,
       headers,
-      body: form && new URLSearchParams(form),
+      body: form ? new URLSearchParams(form) : text,
       // A redirect would carry the token somewhere unchecked; Lichess's API does not redirect.
       redirect: "manual",
       signal: limit.signal,
@@ -214,5 +226,134 @@ export const joinTeam = (token: string, teamId: string, password: string, signal
     { method: "POST", token, form: { password }, signal },
     async (response) => {
       if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
+    },
+  );
+
+// --- Accounts in bulk ---
+
+export type PublicAccount = { id: string; blitzRating: number | null; marked: boolean; closed: boolean };
+
+const ACCOUNTS_PER_REQUEST = 300;
+
+// Accounts by id, each with its blitz rating and its marks as everyone else sees them, 300 to a request.
+export async function getPublicAccounts(ids: string[], signal?: AbortSignal): Promise<PublicAccount[]> {
+  const accounts: PublicAccount[] = [];
+  for (let i = 0; i < ids.length; i += ACCOUNTS_PER_REQUEST)
+    accounts.push(...(await publicAccounts(ids.slice(i, i + ACCOUNTS_PER_REQUEST), signal)));
+  return accounts;
+}
+
+// POST /api/users?profile=false, deliberately without a token, for up to 300 ids. "tosViolation" is the mark for
+// breaking Lichess's terms of service, shown to everyone but the account itself; a closed account comes back as only
+// { id, username, disabled: true }; an account Lichess no longer has at all is left out.
+const publicAccounts = (ids: string[], signal?: AbortSignal) =>
+  lichessRequest(
+    "/api/users?profile=false",
+    { method: "POST", text: ids.join(","), signal },
+    async (response): Promise<PublicAccount[]> => {
+      if (!response.ok) throw await refused("POST /api/users", response);
+      const body: unknown = await response.json();
+      const asked = new Set(ids);
+      if (!Array.isArray(body) || !body.every((account) => typeof account?.id === "string" && asked.has(account.id)))
+        throw new LichessError("POST /api/users", response.status, "accounts other than those asked for");
+      return body.map((account) => {
+        const rating = account.perfs?.blitz?.rating;
+        return {
+          id: account.id,
+          blitzRating: Number.isInteger(rating) ? rating : null,
+          marked: account.tosViolation === true,
+          closed: account.disabled === true,
+        };
+      });
+    },
+  );
+
+// --- Swiss tournaments, which is what every Matchday is (docs/adr/0001) ---
+
+// Lichess's Swiss tournament ids: eight letters and digits.
+export const SWISS_ID = /^[A-Za-z0-9]{8}$/;
+
+export type Swiss = { id: string; status: "created" | "started" | "finished"; startsAt: Date };
+
+const NDJSON = "application/x-ndjson";
+
+function readSwiss(body: unknown): Swiss | null {
+  const { id, status, startsAt } = (body ?? {}) as Record<string, unknown>;
+  const start = typeof startsAt === "string" ? new Date(startsAt) : null;
+  if (typeof id !== "string" || !SWISS_ID.test(id) || !start || Number.isNaN(start.getTime())) return null;
+  return status === "created" || status === "started" || status === "finished" ? { id, status, startsAt: start } : null;
+}
+
+// GET /api/swiss/{id}: the tournament's state and start, or null if Lichess has no such tournament. It does not say
+// which team the tournament belongs to: see teamHasSwiss.
+export const getSwiss = (id: string, signal?: AbortSignal) =>
+  lichessRequest(`/api/swiss/${encodeURIComponent(id)}`, { signal }, async (response): Promise<Swiss | null> => {
+    if (response.status === 404) return null;
+    if (!response.ok) throw await refused("GET /api/swiss/{id}", response);
+    const swiss = readSwiss(await response.json());
+    if (swiss?.id !== id) throw new LichessError("GET /api/swiss/{id}", response.status, "no usable tournament");
+    return swiss;
+  });
+
+// The lines of an ndjson answer, parsed as they arrive, so that reading can stop early; the rest is then not downloaded.
+async function* ndjsonLines(response: Response): AsyncGenerator<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let rest = "";
+  try {
+    for (let done = false; !done; ) {
+      const chunk = await reader.read();
+      done = chunk.done;
+      const lines = (rest + decoder.decode(chunk.value, { stream: !done })).split("\n");
+      rest = done ? "" : lines.pop()!;
+      for (const line of lines) if (line.trim()) yield JSON.parse(line);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+// More tournaments than the Club will hold for years, and still listed within 30 s at the 20 a second Lichess sends.
+const TEAM_SWISS_MAX = 300;
+
+// GET /api/team/{teamId}/swiss: whether the tournament is one of the team's. Lichess lists a team's tournaments as
+// ndjson, latest start first, so reading stops at the tournament or at the first one that starts before it.
+export const teamHasSwiss = (teamId: string, swiss: Swiss, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/team/${encodeURIComponent(teamId)}/swiss?max=${TEAM_SWISS_MAX}`,
+    { accept: NDJSON, signal },
+    async (response) => {
+      if (!response.ok) throw await refused("GET /api/team/{teamId}/swiss", response);
+      for await (const line of ndjsonLines(response)) {
+        const listed = readSwiss(line);
+        if (!listed) throw new LichessError("GET /api/team/{teamId}/swiss", response.status, "no usable tournament");
+        if (listed.id === swiss.id) return true;
+        if (listed.startsAt < swiss.startsAt) return false;
+      }
+      return false;
+    },
+  );
+
+// GET /api/swiss/{id}/results: every participant's final standing, best first, as the ndjson text ingestMatchday reads.
+export const swissResults = (id: string, signal?: AbortSignal) =>
+  lichessRequest(`/api/swiss/${encodeURIComponent(id)}/results`, { accept: NDJSON, signal }, async (response) => {
+    if (!response.ok) throw await refused("GET /api/swiss/{id}/results", response);
+    return response.text();
+  });
+
+// Lichess sends a request without a token at most 20 Games a second: five rounds of 300 players take under 40 s.
+const GAMES_TIMEOUT_MS = 300_000;
+
+// GET /api/swiss/{id}/games: every Game of the tournament with its moves and clock times, oldest first, as the ndjson
+// text ingestMatchday reads. Without the ndjson Accept header Lichess answers in PGN, and without clocks=true it leaves
+// the clock times out.
+export const swissGames = (id: string, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/swiss/${encodeURIComponent(id)}/games?moves=true&clocks=true`,
+    { accept: NDJSON, timeoutMs: GAMES_TIMEOUT_MS, signal },
+    async (response) => {
+      if (!response.ok) throw await refused("GET /api/swiss/{id}/games", response);
+      return response.text();
     },
   );

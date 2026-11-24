@@ -1,4 +1,4 @@
-// For tests only: the database's "user", "company", "matchday", "matchdayResult" and "game" tables in memory, standing
+// For tests only: the database's "user", "company", "matchday", "matchdayResult", "game" and "skippedSunday" tables in memory, standing
 // in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement the app sends by its
 // full text, written out again below, and throws on any other: a condition dropped from a query in the app fails the
 // tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
@@ -63,6 +63,7 @@ export const companies = new Map<string, CompanyRow>();
 export const matchdays = new Map<string, MatchdayRow>(); // by date
 export const results = new Map<string, ResultRow>(); // by `${matchdayDate} ${userId}`
 export const games = new Map<string, GameRow>(); // by lichessGameId
+export const skippedSundays = new Map<string, { date: string }>(); // by date
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -98,7 +99,7 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games };
+const tables = { people, companies, matchdays, results, games, skippedSundays };
 
 export function resetDb() {
   for (const table of Object.values(tables)) table.clear();
@@ -290,6 +291,9 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     const row = matchdays.get(date);
     return answer(row ? [{ lichessTournamentId: row.lichessTournamentId, ingested: row.ingestedAt !== null }] : []);
   },
+
+  // The skipped Sundays (lib/seasons.ts, postgresStore)
+  [`select to_char("date", 'YYYY-MM-DD') as "date" from "skippedSunday"`]: () => answer([...skippedSundays.values()]),
 
   // allMembers
   [`select id as "memberId", "lichessId" from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:

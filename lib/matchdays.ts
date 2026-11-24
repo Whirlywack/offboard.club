@@ -5,7 +5,8 @@ import { db, type Queryable } from "./db";
 import { getPublicAccounts, getSwiss, SWISS_ID, swissGames, swissResults, teamHasSwiss, type PublicAccount } from "./lichess";
 import { ingestMatchday, type Game, type MemberRef, type Score } from "./matchday";
 import { MEMBER_SQL } from "./members";
-import { vilniusDate } from "./schedule";
+import { isSunday, vilniusDate } from "./schedule";
+import { postgres } from "./seasons";
 import { inTransaction } from "./transaction";
 
 const isUniqueViolation = (error: unknown) => (error as { code?: string }).code === "23505";
@@ -36,7 +37,8 @@ export type Ingestion =
 
 const refused = (problem: string): Ingestion => ({ outcome: "refused", problem });
 
-// Ingests a finished Swiss tournament on the Club's Lichess team as the Matchday of the Vilnius day it started on: each
+// Ingests a finished Swiss tournament on the Club's Lichess team as the Matchday of the Vilnius day it started on,
+// which must be a Sunday that is not skipped: each
 // participating Member's result with their Company at this moment, every Game between two Members, and each such
 // Member's blitz rating and marks as Lichess shows them now. Participants who are not Members are left out.
 //
@@ -63,6 +65,8 @@ export async function ingestTournament(tournamentId: string, { redo = false } = 
   if (!(await teamHasSwiss(teamId, swiss))) return refused(`Tournament ${tournamentId} is not on the Club's Lichess team.`);
   if (swiss.status !== "finished") return refused(`Tournament ${tournamentId} has not finished yet, so it cannot be ingested.`);
   const date = vilniusDate(swiss.startsAt);
+  if (!isSunday(date)) return refused(`Tournament ${tournamentId} started on ${date}, which is not a Sunday, so it is not a Matchday.`);
+  if ((await postgres.skippedSundays()).includes(date)) return refused(`Sunday ${date} is skipped, so it has no Matchday.`);
   if (registered && registered.date !== date)
     return refused(`Tournament ${tournamentId} is the Matchday of ${registered.date}, but Lichess says it started on ${date}.`);
   const other = (await matchdayOn(date))?.lichessTournamentId;

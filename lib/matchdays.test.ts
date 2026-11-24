@@ -3,7 +3,7 @@
 // and the database (lib/fake-db.ts). Everything else, the Lichess client and the transaction included, is the app's.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addCompany, addPerson, companies, db, games, matchdays, people, resetDb, results } from "@/lib/fake-db";
+import { addCompany, addPerson, companies, db, games, matchdays, people, resetDb, results, skippedSundays } from "@/lib/fake-db";
 import { createFakeLichess, type FakeAccount, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 import { LichessError } from "./lichess";
 import { ingestTournament, registerTournament } from "./matchdays";
@@ -13,14 +13,15 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 
-// The recorded tournament, finished, on the Club's team. It started at 15:30 Vilnius time on Tuesday 24 November.
+// The recorded tournament, finished, on the Club's team. Its exports come from a tournament Lichess held on Tuesday 24
+// November; here it stands for the Matchday of Sunday 22 November, starting at 20:00 Vilnius time.
 const TOURNAMENT = "PF2C2AUC";
-const DATE = "2026-11-24";
+const DATE = "2026-11-22";
 const recorded = (more: Partial<FakeSwiss> = {}): FakeSwiss => ({
   id: TOURNAMENT,
   teamId: "offboard-team",
   status: "finished",
-  startsAt: "2026-11-24T13:30:00Z",
+  startsAt: "2026-11-22T18:00:00Z",
   results: fixture("results.ndjson"),
   games: fixture("games.ndjson"),
   ...more,
@@ -169,9 +170,9 @@ describe("ingesting a finished tournament", () => {
   });
 
   it("dates the Matchday by the Vilnius day its tournament started on", async () => {
-    // 00:30 on Monday 30 November in Vilnius is still Sunday 29 November in UTC.
-    lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-29T22:30:00Z" }));
-    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", date: "2026-11-30" });
+    // 00:30 on Sunday 29 November in Vilnius is still Saturday 28 November in UTC.
+    lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-28T22:30:00Z" }));
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", date: "2026-11-29" });
   });
 
   it("stores a Matchday however few Members took part", async () => {
@@ -324,14 +325,29 @@ describe("refusing a tournament, storing nothing", () => {
 
   it("refuses a tournament on a day whose Matchday is another tournament, ingested or not", async () => {
     expect(await registerTournament(DATE, "OTHER123")).toBe(true);
-    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-24 is tournament OTHER123, not PF2C2AUC.");
+    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PF2C2AUC.");
     matchdays.get(DATE)!.ingestedAt = new Date();
-    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-24 is tournament OTHER123, not PF2C2AUC.");
+    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PF2C2AUC.");
   });
 
   it("refuses a tournament registered for one day that Lichess says started on another", async () => {
-    expect(await registerTournament("2026-11-22", TOURNAMENT)).toBe(true);
-    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC is the Matchday of 2026-11-22, but Lichess says it started on 2026-11-24.");
+    expect(await registerTournament("2026-11-15", TOURNAMENT)).toBe(true);
+    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC is the Matchday of 2026-11-15, but Lichess says it started on 2026-11-22.");
+  });
+
+  it("refuses a tournament that started on a day other than Sunday, in Vilnius", async () => {
+    // As the recorded tournament really did: 15:30 on Tuesday 24 November.
+    lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-24T13:30:00Z" }));
+    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC started on 2026-11-24, which is not a Sunday, so it is not a Matchday.");
+    // 23:30 on Sunday in UTC is already Monday in Vilnius.
+    lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-22T23:30:00Z" }));
+    expect(await refused(TOURNAMENT)).toMatch(/started on 2026-11-23, which is not a Sunday/);
+    expect(requests().filter((r) => /results|games|users/.test(r))).toEqual([]);
+  });
+
+  it("refuses a tournament on a skipped Sunday", async () => {
+    skippedSundays.set(DATE, { date: DATE });
+    expect(await refused(TOURNAMENT)).toBe("Sunday 2026-11-22 is skipped, so it has no Matchday.");
   });
 });
 

@@ -33,7 +33,8 @@ vi.mock("@/lib/db", async () => {
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const TOURNAMENT = "PF2C2AUC";
-const DATE = "2026-11-24";
+// The recorded exports, standing for the Matchday of Sunday 22 November.
+const DATE = "2026-11-22";
 
 describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
@@ -50,7 +51,7 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
         id: TOURNAMENT,
         teamId: "offboard-team",
         status: "finished",
-        startsAt: "2026-11-24T13:30:00Z",
+        startsAt: "2026-11-22T18:00:00Z",
         results: fixture("results.ndjson"),
         games: fixture("games.ndjson"),
       },
@@ -82,6 +83,7 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     await client.query(`delete from "game"`);
     await client.query(`delete from "matchdayResult"`);
     await client.query(`delete from "matchday"`);
+    await client.query(`delete from "skippedSunday"`);
     await client.query(`insert into "company" ("domain", "name") values ('ingest-test.example', 'Ingest Test')`);
     // Three Members who played the recorded tournament, and someone part-way through signing up who did too.
     const addPerson = (id: string, lichessId: string, welcomed = true, companyDomain: string | null = null) =>

@@ -10,7 +10,7 @@ export default function PageError({ error, retry }: { error: unknown; retry: () 
   return (
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
-        <p className={ui.eyebrow}>Something went wrong</p>
+        <p className={ui.eyebrow}>Error</p>
         <h1>This page didn&apos;t load</h1>
         <p className={ui.lede}>
           Something broke on Offboard&apos;s side. Trying again usually works; if it doesn&apos;t, give it a

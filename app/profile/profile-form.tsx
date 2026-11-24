@@ -52,8 +52,9 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
       <div className={styles.field}>
         <label htmlFor="companyWebsite">Company website</label>
         <p id="companyWebsite-hint" className={styles.hint}>
-          Where you work, by its website. Everyone who gives the same website shares one Company, whose name comes from
-          that site. It shows next to your name on Leaderboards. Freelance or between jobs? Leave it empty.
+          The website of the company you work for. Everyone who gives the same website shares one Company, whose name
+          comes from that site, and it shows next to your name on Leaderboards. Freelance or between jobs? Leave it
+          empty.
         </p>
         {error("companyWebsite")}
         <input

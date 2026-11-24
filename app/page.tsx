@@ -24,7 +24,7 @@ export default function Home() {
           </h1>
           <p className={styles.lede}>
             Five quick Games on Lichess every Sunday at 20:00, against other people who work in tech in and around
-            Vilnius. Chess gets everyone there; meeting people is the point.
+            Vilnius. Chess is the weekly excuse to show up; meeting people is the point.
           </p>
         </div>
         <div className={styles.heroSide}>
@@ -41,9 +41,9 @@ export default function Home() {
         <h2 id="who">Who it&apos;s for</h2>
         <div className={styles.sectionText}>
           <p>
-            Engineers, designers, founders and operators who work in tech in and around Vilnius and would like to know
-            more of each other. It&apos;s meant for casual players: a rating of 900 is as welcome as one of 1900. You
-            join on your own, with no team to find and no company budget to ask for, and it costs nothing.
+            Engineers, designers, founders and operators in and around Vilnius who&apos;d like to meet more people in
+            tech. It&apos;s meant for people who play casually: a rating of 900 is as welcome as one of 1900. You join on
+            your own and it&apos;s free, so there&apos;s no team to put together and no company budget to ask for.
           </p>
         </div>
       </section>
@@ -72,8 +72,8 @@ export default function Home() {
           <li>
             <h3>Keep your best four</h3>
             <p>
-              Six Matchdays make a Season, and your Season score adds up your best four. Miss two Sundays and you lose
-              nothing.
+              Six Matchdays make a Season, and your Season score adds up your best four, so missing two Sundays costs
+              you nothing.
             </p>
           </li>
         </ol>
@@ -83,13 +83,14 @@ export default function Home() {
         <h2 id="people">Meeting people</h2>
         <div className={styles.sectionText}>
           <p>
-            Every Member has a Profile with their name and photo, plus whatever they choose to add: where they work,
-            their position, and what they&apos;re open to, like a coffee or hearing about jobs. Only signed-in Members
-            can see Profiles. Leaderboards and Recaps are public and show names and Companies.
+            Profiles are there so the chess leads to conversations. Each has a Member&apos;s name and photo, plus
+            whatever they choose to add: where they work, their position, and what they&apos;re open to, like a coffee
+            or hearing about jobs. Only signed-in Members can see Profiles; Leaderboards and Recaps are public and show
+            names and Companies.
           </p>
           <p className={styles.plans}>
-            Still to come: Awards in each Recap that a beginner can win as easily as a strong player, and a Telegram
-            group for Members.
+            Still to come: Awards in each Recap for things any Member can pull off at any rating, such as the biggest
+            upset, and a Telegram group for Members.
           </p>
         </div>
       </section>

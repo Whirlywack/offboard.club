@@ -16,7 +16,7 @@ const newsreader = Newsreader({
 
 const title = "Offboard: Sunday chess for people in tech in Vilnius";
 const description =
-  "A free chess Club for people who work in tech in and around Vilnius. Five quick Games on Lichess every Sunday at 20:00. Chess gets everyone there; meeting people is the point.";
+  "A free chess Club for people who work in tech in and around Vilnius. Five quick Games on Lichess every Sunday at 20:00. Chess is the weekly excuse to show up; meeting people is the point.";
 
 export const metadata: Metadata = {
   title: { default: title, template: "%s | Offboard" },

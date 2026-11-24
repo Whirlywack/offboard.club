@@ -44,7 +44,7 @@ export default function Home() {
           <p>
             Engineers, designers, founders and operators in and around Vilnius who&apos;d like to meet more people in
             tech. It&apos;s meant for people who play casually: a rating of 900 is as welcome as one of 1900. You join on
-            your own and it&apos;s free, so there&apos;s no team to put together and no company budget to ask for.
+            your own and it&apos;s free, so you don&apos;t need colleagues to join with or a company budget.
           </p>
         </div>
       </section>

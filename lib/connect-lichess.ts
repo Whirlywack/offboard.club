@@ -107,7 +107,7 @@ export const PROBLEMS = {
   marked: "Lichess has marked that account for breaking its terms of service, so it can't be connected.",
   taken:
     "That Lichess account is already connected to another Member, and each account can belong to only one. If you have another Lichess account, sign in to Lichess with it and try again.",
-  team: "Lichess wouldn't add that account to the Club's team, so it isn't connected. Please try again later, and tell the Organiser if it keeps happening.",
+  team: "Lichess wouldn't add that account to the Club's Lichess team, so it isn't connected. Please try again later.",
   failed: "Something went wrong while talking to Lichess, so nothing has changed. Please try again in a few minutes.",
 } as const;
 export type Problem = keyof typeof PROBLEMS;

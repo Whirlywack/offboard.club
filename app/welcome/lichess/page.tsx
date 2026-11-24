@@ -22,8 +22,8 @@ export default function ConnectStep({ searchParams }: PageProps<"/welcome/liches
       <div className={ui.prose}>
         <p>
           Lichess will ask you to approve Offboard. Once you do, Offboard adds your account to the Club&apos;s private
-          Lichess team, so there&apos;s no team password to type. It asks Lichess for permission to join a team and
-          nothing else, and gives that permission back as soon as you&apos;re in.
+          Lichess team, so there&apos;s no password to type. It asks Lichess for one permission only, to join a team on
+          Lichess, and gives it back as soon as you&apos;re in.
         </p>
         <p>
           Each Lichess account can belong to one Member. You can switch to a different account later from your Profile,

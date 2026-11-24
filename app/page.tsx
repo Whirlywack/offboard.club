@@ -5,6 +5,7 @@ import { signOut } from "./actions";
 import { SignIn } from "./sign-in";
 import { getSession } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
+import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded } from "@/lib/schedule";
 import { countSignUps } from "@/lib/signups";
 
@@ -87,9 +88,9 @@ async function You() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {image && <img src={image} alt="" width={48} height={48} />} Signed in as {name}
       </p>
-      {mustWelcome(session.user) ? (
+      {mustWelcome(session.user) || mustConnectLichess(session.user) ? (
         <p>
-          <Link href="/welcome">Finish signing up</Link>
+          <Link href={mustWelcome(session.user) ? "/welcome" : "/welcome/lichess"}>Finish signing up</Link>
         </p>
       ) : (
         <ul>

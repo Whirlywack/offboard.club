@@ -3,7 +3,14 @@
 // Null means not given. The Company (#6) joins these.
 export type ProfileFields = { position: string | null; linkedInUrl: string | null; openTo: string | null };
 
-export type Profile = ProfileFields & { id: string; name: string; image: string | null };
+// The blitz rating is null when the Lichess account had none when it was connected.
+export type Profile = ProfileFields & {
+  id: string;
+  name: string;
+  image: string | null;
+  lichessUsername: string;
+  lichessBlitzRating: number | null;
+};
 
 export const POSITION_MAX = 80;
 export const OPEN_TO_MAX = 140;

@@ -97,7 +97,14 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
 
     expect(await registerTournament(DATE, TOURNAMENT)).toBe(true);
     expect(await registerTournament(DATE, "OTHER123")).toBe(false);
-    expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "ingested", date: DATE, members: 3, games: 2 });
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "ingested",
+      date: DATE,
+      participants: 65,
+      members: 3,
+      games: 2,
+      redone: false,
+    });
     expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "unchanged", date: DATE });
 
     expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId", "ingestedAt" is not null as "ingested" from "matchday"`)).toEqual([
@@ -132,11 +139,23 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     });
     expect(await getRecap("2026-11-23")).toBeNull();
 
+    // gil finishes signing up after playing; a redo takes him in, and ana keeps the Company recorded the first time.
+    await client.query(`update "user" set "publicDisplayConsentAt" = now(), "houseRulesAcceptedAt" = now() where id = 'ingest-test-gil'`);
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 4, games: 3, redone: true });
+    expect(await select(`select "userId", "rank", "companyDomain" from "matchdayResult" order by "rank"`)).toEqual([
+      { userId: "ingest-test-ana", rank: 1, companyDomain: "ingest-test.example" },
+      { userId: "ingest-test-ben", rank: 2, companyDomain: null },
+      { userId: "ingest-test-cora", rank: 3, companyDomain: null },
+      { userId: "ingest-test-gil", rank: 4, companyDomain: null },
+    ]);
+    expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 3 }]);
+
     // cora deletes her account (#15): her result goes, and her Game stays in ben's history with her side empty.
     await client.query(`delete from "user" where id = 'ingest-test-cora'`);
     expect(await select(`select "userId" from "matchdayResult" order by "rank"`)).toEqual([
       { userId: "ingest-test-ana" },
       { userId: "ingest-test-ben" },
+      { userId: "ingest-test-gil" },
     ]);
     expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'wmKSbb6v'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },

@@ -80,7 +80,14 @@ afterEach(() => {
 
 describe("ingesting a finished tournament", () => {
   it("stores the Matchday of the Vilnius day it started on, with each Member's result and every Game between Members", async () => {
-    expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "ingested", date: DATE, members: 6, games: 3 });
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "ingested",
+      date: DATE,
+      participants: 65,
+      members: 6,
+      games: 3,
+      redone: false,
+    });
     expect([...matchdays.values()]).toEqual([{ date: DATE, lichessTournamentId: TOURNAMENT, ingestedAt: expect.any(Date) }]);
     expect([...results.values()].sort((a, b) => a.rank - b.rank)).toEqual([
       { matchdayDate: DATE, userId: "ana", rank: 1, points: 9.5, rating: 1917, companyDomain: "vinted.com" },
@@ -167,11 +174,78 @@ describe("ingesting a finished tournament", () => {
     expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", date: "2026-11-30" });
   });
 
-  it("stores a Matchday however few Members took part, even none", async () => {
-    for (const id of Object.keys(MEMBERS)) people.delete(id);
-    expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "ingested", date: DATE, members: 0, games: 0 });
-    expect(matchdays.get(DATE)?.ingestedAt).not.toBeNull();
+  it("stores a Matchday however few Members took part", async () => {
+    for (const id of ["ben", "cora", "dan", "eve", "fay"]) people.delete(id);
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", participants: 65, members: 1, games: 0 });
+    expect([...results.values()].map((r) => r.userId)).toEqual(["ana"]);
+  });
+
+  it("refuses a tournament no Member played, rather than publish an empty Recap", async () => {
+    // As when the Members who played have since connected other Lichess accounts.
+    for (const id of Object.keys(MEMBERS)) people.get(id)!.lichessId = `new-${id}`;
+    const before = tables();
+    expect(await ingestTournament(TOURNAMENT)).toEqual({
+      outcome: "refused",
+      problem: "None of the 65 participants of tournament PF2C2AUC is a Member.",
+    });
+    expect(tables()).toEqual(before);
     expect(requests()).not.toContain("POST /api/users");
+  });
+});
+
+describe("a redo", () => {
+  it("fetches the tournament again and takes in a Member who was missed, keeping the Companies recorded", async () => {
+    // fay connected her Lichess account only after playing, and ana has since changed Company.
+    people.get("fay")!.lichessId = null;
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", members: 5, redone: false });
+    people.get("fay")!.lichessId = MEMBERS.fay;
+    people.get("fay")!.companyDomain = "bolt.eu";
+    people.get("ana")!.companyDomain = "bolt.eu";
+    expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "unchanged", date: DATE });
+    lichess.calls.length = 0;
+
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toEqual({
+      outcome: "ingested",
+      date: DATE,
+      participants: 65,
+      members: 6,
+      games: 3,
+      redone: true,
+    });
+    expect(requests()).toContain(`GET /api/swiss/${TOURNAMENT}/games`);
+    expect([...matchdays.values()]).toEqual([{ date: DATE, lichessTournamentId: TOURNAMENT, ingestedAt: expect.any(Date) }]);
+    expect(results.size).toBe(6);
+    expect(games.size).toBe(3);
+    expect(stored("ana")?.companyDomain).toBe("vinted.com"); // as recorded the first time
+    expect(stored("fay")).toMatchObject({ rank: 6, points: 0.5, companyDomain: "bolt.eu" }); // hers now
+  });
+
+  it("replaces only that Matchday's results and Games", async () => {
+    await ingestTournament(TOURNAMENT);
+    // Another Matchday, a week earlier, with a result and a Game of its own.
+    matchdays.set("2026-11-15", { date: "2026-11-15", lichessTournamentId: "EARLIER1", ingestedAt: new Date() });
+    results.set("2026-11-15 ana", { matchdayDate: "2026-11-15", userId: "ana", rank: 1, points: 3, rating: 1900, companyDomain: null });
+    games.set("Earlier1", { ...games.get("7eeBoh4D")!, lichessGameId: "Earlier1", matchdayDate: "2026-11-15" });
+    people.delete("eve");
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 5, redone: true });
+    expect(results.get("2026-11-15 ana")?.points).toBe(3);
+    expect(games.has("Earlier1")).toBe(true);
+    expect([...results.values()].filter((r) => r.matchdayDate === DATE).map((r) => r.userId)).toEqual(["ana", "ben", "cora", "dan", "fay"]);
+  });
+
+  it("leaves the Matchday as it was when it is refused or fails", async () => {
+    await ingestTournament(TOURNAMENT);
+    const before = tables();
+    for (const id of Object.keys(MEMBERS)) people.get(id)!.lichessId = `new-${id}`;
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "refused" });
+    for (const [id, lichessId] of Object.entries(MEMBERS)) people.get(id)!.lichessId = lichessId;
+    lichess.override = (call) => (call.path.endsWith("/games") ? Response.json({ error: "oops" }, { status: 500 }) : undefined);
+    await expect(ingestTournament(TOURNAMENT, { redo: true })).rejects.toThrow(LichessError);
+    expect(tables()).toEqual(before);
+  });
+
+  it("ingests a tournament not ingested yet as usual", async () => {
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 6, redone: false });
   });
 });
 

@@ -28,8 +28,9 @@ export async function registerTournament(date: string, tournamentId: string, q: 
   }
 }
 
+// `participants` counts everyone in the tournament's results, `members` those of them who are Members.
 export type Ingestion =
-  | { outcome: "ingested"; date: string; members: number; games: number }
+  | { outcome: "ingested"; date: string; participants: number; members: number; games: number; redone: boolean }
   | { outcome: "unchanged"; date: string }
   | { outcome: "refused"; problem: string };
 
@@ -40,16 +41,22 @@ const refused = (problem: string): Ingestion => ({ outcome: "refused", problem }
 // Member's blitz rating and marks as Lichess shows them now. Participants who are not Members are left out.
 //
 // A tournament already ingested is not fetched again, and nothing changes: the stored Matchday is the record of that
-// night. A tournament that is unknown, not the Club's, not finished, or at odds with a Matchday already stored is
-// refused with a plain message and nothing is stored. Lichess and database failures throw, also with nothing stored.
-export async function ingestTournament(tournamentId: string): Promise<Ingestion> {
+// night. A tournament that is unknown, not the Club's, not finished, played by no Member, or at odds with a Matchday
+// already stored is refused with a plain message and nothing is stored. Lichess and database failures throw, also
+// with nothing stored.
+//
+// `redo` is the Organiser's deliberate second look, for when a Member was missed, such as one who connected their
+// Lichess account only after playing: the tournament is fetched again and its Matchday's results and Games are
+// replaced, in one transaction. Members already in it keep the Company recorded the first time.
+export async function ingestTournament(tournamentId: string, { redo = false } = {}): Promise<Ingestion> {
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return refused("LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.");
   if (!SWISS_ID.test(tournamentId))
     return refused(`"${tournamentId}" is not a Lichess Swiss tournament id, which is eight letters and digits.`);
 
   const registered = await matchdayOf(tournamentId);
-  if (registered?.ingested) return { outcome: "unchanged", date: registered.date };
+  if (registered?.ingested && !redo) return { outcome: "unchanged", date: registered.date };
+  const redone = !!registered?.ingested;
 
   const swiss = await getSwiss(tournamentId);
   if (!swiss) return refused(`Lichess has no Swiss tournament ${tournamentId}.`);
@@ -65,23 +72,35 @@ export async function ingestTournament(tournamentId: string): Promise<Ingestion>
   const gamesNdjson = await swissGames(tournamentId);
   const members = await allMembers();
   const { scores, games } = ingestMatchday(resultsNdjson, gamesNdjson, members);
+  const participants = resultsNdjson.split("\n").filter((line) => line.trim()).length;
+  // Most likely the Members who played connected other Lichess accounts since; a Matchday stored empty would publish
+  // an empty Recap and never be looked at again.
+  if (scores.length === 0)
+    return refused(`None of the ${participants} participants of tournament ${tournamentId} is a Member.`);
   const lichessIdOf = new Map(members.map((m) => [m.memberId, m.lichessId]));
   const played = scores.map((s) => lichessIdOf.get(s.memberId)!);
   const accounts = await getPublicAccounts(played);
 
   const stored = await inTransaction(async (q) => {
-    if (!(await claim(q, date, tournamentId))) return false;
-    await storeResults(q, date, scores);
+    if (redone) {
+      if (!(await reclaim(q, date, tournamentId))) return false;
+      const recorded = await clear(q, date);
+      await storeResults(q, date, scores);
+      await keepCompanies(q, date, recorded);
+    } else {
+      if (!(await claim(q, date, tournamentId))) return false;
+      await storeResults(q, date, scores);
+    }
     await storeGames(q, date, games);
     await refreshAccounts(q, played, accounts);
     return true;
   });
-  if (stored) return { outcome: "ingested", date, members: scores.length, games: games.length };
+  if (stored) return { outcome: "ingested", date, participants, members: scores.length, games: games.length, redone };
   // Another run ingested it first, or the Matchday of that date changed while this one was fetching.
   const now = await matchdayOf(tournamentId);
-  return now?.ingested
+  return now?.ingested && !redo
     ? { outcome: "unchanged", date: now.date }
-    : refused(`The Matchday of ${date} changed while tournament ${tournamentId} was being ingested, so nothing was stored.`);
+    : refused(`The Matchday of ${date} changed while tournament ${tournamentId} was being ingested.`);
 }
 
 async function matchdayOf(tournamentId: string) {
@@ -117,6 +136,38 @@ async function claim(q: Queryable, date: string, tournamentId: string): Promise<
     [date, tournamentId],
   );
   return rowCount === 1;
+}
+
+// For a redo: marks the Matchday ingested again, only if it is still this tournament's and ingested, which also holds
+// back any other run on it until this one ends.
+async function reclaim(q: Queryable, date: string, tournamentId: string): Promise<boolean> {
+  const { rowCount } = await q.query(
+    `update "matchday" set "ingestedAt" = now() where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is not null`,
+    [date, tournamentId],
+  );
+  return rowCount === 1;
+}
+
+// For a redo: removes the Matchday's results and Games, and only that Matchday's. Returns the Company each Member's
+// result recorded, null included.
+async function clear(q: Queryable, date: string) {
+  const { rows } = await q.query<{ userId: string; companyDomain: string | null }>(
+    `select "userId", "companyDomain" from "matchdayResult" where "matchdayDate" = $1`,
+    [date],
+  );
+  await q.query(`delete from "game" where "matchdayDate" = $1`, [date]);
+  await q.query(`delete from "matchdayResult" where "matchdayDate" = $1`, [date]);
+  return rows;
+}
+
+// For a redo: puts back the Company recorded the first time for each Member who was in the Matchday then.
+async function keepCompanies(q: Queryable, date: string, recorded: { userId: string; companyDomain: string | null }[]) {
+  await q.query(
+    `update "matchdayResult" r set "companyDomain" = k."companyDomain"
+     from unnest($2::text[], $3::text[]) as k ("userId", "companyDomain")
+     where r."matchdayDate" = $1 and r."userId" = k."userId"`,
+    [date, recorded.map((r) => r.userId), recorded.map((r) => r.companyDomain)],
+  );
 }
 
 // The Company is read from each Member's row by the same statement that stores the result, so it is theirs at this

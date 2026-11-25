@@ -76,7 +76,8 @@ async function createIfDue(now: Date, by: number): Promise<JobRun> {
   const permission = await organiserToken(now);
   if ("problem" in permission) return cannot(permission.problem);
 
-  const deadline = limitBy(by);
+  // The same words however long the run's reads took, so that a failure that stands is recorded once (runJob).
+  const deadline = limitBy(by, Infinity, `Lichess didn't answer within the run's ${JOB_DEADLINE_MS / 1000} s`);
   if (!deadline) return cannot(NO_TIME_LEFT);
   const signal = deadline.signal;
   let made: Swiss | null = null;

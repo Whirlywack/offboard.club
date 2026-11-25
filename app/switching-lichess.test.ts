@@ -13,7 +13,7 @@ import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess, maxDuration } from "./api/lichess/callback/route";
-import { removeFromClub } from "./organiser/actions";
+import { removeFromClub, teamRemovalDone } from "./organiser/actions";
 import OrganiserPage from "./organiser/page";
 
 const { getSession, browser, afterwards } = vi.hoisted(() => {
@@ -391,12 +391,29 @@ describe("switching to another Lichess account", () => {
     expect(await listedForOrganiser()).toBeNull();
     expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
     expect(text((await organiserSection("rejoin"))!)).toBe(
-      "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to connect Lichess again, from their Profile.",
+      "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to press Switch Lichess account on their Profile and choose lichess-ana again on Lichess. Done : Ana Petraitė has been asked",
     );
-    // She connects it again from her Profile: it is in the team, and nobody is named.
+    // She does so, "switching" to the account she has: it is in the team again, and nobody is named.
     expect(await switchTo("lichess-ana")).toBe("/profiles/ana");
     await afterResponses();
     expect(inTeam("lichess-ana")).toBe(true);
+    expect(await listedForOrganiser("rejoin")).toBeNull();
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("lets the Organiser, and nobody else, say that a Member out of the team is dealt with, which names them no more", async () => {
+    await switchBackWhileRemoving();
+    // As when Lichess has since marked her account, which can then never be connected again.
+    const named = (await organiserSection("rejoin"))!;
+    expect(named).toContain('<input type="hidden" name="lichessId" value="lichess-ana"/>');
+    expect(named).toMatch(/<button[^>]*>Done<span class="visually-hidden">: Ana Petraitė has been asked<\/span><\/button>/);
+    for (const who of ["ana", null]) {
+      signedIn = who;
+      await expect(teamRemovalDone(form({ lichessId: "lichess-ana" }))).rejects.toThrow("not found");
+    }
+    expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
+    signedIn = "organiser";
+    expect(await redirectedTo(() => teamRemovalDone(form({ lichessId: "lichess-ana" })))).toBe("/organiser");
     expect(await listedForOrganiser("rejoin")).toBeNull();
     expect(teamRemovals.size).toBe(0);
   });

@@ -53,7 +53,7 @@ export async function removeMember(memberId: string, started = Date.now()): Prom
   const problem = lichessId === null ? null : await leaveTeam(lichessId, now, by);
   const deleted = await inTransaction(async (q) => {
     const { rows: gone } = await q.query<{ lichessId: string | null }>(`delete from "user" where id = $1 returning "lichessId"`, [memberId]);
-    if (lichessId !== null) await (problem ? keepForOrganiser(q, lichessId, problem) : removedFromTeam(q, lichessId));
+    await (problem ? keepForOrganiser(q, lichessId!, problem) : removedFromTeam(q, lichessId));
     // The account they had as they went: another, if a switch was saved while Lichess was being asked, which has joined
     // the team and which nobody's leaving will now remove.
     const switched = gone[0]?.lichessId;
@@ -137,8 +137,9 @@ const keepForOrganiser = (q: Queryable, lichessId: string, problem: string) =>
   );
 
 // Once Lichess has removed the account from the Club's team, nothing is left to remove by hand, so whatever was kept
-// is forgotten; but someone who has the account now is out of the team, and it is kept for the Organiser.
-async function removedFromTeam(q: Queryable, lichessId: string) {
+// is forgotten; but someone who has the account now is out of the team, and it is kept for the Organiser. For no
+// account at all, someone who never connected Lichess, it changes nothing, as nothing equals null.
+async function removedFromTeam(q: Queryable, lichessId: string | null) {
   await q.query(`delete from "teamRemoval" where "lichessId" = $1`, [lichessId]);
   await q.query(
     `insert into "teamRemoval" ("lichessId", "problem")

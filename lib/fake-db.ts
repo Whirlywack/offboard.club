@@ -836,10 +836,11 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], 1);
     },
 
-  // removedFromTeam: an account Lichess has removed from the team, kept once, and only while someone has it.
+  // removedFromTeam: an account Lichess has removed from the team, kept once, and only while someone has it. Nothing
+  // equals null, so no account is anyone's.
   [`insert into "teamRemoval" ("lichessId", "problem") select $1, $2 where exists (select 1 from "user" where "lichessId" = $1) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
     (lichessId, problem) => {
-      if (![...people.values()].some((p) => p.lichessId === lichessId)) return answer([], 0);
+      if (lichessId === null || ![...people.values()].some((p) => p.lichessId === lichessId)) return answer([], 0);
       teamRemovals.set(lichessId, { lichessId, at: new Date(), problem: String(problem) });
       return answer([], 1);
     },

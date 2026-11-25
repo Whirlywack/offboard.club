@@ -86,6 +86,7 @@
   -webkit-tap-highlight-color: transparent;
   transition:
     transform var(--duration-press) var(--ease-out),
+    opacity var(--duration-press) ease,
     background-color var(--duration-hover) ease,
     box-shadow var(--duration-hover) ease;
 }

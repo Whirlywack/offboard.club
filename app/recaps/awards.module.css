@@ -117,6 +117,15 @@
   transform: rotate(90deg);
 }
 
+/* In the Game's place when its loser has since left the Club: as far below what the winner did as the Replay button
+   would be, so it reads as about the Game, not as more of the feat */
+.noGame {
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
 /* Lichess's board, framed like a raised panel. Below 451px wide Lichess stacks the board over its controls and a strip
    of moves (170px in all), so the frame is as tall as it is wide plus that; wider, the moves go beside the board, and
    at 4:3 the board takes a little over half the width. */

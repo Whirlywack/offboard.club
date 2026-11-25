@@ -207,6 +207,10 @@ a[target="_blank"]::after {
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
+}
+
+/* Softens the ring around a text link. With no weight of its own, so that a button keeps its corners when focused. */
+:where(:focus-visible) {
   border-radius: 2px;
 }
 

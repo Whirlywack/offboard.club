@@ -6,11 +6,13 @@ import ui from "../ui.module.css";
 import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
+import { TeamRemovals } from "./team-removals";
 import { getSession, requireOrganiser } from "@/lib/auth";
 import { JOB as COLLECT, lastTryAt, uncollected, type Uncollected } from "@/lib/collect-results";
 import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
 import { lastFailure, lastRun, OVERDUE_MS, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
+import { teamRemovals } from "@/lib/leaving";
 import { lichessProfileUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
@@ -64,13 +66,14 @@ const Alert = ({ children }: { children: ReactNode }) => (
 async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "searchParams">) {
   await requireOrganiser();
   const now = new Date();
-  const [permission, creating, collecting, notIn, failure, next] = await Promise.all([
+  const [permission, creating, collecting, notIn, failure, next, removals] = await Promise.all([
     organiserPermission(),
     lastRun(CREATE),
     lastRun(COLLECT),
     uncollected(now),
     lastFailure(),
     upcomingMatchday(now),
+    teamRemovals(),
   ]);
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage((await searchParams).lichess);
@@ -100,15 +103,16 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         )}
         <Permission permission={permission} now={now} />
         <p className={`${ui.small} ${ui.muted}`}>
-          Before you connect, sign in to Lichess as a leader of the Club&apos;s Lichess team who has the team&apos;s
-          permission to manage tournaments: Lichess lets only those leaders create them. Lichess then asks you to let
-          Offboard create tournaments and manage the teams you lead. The site doesn&apos;t use the second yet. It asks
-          now so that you won&apos;t have to connect again once it can remove a Member from the team.
+          Before you connect, sign in to Lichess as a leader of the Club&apos;s team with its &ldquo;Tournaments&rdquo;
+          and &ldquo;Remove&rdquo; permissions. Lichess then asks you to let Offboard create tournaments and manage the
+          teams you lead. Managing the team is how the site removes people from it when they leave the Club.
         </p>
         <form action={connectOrganiserLichess} className={ui.actions}>
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
         </form>
       </section>
+
+      <TeamRemovals removals={removals} />
 
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>

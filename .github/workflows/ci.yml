@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26 # the Vercel project's Node.js version
           package-manager-cache: false # pnpm/action-setup caches the store
 
       - run: pnpm install --frozen-lockfile
@@ -47,7 +47,8 @@ jobs:
       - name: Merged migrations are not edited
         if: github.event_name == 'pull_request'
         run: |
-          edited=$(git diff --name-status "origin/$GITHUB_BASE_REF...HEAD" -- migrations/ | grep -v '^A' || true)
+          # --diff-filter=a lists every change except an added file. No pipe, so a git error fails the step.
+          edited=$(git diff --name-status --diff-filter=a "origin/$GITHUB_BASE_REF...HEAD" -- migrations/)
           if [ -n "$edited" ]; then
             echo "::error::A migration that has merged was edited, renamed or removed. Add a new migration instead."
             echo "$edited"

@@ -1,6 +1,7 @@
-// Ingesting a Matchday from a real Lichess Swiss export (lib/fixtures: 65 participants, 120 Games), through the one
-// entry point the Organiser's command uses. Faked: Lichess itself (lib/fixtures/fake-lichess.ts, standing in for fetch)
-// and the database (lib/fake-db.ts). Everything else, the Lichess client and the transaction included, is the app's.
+// Ingesting a Matchday from a recorded Lichess Swiss export whose people are invented (lib/fixtures: 65 participants,
+// 120 Games; lib/matchday.test.ts says how), through the one entry point the Organiser's command uses. Faked: Lichess
+// itself (lib/fixtures/fake-lichess.ts, standing in for fetch) and the database (lib/fake-db.ts). Everything else, the
+// Lichess client and the transaction included, is the app's.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addCompany, addPerson, companies, db, games, matchdays, people, resetDb, results, skippedSundays } from "@/lib/fake-db";
@@ -15,7 +16,7 @@ const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, imp
 
 // The recorded tournament, finished, on the Club's team. Its exports come from a tournament Lichess held on Tuesday 24
 // November; here it stands for the Matchday of Sunday 22 November, starting at 20:00 Vilnius time.
-const TOURNAMENT = "PF2C2AUC";
+const TOURNAMENT = "PRETEND1";
 const DATE = "2026-11-22";
 const recorded = (more: Partial<FakeSwiss> = {}): FakeSwiss => ({
   id: TOURNAMENT,
@@ -30,25 +31,25 @@ const recorded = (more: Partial<FakeSwiss> = {}): FakeSwiss => ({
 // Six of the 65 participants are Members. The expected values below were read from the ndjson by a separate script.
 // Lichess's final ranks: ana 1 (9.5 points, a late-join half point included), ben 2 (8), cora 9 (5), eve 23 (2, a
 // one-point bye included), dan 28 (2), fay 42 (0.5, the late-join half point and no Game at all).
-// Their Games with each other: dan-cora 7eeBoh4D (cora won on time), ben-ana T5PhEOXy (ana mated), ben-cora wmKSbb6v
-// (ben mated).
+// Their Games with each other: dan-cora pretend066 (cora won on time), ben-ana pretend100 (ana mated), ben-cora
+// pretend119 (ben mated).
 const MEMBERS = {
-  ana: "gevorgsargsyan",
-  ben: "iksannur",
-  cora: "olwerre",
-  dan: "imparare_official",
-  eve: "milosz0202",
-  fay: "calvinlidasan",
+  ana: "pretend--ada",
+  ben: "pretend--bruno",
+  cora: "pretend--ines",
+  dan: "pretend--boris",
+  eve: "pretend--wim",
+  fay: "pretend--petra",
 };
 
 // How Lichess shows those accounts now: some ratings moved, ben's account is marked, cora's is closed, eve has no blitz
 // rating and fay's account no longer exists.
 const accounts: FakeAccount[] = [
-  { id: "gevorgsargsyan", username: "GEVorgSaRgSyAn", perfs: { blitz: { games: 900, rating: 1930, rd: 60, prog: 12 } } },
-  { id: "iksannur", username: "iksannur", tosViolation: true, perfs: { blitz: { games: 500, rating: 1810, rd: 60, prog: 0 } } },
-  { id: "olwerre", username: "Olwerre", disabled: true },
-  { id: "imparare_official", username: "Imparare_official", perfs: { blitz: { games: 50, rating: 1700, rd: 80, prog: 3 } } },
-  { id: "milosz0202", username: "Milosz0202" },
+  { id: "pretend--ada", username: "Pretend--Ada", perfs: { blitz: { games: 900, rating: 1930, rd: 60, prog: 12 } } },
+  { id: "pretend--bruno", username: "pretend--bruno", tosViolation: true, perfs: { blitz: { games: 500, rating: 1810, rd: 60, prog: 0 } } },
+  { id: "pretend--ines", username: "Pretend--Ines", disabled: true },
+  { id: "pretend--boris", username: "Pretend--Boris", perfs: { blitz: { games: 50, rating: 1700, rd: 80, prog: 3 } } },
+  { id: "pretend--wim", username: "Pretend--Wim" },
   { id: "hal-account", username: "Hal-Account", perfs: { blitz: { games: 5, rating: 1111, rd: 300, prog: 0 } } },
 ];
 
@@ -71,7 +72,7 @@ beforeEach(() => {
   people.get("ben")!.companyDomain = "bolt.eu";
   // A Member who did not play, and someone part-way through signing up whose Lichess account did play.
   addPerson("hal", { lichessId: "hal-account" });
-  addPerson("gil", { lichessId: "enotik67", publicDisplayConsentAt: null, houseRulesAcceptedAt: null });
+  addPerson("gil", { lichessId: "pretend--olaf", publicDisplayConsentAt: null, houseRulesAcceptedAt: null });
 });
 
 afterEach(() => {
@@ -98,8 +99,8 @@ describe("ingesting a finished tournament", () => {
       { matchdayDate: DATE, userId: "dan", rank: 5, points: 2, rating: 1687, companyDomain: null },
       { matchdayDate: DATE, userId: "fay", rank: 6, points: 0.5, rating: 2286, companyDomain: null },
     ]);
-    expect(games.get("7eeBoh4D")).toEqual({
-      lichessGameId: "7eeBoh4D",
+    expect(games.get("pretend066")).toEqual({
+      lichessGameId: "pretend066",
       matchdayDate: DATE,
       whiteId: "dan",
       blackId: "cora",
@@ -112,9 +113,9 @@ describe("ingesting a finished tournament", () => {
       finishedAt: new Date(1795529563281),
     });
     expect([...games.values()].map((g) => [g.lichessGameId, g.whiteId, g.blackId, g.winner, g.status, g.plies])).toEqual([
-      ["7eeBoh4D", "dan", "cora", "black", "outoftime", 110],
-      ["T5PhEOXy", "ben", "ana", "black", "mate", 148],
-      ["wmKSbb6v", "ben", "cora", "white", "mate", 79],
+      ["pretend066", "dan", "cora", "black", "outoftime", 110],
+      ["pretend100", "ben", "ana", "black", "mate", 148],
+      ["pretend119", "ben", "cora", "white", "mate", 79],
     ]);
   });
 
@@ -129,8 +130,8 @@ describe("ingesting a finished tournament", () => {
   it("ignores participants who are not Members, including someone part-way through signing up", async () => {
     await ingestTournament(TOURNAMENT);
     expect([...results.values()].map((r) => r.userId).sort()).toEqual(["ana", "ben", "cora", "dan", "eve", "fay"]);
-    // ben's win over gil's account (dbYkFn6j) is not a Game between two Members.
-    expect(games.has("dbYkFn6j")).toBe(false);
+    // ben's win over gil's account (pretend025) is not a Game between two Members.
+    expect(games.has("pretend025")).toBe(false);
     for (const game of games.values()) expect([game.whiteId, game.blackId].every((id) => id && id in MEMBERS)).toBe(true);
   });
 
@@ -187,7 +188,7 @@ describe("ingesting a finished tournament", () => {
     const before = tables();
     expect(await ingestTournament(TOURNAMENT)).toEqual({
       outcome: "refused",
-      problem: "None of the 65 participants of tournament PF2C2AUC is a Member.",
+      problem: "None of the 65 participants of tournament PRETEND1 is a Member.",
     });
     expect(tables()).toEqual(before);
     expect(requests()).not.toContain("POST /api/users");
@@ -226,7 +227,7 @@ describe("a redo", () => {
     // Another Matchday, a week earlier, with a result and a Game of its own.
     matchdays.set("2026-11-15", { date: "2026-11-15", lichessTournamentId: "EARLIER1", ingestedAt: new Date() });
     results.set("2026-11-15 ana", { matchdayDate: "2026-11-15", userId: "ana", rank: 1, points: 3, rating: 1900, companyDomain: null });
-    games.set("Earlier1", { ...games.get("7eeBoh4D")!, lichessGameId: "Earlier1", matchdayDate: "2026-11-15" });
+    games.set("Earlier1", { ...games.get("pretend066")!, lichessGameId: "Earlier1", matchdayDate: "2026-11-15" });
     people.delete("eve");
     expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 5, redone: true });
     expect(results.get("2026-11-15 ana")?.points).toBe(3);
@@ -294,7 +295,7 @@ describe("refusing a tournament, storing nothing", () => {
 
   it("refuses a tournament that has not finished, without fetching its results or Games", async () => {
     lichess.tournaments.set(TOURNAMENT, recorded({ status: "started" }));
-    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC has not finished yet, so it cannot be ingested.");
+    expect(await refused(TOURNAMENT)).toBe("Tournament PRETEND1 has not finished yet, so it cannot be ingested.");
     lichess.tournaments.set(TOURNAMENT, recorded({ status: "created" }));
     expect(await refused(TOURNAMENT)).toMatch(/has not finished yet/);
     expect(requests().filter((r) => /results|games|users/.test(r))).toEqual([]);
@@ -304,7 +305,7 @@ describe("refusing a tournament, storing nothing", () => {
     lichess.tournaments.set(TOURNAMENT, recorded({ teamId: "someone-else" }));
     // A later tournament on the Club's team, to read past.
     lichess.tournaments.set("LATER123", recorded({ id: "LATER123", startsAt: "2026-11-29T18:00:00Z" }));
-    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC is not on the Club's Lichess team.");
+    expect(await refused(TOURNAMENT)).toBe("Tournament PRETEND1 is not on the Club's Lichess team.");
   });
 
   it("refuses a tournament Lichess does not know", async () => {
@@ -325,20 +326,20 @@ describe("refusing a tournament, storing nothing", () => {
 
   it("refuses a tournament on a day whose Matchday is another tournament, ingested or not", async () => {
     expect(await registerTournament(DATE, "OTHER123")).toBe(true);
-    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PF2C2AUC.");
+    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PRETEND1.");
     matchdays.get(DATE)!.ingestedAt = new Date();
-    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PF2C2AUC.");
+    expect(await refused(TOURNAMENT)).toBe("The Matchday of 2026-11-22 is tournament OTHER123, not PRETEND1.");
   });
 
   it("refuses a tournament registered for one day that Lichess says started on another", async () => {
     expect(await registerTournament("2026-11-15", TOURNAMENT)).toBe(true);
-    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC is the Matchday of 2026-11-15, but Lichess says it started on 2026-11-22.");
+    expect(await refused(TOURNAMENT)).toBe("Tournament PRETEND1 is the Matchday of 2026-11-15, but Lichess says it started on 2026-11-22.");
   });
 
   it("refuses a tournament that started on a day other than Sunday, in Vilnius", async () => {
     // As the recorded tournament really did: 15:30 on Tuesday 24 November.
     lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-24T13:30:00Z" }));
-    expect(await refused(TOURNAMENT)).toBe("Tournament PF2C2AUC started on 2026-11-24, which is not a Sunday, so it is not a Matchday.");
+    expect(await refused(TOURNAMENT)).toBe("Tournament PRETEND1 started on 2026-11-24, which is not a Sunday, so it is not a Matchday.");
     // 23:30 on Sunday in UTC is already Monday in Vilnius.
     lichess.tournaments.set(TOURNAMENT, recorded({ startsAt: "2026-11-22T23:30:00Z" }));
     expect(await refused(TOURNAMENT)).toMatch(/started on 2026-11-23, which is not a Sunday/);
@@ -353,7 +354,7 @@ describe("refusing a tournament, storing nothing", () => {
     };
     expect(await ingestTournament(TOURNAMENT)).toEqual({
       outcome: "refused",
-      problem: "Tournament PF2C2AUC became the Matchday of 2026-11-15 while it was being ingested.",
+      problem: "Tournament PRETEND1 became the Matchday of 2026-11-15 while it was being ingested.",
     });
     expect([...matchdays.values()]).toEqual([{ date: "2026-11-15", lichessTournamentId: TOURNAMENT, ingestedAt: null }]);
     expect(results.size + games.size).toBe(0);

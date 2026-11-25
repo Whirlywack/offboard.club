@@ -33,7 +33,7 @@ const DATE = "2026-11-29";
 
 // A Matchday as ingestion leaves it: the Members' results in Lichess's order, each with the Company of that night.
 function ingested(date: string, rows: [userId: string, points: number, companyDomain?: string][]) {
-  matchdays.set(date, { date, lichessTournamentId: "PF2C2AUC", ingestedAt: new Date() });
+  matchdays.set(date, { date, lichessTournamentId: "PRETEND1", ingestedAt: new Date() });
   rows.forEach(([userId, points, companyDomain = null], i) =>
     results.set(`${date} ${userId}`, { matchdayDate: date, userId, rank: i + 1, points, rating: 1500, companyDomain }),
   );
@@ -87,7 +87,7 @@ describe("a Recap", () => {
   });
 
   it("links the tournament on Lichess, whose standings show Lichess names, for signed-in Members only", async () => {
-    const link = 'href="https://lichess.org/swiss/PF2C2AUC"';
+    const link = 'href="https://lichess.org/swiss/PRETEND1"';
     expect(await open(DATE)).not.toContain(link); // signed out
     const signedInAs = (stage: { publicDisplayConsentAt: Date | null; houseRulesAcceptedAt: Date | null; lichessId: string | null }) =>
       getSession.mockResolvedValue({ user: { id: "viewer", ...stage } });
@@ -192,9 +192,10 @@ describe("a Recap's Awards", () => {
   });
 
   it("are worked out from the recorded Games as stored, each naming the Member who won it", async () => {
-    // The recorded Lichess exports, ingested as the Matchday of 22 November with four of its players as Members.
+    // The recorded Lichess exports, their people invented (lib/matchday.test.ts says how), ingested as the Matchday of
+    // 22 November with four of its players as Members.
     const fixture = (name: string) => readFileSync(new URL(`../lib/fixtures/${name}`, import.meta.url), "utf8");
-    const players = { gev: ["Gev Sargsyan", "gevorgsargsyan"], iks: ["Iksan Nur", "iksannur"], olw: ["Olwen Erre", "olwerre"], imp: ["Imma Parare", "imparare_official"] };
+    const players = { ada: ["Ada Kingside", "pretend--ada"], bruno: ["Bruno Queenside", "pretend--bruno"], ines: ["Ines Tempo", "pretend--ines"], boris: ["Boris Blunder", "pretend--boris"] };
     for (const [id, [name, lichessId]] of Object.entries(players)) addPerson(id, { name, lichessId });
     const ingested = ingestMatchday(
       fixture("results.ndjson"),
@@ -202,7 +203,7 @@ describe("a Recap's Awards", () => {
       Object.entries(players).map(([memberId, [, lichessId]]) => ({ memberId, lichessId })),
     );
     const date = "2026-11-22";
-    matchdays.set(date, { date, lichessTournamentId: "PF2C2AUC", ingestedAt: new Date() });
+    matchdays.set(date, { date, lichessTournamentId: "PRETEND1", ingestedAt: new Date() });
     for (const s of ingested.scores) results.set(`${date} ${s.memberId}`, { matchdayDate: date, userId: s.memberId, rank: s.rank, points: s.points, rating: s.rating, companyDomain: null });
     for (const g of ingested.games)
       games.set(g.lichessGameId, {
@@ -222,20 +223,21 @@ describe("a Recap's Awards", () => {
     asMember();
     const html = await open(date);
     expect(awardsIn(html)).toEqual([
-      // Olwerre (1579), with Black, beat Imparare_official (1694) on time with 2.78 seconds left: the clock showed 2.7.
-      { title: "Biggest upset", winner: "Olwen Erre", feat: "Beat someone rated 115 points higher.", game: "https://lichess.org/7eeBoh4D/black" },
-      { title: "Closest call", winner: "Olwen Erre", feat: "Won with 2.7 seconds left on the clock.", game: "https://lichess.org/7eeBoh4D/black" },
+      // Pretend--Ines (1579), with Black, beat Pretend--Boris (1694) on time with 2.78 seconds left: the clock
+      // showed 2.7.
+      { title: "Biggest upset", winner: "Ines Tempo", feat: "Beat someone rated 115 points higher.", game: "https://lichess.org/pretend066/black" },
+      { title: "Closest call", winner: "Ines Tempo", feat: "Won with 2.7 seconds left on the clock.", game: "https://lichess.org/pretend066/black" },
       // Mate on White's 40th move, the 79th half-move.
-      { title: "Fastest checkmate", winner: "Iksan Nur", feat: "Checkmated their opponent in 40 moves.", game: "https://lichess.org/wmKSbb6v/white" },
+      { title: "Fastest checkmate", winner: "Bruno Queenside", feat: "Checkmated their opponent in 40 moves.", game: "https://lichess.org/pretend119/white" },
     ]);
     // Each winner's name opens their Profile.
     const section = html.match(/<section aria-labelledby="awards".*?<\/section>/)![0];
-    expect([...section.matchAll(/href="(\/profiles\/[^"]+)"/g)].map(([, href]) => href)).toEqual(["/profiles/olw", "/profiles/olw", "/profiles/iks"]);
+    expect([...section.matchAll(/href="(\/profiles\/[^"]+)"/g)].map(([, href]) => href)).toEqual(["/profiles/ines", "/profiles/ines", "/profiles/bruno"]);
 
     // Each board opens on the Game's last move, from the winner's side: 110 half-moves in, Black at the bottom.
     const [upset, , checkmate] = (await getRecap(date))!.awards;
-    expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/7eeBoh4D/black?theme=brown&amp;bg=system#110"');
-    expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/wmKSbb6v/white?theme=brown&amp;bg=system#79"');
+    expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/pretend066/black?theme=brown&amp;bg=system#110"');
+    expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/pretend119/white?theme=brown&amp;bg=system#79"');
   });
 
   it("gives each Award to the right Game, and counts seconds as the clock does", async () => {

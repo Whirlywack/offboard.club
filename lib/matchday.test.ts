@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { awards, ingestMatchday, type Game, type MemberRef } from "./matchday";
 
-// A real finished Lichess Swiss export: 12 rounds, 65 participants, 120 Games.
+// A finished Lichess Swiss export, 12 rounds, 65 participants and 120 Games, recorded from a public tournament on
+// Lichess with its people invented: each username is a made-up "Pretend--" name, which Lichess refuses to register (two
+// hyphens in a row), and each Game id has ten characters where Lichess's have eight. The tournament id keeps Lichess's
+// eight-character shape, which ingestion checks. Ratings, scores, clocks, moves and results are the tournament's own.
 const resultsNdjson = readFileSync(new URL("./fixtures/results.ndjson", import.meta.url), "utf8");
 const gamesNdjson = readFileSync(new URL("./fixtures/games.ndjson", import.meta.url), "utf8");
 
@@ -18,9 +21,9 @@ describe("ingestMatchday: scores", () => {
     const { scores } = ingestMatchday(resultsNdjson, gamesNdjson, everyone);
     expect(scores).toHaveLength(65);
     expect(scores.slice(0, 3)).toEqual([
-      { memberId: "m:GEVorgSaRgSyAn", rank: 1, points: 9.5, rating: 1917 },
-      { memberId: "m:iksannur", rank: 2, points: 8, rating: 1803 },
-      { memberId: "m:TeeKaye", rank: 3, points: 8, rating: 1843 },
+      { memberId: "m:Pretend--Ada", rank: 1, points: 9.5, rating: 1917 },
+      { memberId: "m:pretend--bruno", rank: 2, points: 8, rating: 1803 },
+      { memberId: "m:Pretend--Cleo", rank: 3, points: 8, rating: 1843 },
     ]);
     expect(scores.map((s) => s.rank)).toEqual(Array.from({ length: 65 }, (_, i) => i + 1));
   });
@@ -29,49 +32,49 @@ describe("ingestMatchday: scores", () => {
     const { scores } = ingestMatchday(resultsNdjson, gamesNdjson, everyone);
     const points = (name: string) => scores.find((s) => s.memberId === `m:${name}`)?.points;
     // 9 points from Games plus a half-point late-join bye.
-    expect(points("GEVorgSaRgSyAn")).toBe(9.5);
+    expect(points("Pretend--Ada")).toBe(9.5);
     // 1 point from Games plus a one-point bye.
-    expect(points("Milosz0202")).toBe(2);
+    expect(points("Pretend--Wim")).toBe(2);
     // No Games at all: only the late-join half point. Still counts as having played.
-    expect(points("CalvinLidasan")).toBe(0.5);
+    expect(points("Pretend--Petra")).toBe(0.5);
   });
 
   it("matches Lichess names to Members whatever their letter case", () => {
     const members = [
-      { memberId: "a", lichessId: "gevorgsargsyan" },
-      { memberId: "b", lichessId: "IKSANNUR" },
+      { memberId: "a", lichessId: "pretend--ada" },
+      { memberId: "b", lichessId: "PRETEND--BRUNO" },
     ];
     const { scores, games } = ingestMatchday(resultsNdjson, gamesNdjson, members);
     expect(scores.map((s) => s.memberId)).toEqual(["a", "b"]);
-    expect(games.map((g) => g.lichessGameId)).toEqual(["T5PhEOXy"]);
+    expect(games.map((g) => g.lichessGameId)).toEqual(["pretend100"]);
   });
 });
 
 describe("ingestMatchday: participants who are not Members", () => {
-  const members = ["GEVorgSaRgSyAn", "iksannur", "Olwerre", "Imparare_official"].map(member);
+  const members = ["Pretend--Ada", "pretend--bruno", "Pretend--Ines", "Pretend--Boris"].map(member);
   const { scores, games, awards } = ingestMatchday(resultsNdjson, gamesNdjson, members);
 
   it("leaves them out of the scores and renumbers the Members in Lichess order", () => {
     // Lichess ranks 1, 2, 9 and 28.
     expect(scores.map((s) => [s.memberId, s.rank])).toEqual([
-      ["m:GEVorgSaRgSyAn", 1],
-      ["m:iksannur", 2],
-      ["m:Olwerre", 3],
-      ["m:Imparare_official", 4],
+      ["m:Pretend--Ada", 1],
+      ["m:pretend--bruno", 2],
+      ["m:Pretend--Ines", 3],
+      ["m:Pretend--Boris", 4],
     ]);
   });
 
   it("keeps only Games between two Members", () => {
-    expect(games.map((g) => g.lichessGameId).sort()).toEqual(["7eeBoh4D", "T5PhEOXy", "wmKSbb6v"]);
+    expect(games.map((g) => g.lichessGameId).sort()).toEqual(["pretend066", "pretend100", "pretend119"]);
   });
 
   it("computes Awards from those Games only", () => {
     expect(awards).toEqual([
-      // Olwerre (1579) beat Imparare_official (1694) on time.
-      { kind: "biggestUpset", memberId: "m:Olwerre", lichessGameId: "7eeBoh4D", value: 115 },
-      { kind: "leastTimeLeft", memberId: "m:Olwerre", lichessGameId: "7eeBoh4D", value: 278 },
+      // Pretend--Ines (1579) beat Pretend--Boris (1694) on time.
+      { kind: "biggestUpset", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 115 },
+      { kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 278 },
       // 79 half-moves: mate on White's 40th move.
-      { kind: "fastestCheckmate", memberId: "m:iksannur", lichessGameId: "wmKSbb6v", value: 40 },
+      { kind: "fastestCheckmate", memberId: "m:pretend--bruno", lichessGameId: "pretend119", value: 40 },
     ]);
   });
 });
@@ -81,32 +84,32 @@ describe("ingestMatchday: Awards from the recorded Games", () => {
   const award = (kind: string) => given.find((a) => a.kind === kind);
 
   it("gives the biggest upset to the win furthest below the loser's rating", () => {
-    // oguzhanonderr0 (1043) beat Axmet1704 (1605), who made one move and then lost on time.
-    expect(award("biggestUpset")).toEqual({ kind: "biggestUpset", memberId: "m:oguzhanonderr0", lichessGameId: "rpOPccv0", value: 562 });
+    // pretend--sven (1043) beat Pretend--Carla (1605), who made one move and then lost on time.
+    expect(award("biggestUpset")).toEqual({ kind: "biggestUpset", memberId: "m:pretend--sven", lichessGameId: "pretend088", value: 562 });
   });
 
   it("does not count a win against an opponent who never moved", () => {
-    // Milosz0202 (761) "beat" AniconSkywalker18 (1808), who never moved: a 1047 gap that must not win.
-    expect(given.map((a) => a.lichessGameId)).not.toContain("Og8pnuKx");
-    const { awards: pair } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Milosz0202"), member("AniconSkywalker18")]);
+    // Pretend--Wim (761) "beat" Pretend--Milo (1808), who never moved: a 1047 gap that must not win.
+    expect(given.map((a) => a.lichessGameId)).not.toContain("pretend019");
+    const { awards: pair } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Pretend--Wim"), member("Pretend--Milo")]);
     expect(pair).toEqual([]);
   });
 
   it("gives least time left to the winner with the least on their own clock at the end", () => {
-    // Olwerre won on time with 2.78 seconds left.
-    expect(award("leastTimeLeft")).toEqual({ kind: "leastTimeLeft", memberId: "m:Olwerre", lichessGameId: "7eeBoh4D", value: 278 });
+    // Pretend--Ines won on time with 2.78 seconds left.
+    expect(award("leastTimeLeft")).toEqual({ kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 278 });
   });
 
   it("gives the fastest checkmate to the mate in fewest moves, the first to finish on a tie", () => {
-    // p0HAPmfL and SuG6ujGM both end in mate on White's 18th move, in the same round;
-    // SuG6ujGM finished first. (j4U84psg is mate on Black's 18th move, half a move later.)
-    expect(award("fastestCheckmate")).toEqual({ kind: "fastestCheckmate", memberId: "m:Shauryansh1005", lichessGameId: "SuG6ujGM", value: 18 });
+    // pretend001 and pretend007 both end in mate on White's 18th move, in the same round;
+    // pretend007 finished first. (pretend057 is mate on Black's 18th move, half a move later.)
+    expect(award("fastestCheckmate")).toEqual({ kind: "fastestCheckmate", memberId: "m:Pretend--Yara", lichessGameId: "pretend007", value: 18 });
   });
 
   it("omits every Award when no Game qualifies", () => {
-    // Enotik67 and Dvorzak played each other once, a draw.
-    const { games, awards: none } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Enotik67"), member("Dvorzak")]);
-    expect(games.map((g) => g.lichessGameId)).toEqual(["cbTdPlpO"]);
+    // Pretend--Olaf and Pretend--Otto played each other once, a draw.
+    const { games, awards: none } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Pretend--Olaf"), member("Pretend--Otto")]);
+    expect(games.map((g) => g.lichessGameId)).toEqual(["pretend014"]);
     expect(none).toEqual([]);
   });
 });

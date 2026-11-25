@@ -159,7 +159,10 @@ export function authorizationUrl({ clientId, redirectUri, scope, challenge, stat
 // Lichess's token format; anything else is not used, not even in a header.
 const TOKEN = /^[A-Za-z0-9_]{1,4096}$/;
 
-// POST /api/token: the code from the redirect, and the verifier its challenge came from, for an access token.
+export type Grant = { accessToken: string; expiresInSeconds: number | null };
+
+// POST /api/token: the code from the redirect, and the verifier its challenge came from, for an access token and how
+// many seconds it lasts (a year, as lila makes them; null if Lichess did not say).
 export const exchangeCode = (
   p: { code: string; verifier: string; redirectUri: string; clientId: string },
   signal?: AbortSignal,
@@ -177,12 +180,16 @@ export const exchangeCode = (
       },
       signal,
     },
-    async (response) => {
+    async (response): Promise<Grant> => {
       if (!response.ok) throw await refused("POST /api/token", response);
-      const body: { access_token?: unknown } = await response.json();
+      const body: { access_token?: unknown; expires_in?: unknown } = await response.json();
       if (typeof body.access_token !== "string" || !TOKEN.test(body.access_token))
         throw new LichessError("POST /api/token", response.status, "no usable token");
-      return body.access_token;
+      const lasts = body.expires_in;
+      return {
+        accessToken: body.access_token,
+        expiresInSeconds: typeof lasts === "number" && Number.isInteger(lasts) && lasts > 0 ? lasts : null,
+      };
     },
   );
 
@@ -230,6 +237,19 @@ export const joinTeam = (token: string, teamId: string, password: string, signal
       if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
     },
   );
+
+// GET /api/team/{teamId}, deliberately without a token: the ids of the team's leaders as Lichess shows them to everyone
+// (lila lists only leaders who are shown publicly, which a team's creator is unless they change it), or null if Lichess
+// has no such team.
+export const teamLeaders = (teamId: string, signal?: AbortSignal) =>
+  lichessRequest(`/api/team/${encodeURIComponent(teamId)}`, { signal }, async (response): Promise<string[] | null> => {
+    if (response.status === 404) return null;
+    if (!response.ok) throw await refused("GET /api/team/{teamId}", response);
+    const body = await response.json();
+    if (typeof body?.id !== "string" || !Array.isArray(body.leaders))
+      throw new LichessError("GET /api/team/{teamId}", response.status, "no usable team");
+    return body.leaders.flatMap((leader: { id?: unknown }) => (typeof leader?.id === "string" ? [leader.id] : []));
+  });
 
 // --- Accounts in bulk ---
 
@@ -334,6 +354,43 @@ export const teamHasSwiss = (teamId: string, swiss: Swiss, signal?: AbortSignal)
         if (listed.startsAt < swiss.startsAt) return false;
       }
       return false;
+    },
+  );
+
+// A team has at most a few tournaments of one name; more than this and something else is wrong.
+const SAME_NAME_MAX = 10;
+
+// GET /api/team/{teamId}/swiss?name=…: the team's tournaments with exactly this name, latest start first. lila filters
+// on the name (SwissApi.byTeamCursor); it is checked here again.
+export const teamSwissNamed = (teamId: string, name: string, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/team/${encodeURIComponent(teamId)}/swiss?${new URLSearchParams({ max: String(SAME_NAME_MAX), name })}`,
+    { accept: NDJSON, signal },
+    async (response): Promise<Swiss[]> => {
+      if (!response.ok) throw await refused("GET /api/team/{teamId}/swiss", response);
+      const found: Swiss[] = [];
+      for await (const line of ndjsonLines(response)) {
+        const swiss = readSwiss(line);
+        if (!swiss) throw new LichessError("GET /api/team/{teamId}/swiss", response.status, "no usable tournament");
+        if ((line as { name?: unknown }).name === name) found.push(swiss);
+      }
+      return found;
+    },
+  );
+
+// POST /api/swiss/new/{teamId}, needing the tournament:write scope and an account that leads the team with permission
+// to make its tournaments (lila answers 404 "You're not a leader of that team" otherwise). `form` holds the fields of
+// Lichess's Swiss form as Lichess names them ("clock.limit", "conditions.playYourGames", ...). Lichess allows 12 new
+// tournaments a day. Returns the tournament as Lichess made it.
+export const createSwiss = (token: string, teamId: string, form: Record<string, string>, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/swiss/new/${encodeURIComponent(teamId)}`,
+    { method: "POST", token, form, signal },
+    async (response): Promise<Swiss> => {
+      if (!response.ok) throw await refused("POST /api/swiss/new/{teamId}", response);
+      const swiss = readSwiss(await response.json());
+      if (!swiss) throw new LichessError("POST /api/swiss/new/{teamId}", response.status, "no usable tournament");
+      return swiss;
     },
   );
 

@@ -1,5 +1,5 @@
-// Proxy's 404 for Recap addresses that cannot be a Matchday's date, and Season addresses that cannot be a Season's, before any
-// page is rendered.
+// Proxy's 404 for Recap addresses that cannot be a Matchday's date, Season addresses that cannot be a Season's, and the
+// Organiser page without a session, before any page is rendered.
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { config, proxy } from "./proxy";
@@ -20,8 +20,8 @@ describe("the Recap addresses Proxy answers", () => {
     expect(visit("/recaps/2026-01-04")).toBeUndefined();
   });
 
-  it("runs only for a single Recap or a single Season", () => {
-    expect(config.matcher).toEqual(["/recaps/:date", "/seasons/:number"]);
+  it("runs only for a single Recap, a single Season, and the Organiser page", () => {
+    expect(config.matcher).toEqual(["/recaps/:date", "/seasons/:number", "/organiser"]);
   });
 });
 
@@ -41,5 +41,22 @@ describe("the Season Leaderboard addresses Proxy answers", () => {
   it("does not treat a Season's number as a Recap's date, or a date as a Season's number", () => {
     expect(visit("/seasons/2026-11-29")?.status).toBe(404);
     expect(visit("/recaps/1")?.status).toBe(404);
+  });
+});
+
+describe("the Organiser page Proxy answers", () => {
+  const visitWith = (cookie?: string) =>
+    proxy(new NextRequest("https://offboard.test/organiser?lichess=connected", { headers: cookie ? { cookie } : {} }));
+
+  it("answers a visitor with no session cookie with Next.js's not-found page and a 404", () => {
+    for (const response of [visitWith(), visitWith("theme=dark; offboard-lichess=x")]) {
+      expect(response?.status).toBe(404);
+      expect(new URL(response!.headers.get("x-middleware-rewrite")!).pathname).toBe("/_not-found");
+    }
+  });
+
+  it("leaves anyone with a session cookie to the page, which alone can tell whether it is the Organiser's", () => {
+    expect(visitWith("better-auth.session_token=abc.def")).toBeUndefined();
+    expect(visitWith("__Secure-better-auth.session_token=abc.def")).toBeUndefined();
   });
 });

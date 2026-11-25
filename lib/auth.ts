@@ -1,11 +1,12 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { shownLogoUrl } from "./companies";
 import { mustWelcome } from "./consent";
 import { db } from "./db";
 import { MEMBER_SQL, mustConnectLichess } from "./members";
+import { isOrganiser } from "./organiser";
 import type { Profile } from "./profile";
 
 // Until the Organiser supplies LinkedIn credentials, sign-in says so instead of failing.
@@ -70,6 +71,13 @@ export async function requireSignedUp() {
   const person = await requireWelcomed();
   if (mustConnectLichess(person)) redirect("/welcome/lichess");
   return person;
+}
+
+// What only the Organiser may see or do starts here: for anyone else, signed in or not, it is not found.
+export async function requireOrganiser() {
+  const session = await getSession();
+  if (!session || !isOrganiser(session.user)) notFound();
+  return session.user;
 }
 
 // For pages anyone may open that show Members a little more: whether the viewer is a Member, by the same checks as

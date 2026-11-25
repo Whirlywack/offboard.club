@@ -304,4 +304,67 @@ describe("reading Lichess's answers", () => {
       lichess.LichessError,
     );
   });
+
+  it("reads how long a token lasts, if Lichess says", async () => {
+    const code = { code: "c", verifier: "v", redirectUri: "r", clientId: "x" };
+    answering({ token_type: "Bearer", access_token: "lio_abc", expires_in: 31_536_000 });
+    expect(await lichess.exchangeCode(code)).toEqual({ accessToken: "lio_abc", expiresInSeconds: 31_536_000 });
+    for (const expires_in of [undefined, -5, 1.5, "31536000"]) {
+      answering({ token_type: "Bearer", access_token: "lio_abc", expires_in });
+      expect(await lichess.exchangeCode(code)).toEqual({ accessToken: "lio_abc", expiresInSeconds: null });
+    }
+  });
+
+  it("reads a team's publicly shown leaders, asking without a token", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({ id: "offboard", name: "Offboard", leader: { id: "boss", name: "Boss" }, leaders: [{ id: "boss", name: "Boss" }, { name: "no id" }] }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    expect(await lichess.teamLeaders("offboard")).toEqual(["boss"]);
+    const [[url, init]] = fetch.mock.calls as unknown as [URL, RequestInit][];
+    expect(String(url)).toBe("https://fake.lichess.test/api/team/offboard");
+    expect(init.headers).not.toHaveProperty("Authorization");
+    answering({ error: "Not found" }, 404);
+    expect(await lichess.teamLeaders("offboard")).toBeNull();
+    answering({ id: "offboard", name: "Offboard" });
+    await expect(lichess.teamLeaders("offboard")).rejects.toThrow(lichess.LichessError);
+  });
+
+  it("creates a Swiss tournament with the form as given, the token in a header only, and reads what Lichess made", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({ id: "nogQS8kw", createdBy: "boss", startsAt: "2026-11-29T18:00:00Z", name: "Offboard Matchday 2026-11-29", status: "created" }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const form = { name: "Offboard Matchday 2026-11-29", "clock.limit": "300", "conditions.playYourGames": "false" };
+    expect(await lichess.createSwiss("lio_secret", "offboard", form)).toEqual({ id: "nogQS8kw", status: "created", startsAt: new Date("2026-11-29T18:00:00Z") });
+    const [[url, init]] = fetch.mock.calls as unknown as [URL, RequestInit][];
+    expect(String(url)).toBe("https://fake.lichess.test/api/swiss/new/offboard");
+    expect(String(url)).not.toContain("lio_secret");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ Authorization: "Bearer lio_secret" });
+    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual(form);
+
+    answering({ error: "You're not a leader of that team" }, 404);
+    const refusal = lichess.createSwiss("lio_secret", "offboard", form);
+    await expect(refusal).rejects.toMatchObject({ status: 404, message: expect.stringContaining("not a leader") });
+    await expect(refusal).rejects.not.toMatchObject({ message: expect.stringContaining("lio_secret") });
+    answering({ id: "../x", status: "created", startsAt: "2026-11-29T18:00:00Z" });
+    await expect(lichess.createSwiss("t", "offboard", form)).rejects.toThrow(lichess.LichessError);
+  });
+
+  it("lists a team's tournaments of one name, by that name", async () => {
+    const lines = [
+      { id: "Swiss001", status: "created", startsAt: "2026-11-29T18:00:00Z", name: "Offboard Matchday 2026-11-29" },
+      { id: "Swiss002", status: "created", startsAt: "2026-11-29T18:00:00Z", name: "Something else" },
+    ];
+    const fetch = vi.fn(async () => new Response(lines.map((line) => `${JSON.stringify(line)}\n`).join(""), { headers: { "content-type": "application/x-ndjson" } }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await lichess.teamSwissNamed("offboard", "Offboard Matchday 2026-11-29")).toEqual([
+      { id: "Swiss001", status: "created", startsAt: new Date("2026-11-29T18:00:00Z") },
+    ]);
+    const [[url, init]] = fetch.mock.calls as unknown as [URL, RequestInit][];
+    expect(String(url)).toBe("https://fake.lichess.test/api/team/offboard/swiss?max=10&name=Offboard+Matchday+2026-11-29");
+    expect(init.headers).toMatchObject({ Accept: "application/x-ndjson" });
+    expect(init.headers).not.toHaveProperty("Authorization");
+  });
 });

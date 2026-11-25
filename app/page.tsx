@@ -3,14 +3,17 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { signOut } from "./actions";
 import { Avatar } from "./avatar";
+import { ExternalLink } from "./external-link";
 import styles from "./home.module.css";
 import leaderboards from "./leaderboards.module.css";
 import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
-import { getSession } from "@/lib/auth";
+import { getSession, viewerIsMember } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
 import { organiserEmail } from "@/lib/contact";
 import { newChampions } from "@/lib/leaderboards";
+import { lichessSwissUrl } from "@/lib/lichess";
+import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { upcomingMatchday } from "@/lib/seasons";
@@ -138,8 +141,8 @@ export default function Home() {
 }
 
 // The next Matchday once Season 1 is scheduled; until then, how many more sign-ups it is waiting for.
-// Left out, and logged, if the database cannot be read.
-async function NextMatchday() {
+// Left out, and logged, if the database cannot be read. Exported for app/home.test.ts.
+export async function NextMatchday() {
   await connection();
   const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
   const next = await upcomingMatchday(new Date()).catch(unreadable);
@@ -152,6 +155,7 @@ async function NextMatchday() {
       hour: "2-digit",
       minute: "2-digit",
     });
+    const tournament = await tournamentForMembers(next.date).catch(unreadable);
     return (
       <div className={`${styles.status} ${ui.arrive}`}>
         <p className={styles.statusLabel}>
@@ -161,6 +165,11 @@ async function NextMatchday() {
           <time dateTime={next.start.toISOString()}>{when}</time>
         </p>
         <p className={styles.statusNote}>Vilnius time, on Lichess. Five Games, 5 minutes a side plus 3 seconds a move.</p>
+        {tournament && (
+          <p className={styles.statusLink}>
+            <ExternalLink href={lichessSwissUrl(tournament)}>Join this Matchday on Lichess</ExternalLink>
+          </p>
+        )}
       </div>
     );
   }
@@ -180,6 +189,13 @@ async function NextMatchday() {
       </p>
     </div>
   );
+}
+
+// The Lichess tournament of the Matchday of `date`, once the site has created it, for a Member to join; null for anyone
+// else. Only the Club's team can join it, and each Member is in the team, so a visitor gets the time alone.
+async function tournamentForMembers(date: string): Promise<string | null> {
+  if (!(await viewerIsMember())) return null;
+  return (await matchdayOn(date))?.lichessTournamentId ?? null;
 }
 
 // The champion of the Season that has just ended, from its sixth Matchday until the next Season's first. Left out, and

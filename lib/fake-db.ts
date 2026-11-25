@@ -1,4 +1,5 @@
-// For tests only: the database's "user", "company", "matchday", "matchdayResult", "game" and "skippedSunday" tables in memory, standing
+// For tests only: the database's "user", "company", "matchday", "matchdayResult", "game", "season", "skippedSunday",
+// "organiserLichess", "scheduledJob" and "jobFailure" tables in memory, standing
 // in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement the app sends by its
 // full text, written out again below, and throws on any other: a condition dropped from a query in the app fails the
 // tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
@@ -59,13 +60,35 @@ export type GameRow = {
   finishedAt: Date;
 };
 
+export type SeasonRow = { number: number; start: string };
+export type OrganiserLichessRow = {
+  userId: string;
+  lichessId: string;
+  scopes: string;
+  token: string;
+  expiresAt: Date;
+  connectedAt: Date;
+};
+export type ScheduledJobRow = {
+  job: string;
+  lockedBy: string | null;
+  lockedUntil: Date | null;
+  lastRunAt: Date | null;
+  lastOutcome: "done" | "skipped" | "failed" | null;
+  lastDetail: string | null;
+};
+export type JobFailureRow = { id: number; job: string; at: Date; matchdayDate: string | null; problem: string };
+
 export const people = new Map<string, Person>();
 export const companies = new Map<string, CompanyRow>();
 export const matchdays = new Map<string, MatchdayRow>(); // by date
 export const results = new Map<string, ResultRow>(); // by `${matchdayDate} ${userId}`
 export const games = new Map<string, GameRow>(); // by lichessGameId
+export const seasons = new Map<number, SeasonRow>(); // the "season" table, by number
 export const skippedSundays = new Map<string, { date: string }>(); // by date
-export const seasons = new Map<number, { number: number; start: string }>(); // the "season" table, by number
+export const organiserLichess = new Map<string, OrganiserLichessRow>(); // at most one row, by "singleton"
+export const scheduledJobs = new Map<string, ScheduledJobRow>(); // by job
+export const jobFailures = new Map<string, JobFailureRow>(); // by String(id)
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -102,10 +125,12 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games, skippedSundays, seasons };
+const tables = { people, companies, matchdays, results, games, seasons, skippedSundays, organiserLichess, scheduledJobs, jobFailures };
+let lastFailureId = 0;
 
 export function resetDb() {
   for (const table of Object.values(tables)) table.clear();
+  lastFailureId = 0;
   ended = Promise.resolve();
   db.query.mockClear();
   db.connect.mockClear();
@@ -480,14 +505,81 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         .map((m) => ({ date: m.date })),
     ),
 
-  // --- Season and all-time Leaderboards (lib/leaderboards.ts) and the schedule they are read against ---
+  // --- The schedule (lib/seasons.ts, lib/signups.ts), which the Leaderboards are also read against ---
 
-  // The Seasons whose start is fixed (lib/seasons.ts, postgresStore)
-  [`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`]: () => answer([...seasons.values()]),
+  [`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`]: () => answer([...seasons.values()].map((s) => ({ ...s }))),
 
-  // signUpTimes (lib/signups.ts)
+  // signUpTimes
   [`select "lichessConnectedAt" as at from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
     () => answer([...people.values()].filter(isMember).map((p) => ({ at: p.lichessConnectedAt }))),
+
+  // addSeason
+  [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing`]: (number, start) => {
+    if (seasons.has(Number(number))) return answer([], 0);
+    seasons.set(Number(number), { number: Number(number), start });
+    return answer([], 1);
+  },
+
+  // --- The Organiser's Lichess permission (lib/organiser-lichess.ts) ---
+
+  // storedRow
+  [`select "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt" from "organiserLichess"`]: () =>
+    answer([...organiserLichess.values()].map((row) => ({ ...row }))),
+
+  // finishOrganiserConnection. The person must exist, as the foreign key requires.
+  [`insert into "organiserLichess" ("singleton", "userId", "lichessId", "scopes", "token", "expiresAt", "connectedAt") values (true, $1, $2, $3, $4, $5, now()) on conflict ("singleton") do update set "userId" = excluded."userId", "lichessId" = excluded."lichessId", "scopes" = excluded."scopes", "token" = excluded."token", "expiresAt" = excluded."expiresAt", "connectedAt" = excluded."connectedAt"`]:
+    (userId, lichessId, scopes, token, expiresAt) => {
+      if (!people.has(userId)) throw violation("23503", "organiserLichess_userId_fkey");
+      organiserLichess.set("singleton", { userId, lichessId, scopes: String(scopes), token: String(token), expiresAt: new Date(expiresAt as Date), connectedAt: new Date() });
+      return answer([], 1);
+    },
+
+  // --- Scheduled jobs (lib/jobs.ts) ---
+
+  // runJob's hold: taken only if nobody holds the job, or their hold has lapsed. Returns the previous run's outcome.
+  [`insert into "scheduledJob" ("job", "lockedBy", "lockedUntil") values ($1, $2, now() + interval '15 minutes') on conflict ("job") do update set "lockedBy" = excluded."lockedBy", "lockedUntil" = excluded."lockedUntil" where "scheduledJob"."lockedUntil" is null or "scheduledJob"."lockedUntil" <= now() returning "lastOutcome", "lastDetail"`]:
+    (job, lockedBy) => {
+      const lockedUntil = new Date(Date.now() + 15 * 60_000);
+      const row = scheduledJobs.get(job);
+      if (!row) {
+        scheduledJobs.set(job, { job, lockedBy, lockedUntil, lastRunAt: null, lastOutcome: null, lastDetail: null });
+        return answer([{ lastOutcome: null, lastDetail: null }]);
+      }
+      if (row.lockedUntil !== null && row.lockedUntil > new Date()) return answer([], 0);
+      Object.assign(row, { lockedBy, lockedUntil });
+      return answer([{ lastOutcome: row.lastOutcome, lastDetail: row.lastDetail }]);
+    },
+
+  // lastRun
+  [`select "lastRunAt" as "at", "lastOutcome" as "outcome", "lastDetail" as "detail" from "scheduledJob" where "job" = $1 and "lastRunAt" is not null`]:
+    (job) => {
+      const row = scheduledJobs.get(job);
+      return answer(row?.lastRunAt ? [{ at: row.lastRunAt, outcome: row.lastOutcome, detail: row.lastDetail }] : []);
+    },
+
+  [`insert into "jobFailure" ("job", "matchdayDate", "problem") values ($1, $2, $3)`]: (job, matchdayDate, problem) => {
+    const id = ++lastFailureId;
+    jobFailures.set(String(id), { id, job, at: new Date(), matchdayDate: (matchdayDate as string | null) ?? null, problem: String(problem) });
+    return answer([], 1);
+  },
+
+  // runJob's record of the run, which lets go of the job: only while the run still holds it.
+  [`update "scheduledJob" set "lastRunAt" = now(), "lastOutcome" = $3, "lastDetail" = $4, "lockedBy" = null, "lockedUntil" = null where "job" = $1 and "lockedBy" = $2`]:
+    (job, lockedBy, outcome, detail) => {
+      const row = scheduledJobs.get(job);
+      if (!row || row.lockedBy !== lockedBy) return answer([], 0);
+      Object.assign(row, { lastRunAt: new Date(), lastOutcome: outcome, lastDetail: detail, lockedBy: null, lockedUntil: null });
+      return answer([], 1);
+    },
+
+  // lastFailure
+  [`select "job", "at", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" order by "at" desc, "id" desc limit 1`]:
+    () => {
+      const latest = [...jobFailures.values()].sort((a, b) => b.at.getTime() - a.at.getTime() || b.id - a.id)[0];
+      return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
+    },
+
+  // --- Season and all-time Leaderboards (lib/leaderboards.ts) ---
 
   // getSeason: the Members' results on the Season's dates, oldest first, each with the Company of that night. $1 is an
   // array of dates.

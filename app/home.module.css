@@ -90,6 +90,18 @@
   font-size: var(--text-sm);
 }
 
+/* A Member's way into the Matchday's tournament, once it is on Lichess: a full-size target under the note */
+.statusLink {
+  margin-top: var(--space-1);
+  font-weight: 600;
+}
+
+.statusLink a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
 /* Signed out: the button, and what signing in shares */
 .signIn {
   display: flex;

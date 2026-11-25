@@ -1,0 +1,141 @@
+/* The Organiser page: the next Matchday at a glance, then the Lichess permission and the scheduled jobs. */
+
+/* The next Matchday, as the home page shows it: a raised panel (ui.panel) under the marigold marker */
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The panel's heading, set as a small label (with ui.eyebrow) rather than at a heading's size */
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-text);
+  line-height: var(--leading-body);
+}
+
+.value {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  line-height: var(--leading-snug);
+  text-wrap: balance;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.status > [role="alert"] {
+  margin-top: var(--space-2);
+}
+
+/* The Matchday on Lichess: a full-size target under the note */
+.link {
+  margin-top: var(--space-1);
+  font-weight: 600;
+}
+
+.link a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
+/* Each part below it in a hairline panel, like the Lichess account on the Profile page */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-panel);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* One scheduled job, or the last failure, inside the jobs panel */
+.part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.part + .part {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* Facts in rows: a muted label, then the value. Narrow enough for a phone's column without stacking. */
+.facts {
+  border-top: 1px solid var(--line);
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.facts dd {
+  overflow-wrap: anywhere;
+}
+
+/* A link in a row (the Lichess account) is a full-height target without making its row taller than the others. Its
+   ::after is the new-tab arrow (globals.css), so the extension is ::before. */
+.facts dd a {
+  position: relative;
+}
+
+.facts dd a::before {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap) - 100%) / -2) 0;
+}
+
+.failed {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* What a run or a failure said: the job's own sentence, which can name a long Lichess address */
+.detail {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* How an attempt to connect went, when it went well: the alert's shape with a neutral wash */
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-snug);
+}
+
+/* An alert with steps in it: the paragraphs and the numbered list spaced apart */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.steps ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: 1.25em;
+}
+
+.steps li::marker {
+  font-variant-numeric: tabular-nums;
+}

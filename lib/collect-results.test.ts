@@ -12,7 +12,7 @@ import { collectResults, JOB, SETTLE_MS } from "./collect-results";
 import { lastFailure } from "./jobs";
 import { getAllTime } from "./leaderboards";
 import { getSwiss } from "./lichess";
-import { registerTournament } from "./matchdays";
+import { ingestTournament, registerTournament } from "./matchdays";
 import { getRecap } from "./recaps";
 import { matchdayStart } from "./schedule";
 
@@ -177,6 +177,17 @@ describe("collecting the results of the Matchday just played", () => {
     expect({ matchdays, results, games }).toEqual(stored);
   });
 
+  it("says the Recap is public when pnpm ingest collected the results while the run waited for the standings", async () => {
+    const run = collectResults(OVER);
+    await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", date: DATE });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await run).toEqual({ outcome: "skipped", detail: `The Recap of ${DAY} is public.`, matchdayDate: DATE });
+    expect(requests().filter((r) => r.endsWith("/results"))).toHaveLength(1); // pnpm ingest's alone
+    expect(results.size).toBe(3);
+    expect(jobFailures.size).toBe(0);
+  });
+
   it("ingests it once when two runs start at the same moment", async () => {
     const both = Promise.all([collectResults(OVER), collectResults(OVER)]);
     await vi.advanceTimersByTimeAsync(SETTLE_MS);
@@ -203,7 +214,7 @@ describe("collecting the results of the Matchday just played", () => {
     // A minute before 20:00 the latest Sunday is the one before, which had none.
     expect(await runAt(after(-1))).toEqual({
       outcome: "skipped",
-      detail: "There's no tournament on Lichess for Sunday 22 November.",
+      detail: `No Matchday on ${"Sunday 22 November".replaceAll(" ", "\u00a0")}.`,
       matchdayDate: "2026-11-22",
     });
     expect(lichess.calls).toEqual([]);
@@ -245,20 +256,31 @@ describe("a failure to collect", () => {
     expect(scheduledJobs.get(JOB)?.lastOutcome).toBe("done");
   });
 
-  it("says why when Lichess no longer has the tournament", async () => {
+  it("says plainly when Lichess no longer answers at all", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
+    expect(await runAt(OVER)).toEqual(cannot("Lichess couldn't be reached."));
+  });
+
+  it("is not what happened when Lichess deleted the tournament: there is nothing to collect, and nothing to do", async () => {
     lichess.tournaments.clear();
-    // Nothing to collect, then or later, so nothing to do.
+    expect(await runAt(OVER)).toEqual({
+      outcome: "skipped",
+      detail: `Lichess deleted the tournament for ${DAY}, so it has no results.`,
+      matchdayDate: DATE,
+    });
+    expect(jobFailures.size).toBe(0);
+    expect(matchdays.get(DATE)?.ingestedAt).toBeNull();
+  });
+
+  // pnpm ingest would refuse it in the same words, so the run does not send the Organiser there.
+  it("passes on why ingestion refused the tournament, without advice that would not help", async () => {
+    for (const id of ["ana", "ben", "cora"]) people.get(id)!.lichessId = `lichess-${id}-new`;
     expect(await runAt(OVER)).toEqual({
       outcome: "failed",
-      detail: `Lichess no longer has the tournament for ${DAY}, so there are no results. It deletes one an hour after the start if fewer than two players joined.`,
+      detail: `Couldn't collect the results of ${DAY}: None of the 4 participants of tournament ${TOURNAMENT} is a Member.`,
       matchdayDate: DATE,
     });
     expect(jobFailures.size).toBe(1);
-  });
-
-  it("passes on why ingestion refused the tournament", async () => {
-    for (const id of ["ana", "ben", "cora"]) people.get(id)!.lichessId = `lichess-${id}-new`;
-    expect(await runAt(OVER)).toEqual(cannot(`None of the 4 participants of tournament ${TOURNAMENT} is a Member.`));
     expect(matchdays.get(DATE)?.ingestedAt).toBeNull();
   });
 
@@ -339,11 +361,21 @@ describe("the endpoint Vercel calls", () => {
 
   it("answers 500 when the run failed", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    lichess.override = (c) => (c.path.endsWith("/games") ? Response.json({ error: "Oops" }, { status: 500 }) : undefined);
+    vi.setSystemTime(OVER);
+    const response = call(fromVercel);
+    await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    expect((await response).status).toBe(500);
+    expect(await (await response).json()).toMatchObject({ outcome: "failed", matchdayDate: DATE });
+  });
+
+  it("answers 200 when Lichess deleted the tournament: there is nothing to do", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     lichess.tournaments.clear();
     vi.setSystemTime(OVER);
     const response = await call(fromVercel);
-    expect(response.status).toBe(500);
-    expect(await response.json()).toMatchObject({ outcome: "failed", matchdayDate: DATE });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ outcome: "skipped", matchdayDate: DATE });
   });
 });
 

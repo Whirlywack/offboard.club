@@ -7,7 +7,7 @@ import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
 import { getSession, requireOrganiser } from "@/lib/auth";
-import { JOB as COLLECT } from "@/lib/collect-results";
+import { JOB as COLLECT, lastTryAt, uncollected, type Uncollected } from "@/lib/collect-results";
 import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
 import { lastFailure, lastRun, OVERDUE_MS, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
@@ -15,7 +15,7 @@ import { lichessProfileUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
 import { LICHESS_SECURITY_URL, organiserMessage, organiserPermission, type OrganiserPermission } from "@/lib/organiser-lichess";
-import { ZONE } from "@/lib/schedule";
+import { latestSunday, matchdayStart, ZONE } from "@/lib/schedule";
 import { upcomingMatchday, type Matchday } from "@/lib/seasons";
 
 // To anyone but the Organiser the page does not exist, so their tab says so, as app/not-found.tsx does.
@@ -64,10 +64,11 @@ const Alert = ({ children }: { children: ReactNode }) => (
 async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "searchParams">) {
   await requireOrganiser();
   const now = new Date();
-  const [permission, creating, collecting, failure, next] = await Promise.all([
+  const [permission, creating, collecting, notIn, failure, next] = await Promise.all([
     organiserPermission(),
     lastRun(CREATE),
     lastRun(COLLECT),
+    uncollected(now),
     lastFailure(),
     upcomingMatchday(now),
   ]);
@@ -112,18 +113,14 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
-        <JobStatus
-          title={JOBS[CREATE]}
-          neverRun="It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it every hour."
-          run={creating}
-          now={now}
-        />
+        <JobStatus title={JOBS[CREATE]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={creating} now={now} />
         <JobStatus
           title={JOBS[COLLECT]}
-          neverRun="It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it at least once an hour."
+          neverRun="Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."
           run={collecting}
           now={now}
         />
+        <ResultsNotIn matchdays={notIn} now={now} />
         <LastFailure failure={failure} />
       </section>
 
@@ -290,6 +287,32 @@ function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: str
       ) : (
         <Alert>{neverRun}</Alert>
       )}
+    </div>
+  );
+}
+
+// The Matchdays of the last eight Sundays played on Lichess whose results are not in (lib/collect-results.ts), so that
+// one Collecting results has stopped looking after stays in sight. Nothing when there are none.
+function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date }) {
+  if (matchdays.length === 0) return null;
+  const latest = latestSunday(now);
+  return (
+    <div className={styles.part}>
+      <h3>Results not in</h3>
+      <ul className={styles.list}>
+        {matchdays.map(({ date, lichessTournamentId }) => (
+          <li key={date}>
+            <Time at={matchdayStart(date)} as={WEEKDAY} className={styles.when} />{" "}
+            {date === latest ? (
+              <>
+                Collecting results checks it until <Time at={lastTryAt(date)} as={MATCHDAY} />.
+              </>
+            ) : (
+              <>No longer checked. If Lichess still has its tournament, run pnpm ingest {lichessTournamentId}.</>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

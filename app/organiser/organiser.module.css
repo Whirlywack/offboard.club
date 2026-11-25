@@ -157,3 +157,21 @@
 .steps li::marker {
   font-variant-numeric: tabular-nums;
 }
+
+/* The Matchdays whose results are not in, one row each under a hairline, like the facts above: the Sunday first, then
+   what to do. */
+.list {
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.list li {
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.when {
+  font-weight: 600;
+  white-space: nowrap;
+}

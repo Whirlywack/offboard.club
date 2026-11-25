@@ -20,7 +20,7 @@ In a fresh worktree, in this order:
 6. `pnpm collect-results` runs the job that collects a Matchday's results once, against the fake Lichess, as Vercel's scheduled request would in production; the site's own endpoint refuses while it follows a fake Lichess. `pnpm seed season-over` leaves a finished Matchday on the fake Lichess for it to collect.
 7. `pnpm db:stop` stops that Postgres and nothing else.
 
-Each script's header has the options. Each refuses a database that is not on this machine, and the seed refuses one `db:start` did not make.
+Each script's header has the options. Each refuses a database that is not on this machine, and the seed and `pnpm collect-results` refuse one `db:start` did not make.
 
 The local site can still reach the real internet when something is clicked. "Sign in with LinkedIn" sends the browser to linkedin.com: use a seeded cookie. A seeded Profile's LinkedIn and Lichess links, and an Award's Replay, lead to the real sites, where the pretend names do not exist. Saving a new Company website makes the server fetch that website: use the seeded Companies.
 

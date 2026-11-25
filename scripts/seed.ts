@@ -7,9 +7,10 @@
 //   pnpm seed:cookies                   writes each seeded person's session cookie, keyed by id, to cookies.json beside
 //                                       the database, for Playwright: context.addCookies([cookies.ana])
 //
-// club: Season 1 over with one champion, Season 2 over with a Sunday not played and a shared title, Season 3 under way
-// with a skipped Sunday, a warm-up before Season 1 (all draws) and a Matchday in the week off that nobody now on the
-// Leaderboards played; the Organiser (org) connected and both scheduled jobs run. season-over: Season 1 just over, its
+// club: Season 1 over with one champion, Season 2 over with a shared title and a Sunday whose results never came in (on
+// the Organiser page's list), Season 3 under way with a skipped Sunday, a warm-up before Season 1 (all draws) and a
+// Matchday in the week off that nobody now on the Leaderboards played; the Organiser (org) connected and both scheduled
+// jobs run. season-over: Season 1 just over, its
 // champion on the home page, Season 2's first Matchday played on Lichess and its results not collected yet, the
 // Organiser's permission expired and the job's failure recorded. empty: two sign-ups short of sixteen, nothing played or
 // connected. Each has step1 and step2 part-way through signing up.
@@ -24,10 +25,10 @@
 // "Replay the Game" loads lichess.org's board.
 import { createHmac } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { MARK, notLocal } from "./local-db.mjs";
+import { madeByDbStart, notLocal } from "./local-db.mjs";
 import { auth, getProfile } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
-import { collectResults, JOB as COLLECT } from "@/lib/collect-results";
+import { collectResults, JOB as COLLECT, uncollected } from "@/lib/collect-results";
 import { createUpcomingMatchday, dueFrom, JOB as CREATE, tournamentName } from "@/lib/create-matchdays";
 import { db } from "@/lib/db";
 import { createFakeLichess, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
@@ -105,13 +106,15 @@ const PEOPLE: Person[] = [
 ];
 
 // Each scenario's Matchdays by tag, "s2m4" being Season 2's fourth, and how many weeks before the latest Sunday
-// Season 1 starts. Season 2's fourth is missing from club: it was never played. Sundays not listed have no Matchday.
-// `played` is a Matchday played on Lichess whose results have not been collected.
-const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[]; played?: string }> = {
+// Season 1 starts. Sundays not listed have no Matchday. `played` is a Matchday played on Lichess whose results have not
+// been collected yet; `lost`, one whose tournament is recorded but whose results never came in, which runs have long
+// stopped looking for: Season 2's fourth in club, seven Sundays ago, so the last the Organiser page still lists.
+const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[]; played?: string; lost?: string }> = {
   // skip: weeks after Season 1's start, between Season 3's first two Matchdays
   club: {
     weeks: 17, skip: 15,
     tags: ["warmup", "s1m1", "s1m2", "s1m3", "s1m4", "s1m5", "s1m6", "off", "s2m1", "s2m2", "s2m3", "s2m5", "s2m6", "s3m1", "s3m2", "s3m3"],
+    lost: "s2m4",
   },
   "season-over": { weeks: 7, tags: ["warmup", "s1m1", "s1m2", "s1m3", "s1m4", "s1m5", "s1m6"], played: "s2m1" },
   empty: { tags: [] },
@@ -122,6 +125,8 @@ const EMAIL = "@seed.invalid";
 // `pnpm fake-lichess` finds it.
 const WAITING = "PreTend1";
 const FAKE_LICHESS_FILE = "fake-lichess.json";
+// The tournament of the Matchday whose results never came in. No Lichess has it.
+const LOST = "PreTend2";
 const now = new Date();
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -308,6 +313,7 @@ async function seed(name: string) {
       }
     }
     if (waiting) await client.query(`insert into "matchday" ("date", "lichessTournamentId") values ($1, $2)`, [waiting.date, WAITING]);
+    if (scenario.lost) await client.query(`insert into "matchday" ("date", "lichessTournamentId") values ($1, $2)`, [dateOf(scenario.lost), LOST]);
     for (const game of games)
       await client.query(
         `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating",
@@ -463,8 +469,9 @@ async function check(name: string) {
         ["the home page names Season 1's champion", champions?.season === 1 && champions.champions.length === 1],
         ["Season 2's first Matchday started, its results not in yet",
           !!s2?.matchdays && played(s2) === 0 && !s2.over && matchdayStart(s2.matchdays[0].date) <= now],
-        ["its tournament finished on Lichess, waiting for Collecting results, which has never run",
-          (await matchdayOn(s2!.matchdays![0].date))?.lichessTournamentId === WAITING && collecting === null],
+        ["its tournament finished on Lichess, waiting for Collecting results, which has never run, and listed on the Organiser page",
+          (await matchdayOn(s2!.matchdays![0].date))?.lichessTournamentId === WAITING && collecting === null &&
+            JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![0].date, lichessTournamentId: WAITING }])],
         ["the Organiser's permission has expired, and the job's failure is recorded",
           !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
       );
@@ -489,6 +496,9 @@ async function check(name: string) {
           recaps.some((r) => !!company("mover", r.leaderboard) && company("mover", r.leaderboard) !== company("mover", allTime))],
         ["the Organiser's permission connected and readable, and both jobs last ran without failing",
           !!permission?.readable && permission.expiresAt > now && [run, collecting].every((r) => !!r && r.outcome !== "failed") && failure === null],
+        ["a Matchday whose results never came in, which runs no longer look for, listed on the Organiser page",
+          JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![3].date, lichessTournamentId: LOST }]) &&
+            s2!.matchdays![3].date < latestSunday(now)],
       );
     }
   }
@@ -531,10 +541,7 @@ async function main(args: string[]) {
   const why = problem(args);
   if (why) throw new Error(why);
   // The first statement: a database db:start did not make, such as a real one behind a forwarded port, is refused.
-  const { rows } = await db.query<{ mark: string | null }>(
-    `select shobj_description(oid, 'pg_database') as mark from pg_database where datname = current_database()`,
-  );
-  if (rows[0]?.mark !== MARK) throw new Error("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
+  if (!(await madeByDbStart(db))) throw new Error("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
   if (args.includes("--cookies")) return cookies().then(() => true);
   const name = args[0] ?? "club";
   await seed(name);

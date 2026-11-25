@@ -3,7 +3,7 @@
 // come, from then until the next Sunday's: once that Matchday's tournament has finished on Lichess, it ingests it
 // (ingestTournament), which publishes its Recap. A tournament still being played is left for a later run. A run that
 // could not collect it records why (runJob), and the next run tries again; one Matchday is looked after for a week,
-// after which `pnpm ingest` is the way in.
+// after which `pnpm ingest` is the way in, and the Organiser page keeps it in sight for a few weeks more (uncollected).
 //
 // The schedule is in UTC: a Matchday starts at 17:00 UTC in summer time and 18:00 in winter time and is over within
 // about two hours, so runs every five minutes from 17:00 to 23:55 UTC on Sunday put its Recap out within minutes of
@@ -17,6 +17,7 @@
 // as a real Matchday. So the endpoint refuses to run while it does, and `pnpm collect-results`, the way to run this
 // locally, refuses any database not on this machine.
 
+import { db } from "./db";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { getSwiss, timeLimit } from "./lichess";
 import { ingestTournament, matchdayOn } from "./matchdays";
@@ -31,6 +32,29 @@ export const SETTLE_MS = 10_000;
 
 // One run of the job at `now`: what it did and why. Throws only if the database cannot record the run.
 export const collectResults = (now: Date) => runJob(JOB, () => collect(now));
+
+// When runs stop looking after the Matchday of `date`: as the next Sunday's starts.
+export const lastTryAt = (date: string) => matchdayStart(addDays(date, 7));
+
+// How far back the Organiser page lists Matchdays played whose results are not in: eight Sundays, the latest included,
+// as long as a Season with its week off and a skipped Sunday. Long enough to be seen on an occasional visit, and a
+// tournament Lichess deleted drops off by itself.
+export const UNCOLLECTED_WEEKS = 8;
+
+export type Uncollected = { date: string; lichessTournamentId: string };
+
+// The Matchdays of the last UNCOLLECTED_WEEKS Sundays that have started, have their tournament recorded and have no
+// results, latest first: the one runs still look after, then those they have left to `pnpm ingest`.
+export async function uncollected(now: Date): Promise<Uncollected[]> {
+  const latest = latestSunday(now);
+  const { rows } = await db.query<Uncollected>(
+    `select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday"
+     where "ingestedAt" is null and "lichessTournamentId" is not null and "date" between $1 and $2
+     order by "date" desc`,
+    [addDays(latest, -7 * (UNCOLLECTED_WEEKS - 1)), latest],
+  );
+  return rows;
+}
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -47,30 +71,29 @@ async function collect(now: Date): Promise<JobRun> {
   const sunday = day(date);
   const matchday = await matchdayOn(date);
   const id = matchday?.lichessTournamentId;
-  if (!id) return skipped(`There's no tournament on Lichess for ${sunday}.`, date);
+  // A skipped Sunday, a Sunday before Season 1 or between two Seasons, or one whose tournament was never created.
+  if (!id) return skipped(`No Matchday on ${sunday}.`, date);
   const collected = skipped(`The Recap of ${sunday} is public.`, date);
   if (matchday.ingested) return collected;
 
-  // The same words for the same cause, so that a failure that stands is recorded once (runJob). Runs look after this
-  // Matchday until the next Sunday's starts (latestSunday), then leave it to `pnpm ingest`.
-  const lastTry = moment(matchdayStart(addDays(date, 7)));
+  // The same words for the same cause, so that a failure that stands is recorded once (runJob). A refusal would be
+  // refused by `pnpm ingest` in the same way, so only a failure that may pass is told what to do if it does not: runs
+  // look after this Matchday until the next Sunday's starts (latestSunday), then leave it to `pnpm ingest`.
+  const refusal = (why: string) => failed(`Couldn't collect the results of ${sunday}: ${sentence(why)}.`, date);
+  const lastTry = moment(lastTryAt(date));
   const cannot = (why: string) =>
     failed(`Couldn't collect the results of ${sunday}: ${sentence(why)}. If it hasn't worked by ${lastTry}, run pnpm ingest ${id}.`, date);
   const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 60_000} minutes`);
   try {
     const swiss = await getSwiss(id, deadline.signal);
     // lila deletes a Swiss tournament that has not had two players an hour after its start, and its creator can delete
-    // one before it starts. Either way there is nothing to collect, or to ingest later.
-    if (!swiss)
-      return failed(
-        `Lichess no longer has the tournament for ${sunday}, so there are no results. It deletes one an hour after the start if fewer than two players joined.`,
-        date,
-      );
+    // one before it starts. Either way there is nothing to collect, now or later, and nothing for the Organiser to do.
+    if (!swiss) return skipped(`Lichess deleted the tournament for ${sunday}, so it has no results.`, date);
     if (swiss.status !== "finished") return skipped(`The tournament for ${sunday} hasn't finished yet.`, date);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
     const ingestion = await ingestTournament(id, { signal: deadline.signal });
     if (ingestion.outcome === "unchanged") return collected; // by `pnpm ingest`, in the meantime
-    if (ingestion.outcome === "refused") return cannot(ingestion.problem);
+    if (ingestion.outcome === "refused") return refusal(ingestion.problem);
     return done(
       `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
       date,

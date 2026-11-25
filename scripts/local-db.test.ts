@@ -141,4 +141,32 @@ describe.skipIf(!local)("a database db:start did not make", () => {
       await admin.end();
     }
   }, 30_000);
+
+  it("is refused by pnpm collect-results before it records a run, even when migrated", async () => {
+    const name = `offboard_unmarked_collect_${process.pid}`;
+    const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await admin.connect();
+    const url = new URL(process.env.DATABASE_URL!);
+    url.pathname = `/${name}`;
+    const unmarked = new pg.Client({ connectionString: url.toString() });
+    let connected = false;
+    try {
+      await admin.query(`create database ${name}`);
+      expect(run(process.execPath, ["scripts/migrate.mjs"], { DATABASE_URL: url.toString() }).status).toBe(0);
+      const { status, stderr } = run(tsx, ["scripts/collect-results.ts"], {
+        DATABASE_URL: url.toString(),
+        LICHESS_URL: "http://127.0.0.1:8089",
+        LICHESS_TEAM_ID: "pretend-team",
+      });
+      expect(stderr.trim()).toBe("Refusing: this database was not made by pnpm db:start, so collecting results leaves it alone.");
+      expect(status).toBe(1);
+      await unmarked.connect();
+      connected = true;
+      expect((await unmarked.query(`select count(*)::int as n from "scheduledJob"`)).rows).toEqual([{ n: 0 }]);
+    } finally {
+      if (connected) await unmarked.end();
+      await admin.query(`drop database if exists ${name}`);
+      await admin.end();
+    }
+  }, 30_000);
 });

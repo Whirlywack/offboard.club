@@ -496,6 +496,16 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           })),
       ),
 
+  // uncollected (lib/collect-results.ts): the Matchdays between two dates with a tournament and no results, latest first.
+  [`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday" where "ingestedAt" is null and "lichessTournamentId" is not null and "date" between $1 and $2 order by "date" desc`]:
+    (from, to) =>
+      answer(
+        [...matchdays.values()]
+          .filter((m) => m.ingestedAt === null && m.lichessTournamentId !== null && m.date >= from && m.date <= to)
+          .sort((a, b) => (a.date < b.date ? 1 : -1))
+          .map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId })),
+      ),
+
   // recapDates
   [`select to_char("date", 'YYYY-MM-DD') as "date" from "matchday" where "ingestedAt" is not null order by "date" desc`]: () =>
     answer(

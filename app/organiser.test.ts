@@ -409,8 +409,8 @@ describe("the scheduled jobs on the Organiser page", () => {
 
   // Each job has its own part of the page, from its heading to the next.
   describe.each([
-    ["create-matchdays", "Creating Matchdays", "It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it every hour."],
-    ["collect-results", "Collecting results", "It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it at least once an hour."],
+    ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
+    ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."],
   ])("%s", (job, title, neverRun) => {
     const part = async () => {
       const html = await openPage();
@@ -482,6 +482,50 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-29T20:05:00.000Z">29 November 2026 at 22:05</time></dd>');
     expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
     expect(html).not.toContain("The job stopped");
+  });
+});
+
+describe("the Matchdays whose results are not in, on the Organiser page", () => {
+  // Sunday 29 November, 21:30 in Vilnius: that Sunday's Matchday has started.
+  beforeEach(() => vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-29T19:30:00Z") }));
+  afterEach(() => vi.useRealTimers());
+
+  const played = (date: string, tournament: string | null, ingested = false) =>
+    matchdays.set(date, { date, lichessTournamentId: tournament, ingestedAt: ingested ? new Date() : null });
+  // The part of the page that lists them, or null when there is none.
+  const part = async () => {
+    const html = await openPage();
+    const from = html.indexOf("<h3>Results not in</h3>");
+    return from < 0 ? null : html.slice(from, html.indexOf("<h3>", from + 1));
+  };
+  const items = (html: string | null) =>
+    [...(html ?? "").matchAll(/<li>(.*?)<\/li>/g)].map(([, item]) => item.replace(/<[^>]+>/g, "").replaceAll("&#x27;", "'"));
+
+  it("lists those of the last eight Sundays that have started, latest first, each with its date and what to do", async () => {
+    played("2026-12-06", "NextWeek"); // not started
+    played("2026-11-29", "Tonight1"); // being played, or just over: runs still look after it
+    played("2026-11-22", "Recapped", true); // its results are in
+    played("2026-11-15", null); // no tournament recorded
+    played("2026-11-08", "LeftOut1"); // runs have left it
+    played("2026-10-11", "EightWk1"); // the eighth Sunday, counting this one
+    played("2026-10-04", "NineWks1"); // the ninth: too long ago
+    expect(items(await part())).toEqual([
+      "Sunday 29 November Collecting results checks it until Sunday 6 December at 20:00.",
+      "Sunday 8 November No longer checked. If Lichess still has its tournament, run pnpm ingest LeftOut1.",
+      "Sunday 11 October No longer checked. If Lichess still has its tournament, run pnpm ingest EightWk1.",
+    ]);
+  });
+
+  it("lists a Matchday whose tournament Lichess deleted too, which only Lichess can tell", async () => {
+    played("2026-11-22", "Deleted1");
+    expect(items(await part())).toEqual(["Sunday 22 November No longer checked. If Lichess still has its tournament, run pnpm ingest Deleted1."]);
+  });
+
+  it("shows nothing when every Matchday played has its results", async () => {
+    played("2026-11-29", "Tonight1", true);
+    played("2026-11-15", null);
+    expect(await part()).toBeNull();
+    expect(await openPage()).not.toContain("Results not in");
   });
 });
 

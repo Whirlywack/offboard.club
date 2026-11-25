@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { consent } from "../actions";
 import ui from "../ui.module.css";
 import styles from "./welcome.module.css";
-import { consentProblem } from "@/lib/consent";
+import { consentProblem, HOUSE_RULES } from "@/lib/consent";
 
 // The message lib/consent.ts gives when only the house rules were accepted, so a refusal can be shown, and announced,
 // beside the box it is about.
@@ -24,8 +24,13 @@ export function ConsentForm({ name }: { name: string }) {
       <fieldset className={styles.agreement}>
         <legend>Your name in public</legend>
         <p>
-          Leaderboards and Recaps are public: anyone can see them, signed in or not. They show you as {name}, with your
-          Company if you add one. Your email is never shown, and your Profile is for signed-in Members only.
+          Being listed in public is part of being a Member. Leaderboards, Recaps, their Awards and each Season champion are
+          public: anyone can see them, signed in or not. They show you as {name}, with your Company if you add one. Your
+          email is never shown, and your Profile is for signed-in Members only.
+        </p>
+        <p>
+          If you&apos;d rather not be listed, please don&apos;t join. If you change your mind later, you can leave the Club
+          at any time from Edit your Profile, which deletes your account and takes you off every Leaderboard and Recap.
         </p>
         <label className={styles.check}>
           <input
@@ -36,7 +41,10 @@ export function ConsentForm({ name }: { name: string }) {
             aria-invalid={about === "publicDisplay" || undefined}
             aria-describedby={about === "publicDisplay" ? "publicDisplay-error" : undefined}
           />
-          <span>I agree that my name, and my Company if I add one, will appear publicly on Leaderboards.</span>
+          <span>
+            I accept that my name, and my Company if I add one, appear publicly on Leaderboards, in Recaps and Awards, and
+            as Season champion, for as long as I&apos;m a Member.
+          </span>
         </label>
         {error("publicDisplay")}
       </fieldset>
@@ -45,8 +53,9 @@ export function ConsentForm({ name }: { name: string }) {
         <legend>House rules</legend>
         <p>Two rules, so Sundays stay fair and nobody gets sold to.</p>
         <ol className={styles.rules}>
-          <li>No outside help during Games, such as an engine, an analysis board or a friend&apos;s advice.</li>
-          <li>No sales or recruiting pitches, unless the other person&apos;s &ldquo;open to&rdquo; line invites it.</li>
+          {HOUSE_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
         </ol>
         <label className={styles.check}>
           <input

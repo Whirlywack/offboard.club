@@ -10,7 +10,6 @@ import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
 import { getSession, viewerIsMember } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
-import { organiserEmail } from "@/lib/contact";
 import { newChampions } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
@@ -228,7 +227,7 @@ async function SeasonChampions() {
 
 async function You() {
   const session = await getSession().catch(() => null);
-  if (!session) return <SignIn contactable={organiserEmail() !== null} />;
+  if (!session) return <SignIn />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);
   return (

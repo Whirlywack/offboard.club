@@ -9,10 +9,13 @@
 export const USER_AGENT = "offboard.club (https://offboard.club)";
 export const RATE_LIMIT_WAIT_MS = 60_000;
 const TIMEOUT_MS = 30_000;
+// Why a request failed when Lichess gave no answer at all: the network, or Lichess down.
+const UNREACHABLE = "Lichess couldn't be reached";
 
-// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org.
-const base = () =>
-  (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || "https://lichess.org";
+// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org. The fake's
+// address while it is followed, or null.
+export const fakeLichessUrl = () => (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || null;
+const base = () => fakeLichessUrl() ?? "https://lichess.org";
 
 export const lichessUrl = (path: string) => new URL(path, base());
 
@@ -20,6 +23,8 @@ export const lichessUrl = (path: string) => new URL(path, base());
 // requests.
 export const lichessProfileUrl = (username: string) => `https://lichess.org/@/${encodeURIComponent(username)}`;
 export const lichessSwissUrl = (id: string) => `https://lichess.org/swiss/${encodeURIComponent(id)}`;
+// The page where a team's leader removes members from it by name (lila: GET /team/{id}/kick).
+export const lichessTeamKickUrl = (teamId: string) => `https://lichess.org/team/${encodeURIComponent(teamId)}/kick`;
 // A Game's page, with the board turned to one player's side.
 export const lichessGameUrl = (id: string, side: "white" | "black") => `https://lichess.org/${encodeURIComponent(id)}/${side}`;
 
@@ -80,19 +85,21 @@ async function attempt<T>(
   { method = "GET", token, form, text, accept = "application/json", timeoutMs = TIMEOUT_MS, signal }: Options,
   read: (response: Response) => Promise<T> | T,
 ): Promise<T> {
-  const limit = timeLimit(timeoutMs, `Lichess did not answer ${method} ${path} within ${timeoutMs / 1000} s`, signal);
+  const url = lichessUrl(path);
   const headers: Record<string, string> = { "User-Agent": USER_AGENT, Accept: accept };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (text !== undefined) headers["Content-Type"] = "text/plain";
+  const body = form ? new URLSearchParams(form) : text;
+  const limit = timeLimit(timeoutMs, `Lichess did not answer ${method} ${path} within ${timeoutMs / 1000} s`, signal);
   try {
-    const response = await fetch(lichessUrl(path), {
-      method,
-      headers,
-      body: form ? new URLSearchParams(form) : text,
+    let response: Response;
+    try {
       // A redirect would carry the token somewhere unchecked; Lichess's API does not redirect.
-      redirect: "manual",
-      signal: limit.signal,
-    });
+      response = await fetch(url, { method, headers, body, redirect: "manual", signal: limit.signal });
+    } catch (error) {
+      // Given up on, it says why; otherwise no answer came at all, which fetch reports only as "fetch failed".
+      throw limit.signal.aborted ? error : new Error(UNREACHABLE);
+    }
     try {
       return await unlessAborted(Promise.resolve(read(response)), limit.signal);
     } finally {
@@ -235,6 +242,21 @@ export const joinTeam = (token: string, teamId: string, password: string, signal
     { method: "POST", token, form: { password }, signal },
     async (response) => {
       if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
+    },
+  );
+
+// POST /api/team/{teamId}/kick/{userId}, needing the team:lead scope and an account that leads the team with the team's
+// permission to remove members: lila answers 400 "Insufficient team permissions" without it, and 404 when it has no
+// such team. It answers 200 whether or not anyone was removed: an account not in the team stays out, and the team's
+// creator stays in, as does any other leader unless the token's account has the team's Admin permission (lila's
+// TeamApi.kick). Someone removed this way can join again with the password of a team joined by password, as the Club's
+// is (TeamApi.join checks only the blocklist and the password), so a person who leaves can come back.
+export const kickFromTeam = (token: string, teamId: string, userId: string, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/team/${encodeURIComponent(teamId)}/kick/${encodeURIComponent(userId)}`,
+    { method: "POST", token, signal },
+    async (response) => {
+      if (!response.ok) throw await refused("POST /api/team/{teamId}/kick/{userId}", response);
     },
   );
 

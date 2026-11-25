@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstSeasonStart, isSunday, matchdayStart, nextSeasonStart, seasonMatchdays, signUpsNeeded, vilniusDate } from "./schedule";
+import { firstSeasonStart, isSunday, latestSunday, matchdayStart, nextSeasonStart, seasonMatchdays, signUpsNeeded, vilniusDate } from "./schedule";
 
 describe("signUpsNeeded", () => {
   it("needs all sixteen when nobody has signed up", () => {
@@ -44,6 +44,30 @@ describe("vilniusDate", () => {
   it("is the calendar day in Vilnius, not in UTC", () => {
     expect(vilniusDate(new Date("2026-12-06T22:30:00Z"))).toBe("2026-12-07");
     expect(vilniusDate(new Date("2026-12-06T21:59:00Z"))).toBe("2026-12-06");
+  });
+});
+
+describe("latestSunday", () => {
+  const at = (iso: string) => latestSunday(new Date(iso));
+
+  it("is a Sunday from 20:00 Vilnius time that evening until the next Sunday's 20:00", () => {
+    expect(at("2026-12-06T18:00:00Z")).toBe("2026-12-06"); // Sunday, 20:00 in winter time
+    expect(at("2026-12-06T17:59:59Z")).toBe("2026-11-29");
+    expect(at("2026-12-07T09:00:00Z")).toBe("2026-12-06"); // Monday
+    expect(at("2026-12-13T17:59:59Z")).toBe("2026-12-06"); // the next Sunday, a second before its Matchday
+  });
+
+  it("follows Vilnius time in summer, and across midnight UTC", () => {
+    expect(at("2027-06-06T17:00:00Z")).toBe("2027-06-06"); // 20:00 in summer time
+    expect(at("2027-06-06T16:59:59Z")).toBe("2027-05-30");
+    expect(at("2026-12-06T22:30:00Z")).toBe("2026-12-06"); // already Monday in Vilnius
+  });
+
+  it("starts on the Sundays the clocks change at their own 20:00", () => {
+    expect(at("2026-10-25T18:00:00Z")).toBe("2026-10-25");
+    expect(at("2026-10-25T17:59:59Z")).toBe("2026-10-18");
+    expect(at("2027-03-28T17:00:00Z")).toBe("2027-03-28");
+    expect(at("2027-03-28T16:59:59Z")).toBe("2027-03-21");
   });
 });
 

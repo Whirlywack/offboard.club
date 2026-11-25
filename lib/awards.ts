@@ -27,8 +27,10 @@ export type StoredGame = {
 export type Player = { name: string; excluded: boolean };
 
 // An Award with what the Recap shows of it: the winner's name, the side they played, and how many half-moves the Game
-// lasted, so that its board opens on the last move, from the winner's side.
-export type RecapAward = Award & { name: string; colour: Colour; plies: number };
+// lasted, so that its board opens on the last move, from the winner's side. `opponentLeft` when the loser has since
+// left the Club: the Game is then shown to nobody, as Lichess's board and page for it still name their account, which
+// is how a Profile's Games treat someone who has left (docs/adr/0002).
+export type RecapAward = Award & { name: string; colour: Colour; plies: number; opponentLeft: boolean };
 
 // The Awards of a Matchday from its decisive Games and the Members in its results, by id. A Game can win an Award only
 // if its winner is still a Member in good standing: neither player's Lichess account may be marked or closed, and the
@@ -58,7 +60,9 @@ export function recapAwards(stored: StoredGame[], players: Map<string, Player>):
   }
   return awards(games).map((award) => {
     const game = fair.get(award.lichessGameId)!;
-    return { ...award, name: players.get(award.memberId)!.name, colour: game.winner, plies: game.plies };
+    const loserId = game.winner === "white" ? game.blackId : game.whiteId;
+    const name = players.get(award.memberId)!.name;
+    return { ...award, name, colour: game.winner, plies: game.plies, opponentLeft: loserId === null };
   });
 }
 

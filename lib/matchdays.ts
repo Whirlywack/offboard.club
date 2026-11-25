@@ -50,7 +50,12 @@ const refused = (problem: string): Ingestion => ({ outcome: "refused", problem }
 // `redo` is the Organiser's deliberate second look, for when a Member was missed, such as one who connected their
 // Lichess account only after playing: the tournament is fetched again and its Matchday's results and Games are
 // replaced, in one transaction. Members already in it keep the Company recorded the first time.
-export async function ingestTournament(tournamentId: string, { redo = false } = {}): Promise<Ingestion> {
+//
+// `signal` gives up on Lichess, which then throws with nothing stored.
+export async function ingestTournament(
+  tournamentId: string,
+  { redo = false, signal }: { redo?: boolean; signal?: AbortSignal } = {},
+): Promise<Ingestion> {
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return refused("LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.");
   if (!SWISS_ID.test(tournamentId))
@@ -60,9 +65,9 @@ export async function ingestTournament(tournamentId: string, { redo = false } = 
   if (registered?.ingested && !redo) return { outcome: "unchanged", date: registered.date };
   const redone = !!registered?.ingested;
 
-  const swiss = await getSwiss(tournamentId);
+  const swiss = await getSwiss(tournamentId, signal);
   if (!swiss) return refused(`Lichess has no Swiss tournament ${tournamentId}.`);
-  if (!(await teamHasSwiss(teamId, swiss))) return refused(`Tournament ${tournamentId} is not on the Club's Lichess team.`);
+  if (!(await teamHasSwiss(teamId, swiss, signal))) return refused(`Tournament ${tournamentId} is not on the Club's Lichess team.`);
   if (swiss.status !== "finished") return refused(`Tournament ${tournamentId} has not finished yet, so it cannot be ingested.`);
   const date = vilniusDate(swiss.startsAt);
   if (!isSunday(date)) return refused(`Tournament ${tournamentId} started on ${date}, which is not a Sunday, so it is not a Matchday.`);
@@ -72,8 +77,8 @@ export async function ingestTournament(tournamentId: string, { redo = false } = 
   const other = (await matchdayOn(date))?.lichessTournamentId;
   if (other && other !== tournamentId) return refused(`The Matchday of ${date} is tournament ${other}, not ${tournamentId}.`);
 
-  const resultsNdjson = await swissResults(tournamentId);
-  const gamesNdjson = await swissGames(tournamentId);
+  const resultsNdjson = await swissResults(tournamentId, signal);
+  const gamesNdjson = await swissGames(tournamentId, signal);
   const members = await allMembers();
   const { scores, games } = ingestMatchday(resultsNdjson, gamesNdjson, members);
   const participants = resultsNdjson.split("\n").filter((line) => line.trim()).length;
@@ -83,7 +88,7 @@ export async function ingestTournament(tournamentId: string, { redo = false } = 
     return refused(`None of the ${participants} participants of tournament ${tournamentId} is a Member.`);
   const lichessIdOf = new Map(members.map((m) => [m.memberId, m.lichessId]));
   const played = scores.map((s) => lichessIdOf.get(s.memberId)!);
-  const accounts = await getPublicAccounts(played);
+  const accounts = await getPublicAccounts(played, signal);
 
   let stored: boolean;
   try {
@@ -160,14 +165,15 @@ async function reclaim(q: Queryable, date: string, tournamentId: string): Promis
   return rowCount === 1;
 }
 
-// For a redo: removes the Matchday's results and Games, and only that Matchday's. Returns the Company each Member's
-// result recorded, null included.
+// For a redo: removes the Matchday's results and Games, and only that Matchday's, but for Games against someone who has
+// left the Club since (#15), which are kept for their opponents' histories: the person is no longer a Member, so the
+// redo would not store them again. Returns the Company each Member's result recorded, null included.
 async function clear(q: Queryable, date: string) {
   const { rows } = await q.query<{ userId: string; companyDomain: string | null }>(
     `select "userId", "companyDomain" from "matchdayResult" where "matchdayDate" = $1`,
     [date],
   );
-  await q.query(`delete from "game" where "matchdayDate" = $1`, [date]);
+  await q.query(`delete from "game" where "matchdayDate" = $1 and "whiteId" is not null and "blackId" is not null`, [date]);
   await q.query(`delete from "matchdayResult" where "matchdayDate" = $1`, [date]);
   return rows;
 }
@@ -193,13 +199,16 @@ async function storeResults(q: Queryable, date: string, scores: Score[]) {
   );
 }
 
+// A Game a redo kept, against someone who has left, stays as it is, even if they have since come back with the same
+// Lichess account as a new Member: leaving took the Game from them.
 async function storeGames(q: Queryable, date: string, games: Game[]) {
   const column = <T>(value: (g: Game) => T) => games.map(value);
   await q.query(
     `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
      select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt"
      from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[])
-       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")`,
+       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
+     on conflict ("lichessGameId") do nothing`,
     [
       date,
       column((g) => g.lichessGameId),

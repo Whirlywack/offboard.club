@@ -17,6 +17,6 @@ These calls were first made during the build and confirmed by the Organiser on 2
 
 - A visitor sees names on a Leaderboard that link to Profiles they cannot open; the page says so.
 - An Award is public as a name, a value and a winner. Its Game is shown to Members only (`AWARD_GAMES_ARE_PUBLIC` in `lib/awards.ts` is the one line that would change that).
-- In a Profile's Games, a Game against someone who has left the Club is listed as against "a former member", with no link to Lichess, since the Game there still shows their username. An Award is not covered by this yet: one won against someone who has since left still shows Members that Game's board and link.
+- In a Profile's Games, a Game against someone who has left the Club is listed as against "a former member", with no link to Lichess, since the Game there still shows their username. For the same reason an Award won against someone who has since left keeps its winner, but its Game, board and link, is shown to nobody (#15).
 - A Company's logo is stored but not shown: loading it from the Company's own website would tell that website who is looking at a Profile.
 - A Member whose Lichess account is marked or closed is left out of Leaderboards and Awards without being named as such.

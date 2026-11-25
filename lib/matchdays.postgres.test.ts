@@ -3,6 +3,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
+import { uncollected } from "./collect-results";
 import { ingestTournament, registerTournament } from "./matchdays";
 import { getRecap, recapDates } from "./recaps";
 
@@ -144,8 +145,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       ],
       // ana, with Black, mated ben on her 74th move (148 half-moves) with 5.30 seconds on her clock.
       awards: [
-        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
-        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 530, name: "ingest-test-ana", colour: "black", plies: 148, opponentLeft: false },
+        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 74, name: "ingest-test-ana", colour: "black", plies: 148, opponentLeft: false },
       ],
     });
     expect(await getRecap("2026-11-23")).toBeNull();
@@ -171,6 +172,19 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },
     ]);
+
+    // A redo keeps that Game; and once she is back with the same Lichess account, another redo goes through and keeps
+    // it as it is, once.
+    const kept = async () => ({
+      games: await select(`select count(*)::int as n from "game"`),
+      game: await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`),
+    });
+    const before = await kept();
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 3, games: 2, redone: true });
+    expect(await kept()).toEqual(before);
+    await addPerson("ingest-test-cora-again", "pretend--ines");
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 4, games: 3, redone: true });
+    expect(await kept()).toEqual(before);
   }, 60_000);
 
   it("rolls back everything an ingestion wrote when a later write fails", async () => {
@@ -187,6 +201,26 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select count(*)::int as n from "matchday"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "matchdayResult"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 0 }]);
+  }, 60_000);
+
+  it("lists the Matchdays of the last eight Sundays that have started, have a tournament and have no results", async () => {
+    await client.query(`delete from "game"`);
+    await client.query(`delete from "matchdayResult"`);
+    await client.query(`delete from "matchday"`);
+    await client.query(
+      `insert into "matchday" ("date", "lichessTournamentId", "ingestedAt") values
+         ('2026-12-06', 'NextWeek', null), ('2026-11-29', 'Tonight1', null), ('2026-11-22', 'Recapped', now()),
+         ('2026-11-15', null, null), ('2026-11-08', 'LeftOut1', null), ('2026-10-11', 'EightWk1', null), ('2026-10-04', 'NineWks1', null)`,
+    );
+    // 21:30 on Sunday 29 November in Vilnius: that Matchday has started; the next has not; 4 October is the ninth Sunday.
+    expect(await uncollected(new Date("2026-11-29T19:30:00Z"))).toEqual([
+      { date: "2026-11-29", lichessTournamentId: "Tonight1" },
+      { date: "2026-11-08", lichessTournamentId: "LeftOut1" },
+      { date: "2026-10-11", lichessTournamentId: "EightWk1" },
+    ]);
+    // 19:59 that evening, the latest Sunday is the 22nd.
+    expect((await uncollected(new Date("2026-11-29T17:59:00Z"))).map((m) => m.date)).toEqual(["2026-11-08", "2026-10-11", "2026-10-04"]);
+    await client.query(`delete from "matchday"`);
   }, 60_000);
 
   it("refuses plainly when the tournament is registered for another day while it is being fetched", async () => {

@@ -29,7 +29,9 @@ it("is given up on after two attempts of 10 s, and a scheduled job answers that 
     db.query("select 1").catch((error: Error) => error),
     GET(new Request("https://offboard.test/api/jobs/create-matchdays", { headers: { authorization: `Bearer ${SECRET}` } })),
   ]);
-  expect(Date.now() - started).toBeLessThan(21_000);
+  const took = Date.now() - started;
+  expect(took).toBeGreaterThanOrEqual(19_000);
+  expect(took).toBeLessThan(21_000);
   expect(query).toEqual(new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }));
   expect(run.status).toBe(500);
   expect(await run.json()).toEqual({ outcome: "failed", detail: "The run could not be recorded." });

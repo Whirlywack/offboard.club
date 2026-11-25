@@ -81,7 +81,7 @@ const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);
 // LICHESS_DEADLINE_MS, or at `by` (a time, in ms) if that comes first: null once Lichess has answered that it did, or
 // why not as a sentence for the Organiser. Lichess answers the same when it keeps the account because it leads the team
 // (kickFromTeam), so a leader who leaves stays in the team with nothing kept.
-async function leaveTeam(lichessId: string, now: Date, by = Infinity): Promise<string | null> {
+async function leaveTeam(lichessId: string, now: Date, by: number): Promise<string | null> {
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.";
   const permission = await organiserToken(now);

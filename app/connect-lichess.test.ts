@@ -4,7 +4,7 @@
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeLichess, type FakeAccount } from "@/lib/fixtures/fake-lichess";
-import { codeChallenge } from "@/lib/connect-lichess";
+import { codeChallenge, REVOKED_BY_MS } from "@/lib/connect-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/callback/route";
 
@@ -499,6 +499,37 @@ describe("coming back from Lichess", () => {
       "Connecting Lichess failed:",
       expect.objectContaining({ message: expect.stringContaining("240 s") }),
     );
+  });
+
+  it("revokes the token within 295 s of the callback's start, however long reading the session took", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const back = await approveOnLichess(await pressConnect(), "bobby");
+    // Reading the session takes 20 s, as when the database has to be tried twice (lib/db.ts). Each Lichess request, its
+    // revocation included, answers 429 after 25 s, then, after the minute's wait, properly after another 25 s.
+    const read = getSession.getMockImplementation()!;
+    getSession.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(read()), 20_000)));
+    const slowed = new Set<string>();
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, 25_000);
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      });
+      const key = `${request.method} ${new URL(request.url).pathname}`;
+      if (!slowed.has(key)) {
+        slowed.add(key);
+        return new Response(null, { status: 429 });
+      }
+      return lichess.fetch(input, init);
+    });
+    const started = Date.now();
+    let finished = 0;
+    const arrived = arrive(back).finally(() => (finished = Date.now()));
+    await vi.advanceTimersByTimeAsync(330_000);
+    expect(await arrived).toBe("/welcome/lichess?lichess=failed");
+    expect(finished - started).toBeGreaterThanOrEqual(260_000); // the connection gave up 240 s after the session was read
+    expect(finished - started).toBeLessThanOrEqual(REVOKED_BY_MS);
   });
 
   it("asks nothing more of Lichess when the code is refused", async () => {

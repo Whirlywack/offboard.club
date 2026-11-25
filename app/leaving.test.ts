@@ -532,9 +532,10 @@ describe("the Lichess token", () => {
   it("is given up on in time for the Organiser's leaving to end inside the 60 s its page allows", async () => {
     vi.useFakeTimers({ now: NOW, toFake: ["Date", "setTimeout", "clearTimeout"] });
     signedIn = "organiser";
-    // Reading the session takes 20 s, as when the database has to be tried twice (lib/db.ts), and Lichess never answers.
+    // Reading the session takes 21 s, a little more than when the database has to be tried twice (lib/db.ts), so that
+    // removing from the team gets the 24 s left, not its own 25 s; and Lichess never answers.
     const read = getSession.getMockImplementation()!;
-    getSession.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(read()), 20_000)));
+    getSession.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(read()), 21_000)));
     vi.stubGlobal("fetch", (_: unknown, init: RequestInit) => new Promise((__, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
     let left = false;
     const leaving = redirectedTo(() => leaveClub()).then((to) => ((left = true), to));
@@ -547,7 +548,7 @@ describe("the Lichess token", () => {
     expect(inTime).toBe(true);
     expect(await leaving).toBe("/left");
     expect(LEAVING_LICHESS_BY_MS).toBeLessThan(maxDuration * 1000 - 10_000); // and 10 s left for the database after
-    expect(teamRemovals.get("boss-plays")?.problem).toBe("Lichess took more than 25 s.");
+    expect(teamRemovals.get("boss-plays")?.problem).toBe("Lichess took more than 24 s.");
     expect(logged.join("\n")).toContain("A Lichess token could not be revoked.");
   });
 

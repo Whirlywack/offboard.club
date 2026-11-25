@@ -20,12 +20,14 @@
 //   (vercel.com/docs/vercel-blob/using-blob-sdk, "Expire blobs automatically"), with no promise beyond that.
 // - Nothing half-written: a dump is made whole in memory, then stored by one request under a name of its own, which
 //   either makes the file or does not. A run that fails leaves nothing, and the next night's makes a whole dump again.
-// - On time: a run ends at its deadline, recording why, whatever the database or the store is doing.
+// - On time: a run stops waiting for the dump and the store at its deadline, whatever they are doing. What it records,
+//   that a dump was stored and how the run went, needs the database; runs that cannot record are noticed when none
+//   has been stored for two days (lib/alerts.ts).
 
 import { del, list, put } from "@vercel/blob";
 import { escapeIdentifier } from "pg";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
+import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, workDone, type JobRun } from "./jobs";
 import { inTransaction } from "./transaction";
 
 export const JOB = "backup";
@@ -225,7 +227,9 @@ async function backUpNow(now: Date): Promise<JobRun> {
       // The store's errors and the database's name the request, never a value from the dump.
       return failed(`The backup failed: ${sentence(reason(error))}.`);
     }
-    // The new dump is stored: now the old ones go, those under backups/ alone, by the date in each name.
+    // The new dump is stored, so a backup has been made, whatever happens next. Now the old ones go, those under
+    // backups/ alone, by the date in each name.
+    await workDone(JOB);
     const old: string[] = [];
     const strange: string[] = [];
     try {

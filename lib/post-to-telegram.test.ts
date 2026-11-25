@@ -10,7 +10,9 @@ import { GET as cronRequest } from "@/app/api/jobs/post-to-telegram/route";
 import { addCompany, addPerson, db, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
+import { alertOrganiser } from "./alerts";
 import { collectResults, SETTLE_MS } from "./collect-results";
+import type { JobRun } from "./jobs";
 import { removeMember } from "./leaving";
 import { ingestTournament, registerTournament } from "./matchdays";
 import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
@@ -40,9 +42,8 @@ const WEDNESDAY = at("2026-11-25T12:00:00Z");
 const MORNING = "Matchday tonight at 20:00: five Games of 5+3 on Lichess. The link to join is on https://offboard.test once you're signed in.";
 const HOUR_BEFORE = "Matchday starts in an hour, at 20:00. The link to join is on https://offboard.test once you're signed in.";
 const POSTED_ONE = "Posted 1 message to the Telegram group.";
-// What a run says of a post Telegram may have posted, by its first line, and why it could not tell when the run knows.
-const unsure = (text: string, why?: string) =>
-  `It isn't known whether Telegram posted "${text.split("\n")[0]}"${why ? ` (${why})` : ""}, so it won't be posted again. Check the group.`;
+// What is said of a post Telegram may have posted, by its first line, whichever run says it.
+const unsure = (text: string) => `It isn't known whether Telegram posted "${text.split("\n")[0]}", so it won't be posted again. Check the group.`;
 
 // The Matchday as Lichess exports it once played: ana, ben and cora are Members, zed is not. ana, rated 1500, mated
 // ben, rated 1550, in 31 half-moves with 42 seconds left; zed beat cora on time; ben and cora drew.
@@ -197,15 +198,15 @@ describe("the reminders on a Matchday Sunday", () => {
     expect(posted()).toEqual([MORNING]);
   });
 
-  // A run that cannot tell whether Telegram posted the reminder: later runs never send it again, and from 15 minutes
-  // after it was claimed ask the Organiser to look, until it is out of date at 19:00.
-  const neverAgain = async (why: string) => {
+  // A run that cannot tell whether Telegram posted the reminder fails, asking the Organiser to look: one failure, in the
+  // words a later run would use. Later runs never send it again, and record only what they do themselves.
+  const neverAgain = async (run: Promise<JobRun> | JobRun) => {
+    expect(await run).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
     telegram.override = undefined;
-    expect((await runAt(vilnius("10:07"))).detail).toBe("Nothing to post."); // a delivery may still be at it
-    for (const time of ["10:16", "11:07", "18:07"]) expect(await runAt(vilnius(time))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    for (const time of ["10:07", "10:16", "11:07", "18:07"]) expect(await runAt(vilnius(time))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
     expect(await runAt(vilnius("19:07"))).toMatchObject({ outcome: "done", detail: POSTED_ONE }); // the 19:00 one
     expect(telegram.calls.filter((call) => call.params.text === MORNING)).toHaveLength(1);
-    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([unsure(MORNING, why), unsure(MORNING)]);
+    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([unsure(MORNING)]);
   };
 
   it.each([
@@ -216,9 +217,8 @@ describe("the reminders on a Matchday Sunday", () => {
     vi.setSystemTime(vilnius("10:00"));
     const run = postToTelegram(vilnius("10:00"));
     await vi.advanceTimersByTimeAsync(10_000);
-    expect((await run).outcome).toBe("failed");
     expect(telegram.posts).toHaveLength(posts);
-    await neverAgain("Telegram didn't answer within 10 s");
+    await neverAgain(run);
   });
 
   it("are never posted twice: not again when the connection broke once the request was out", async () => {
@@ -226,15 +226,14 @@ describe("the reminders on a Matchday Sunday", () => {
       throw new TypeError("fetch failed", { cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }) });
     });
     telegram.calls.push({ method: "sendMessage", token: TOKEN, params: { chat_id: GROUP, text: MORNING } }); // as Telegram got it
-    expect((await runAt(vilnius("10:00"))).outcome).toBe("failed");
+    const run = await runAt(vilnius("10:00"));
     vi.stubGlobal("fetch", telegram.fetch);
-    await neverAgain("the connection to Telegram broke");
+    await neverAgain(run);
   });
 
   it("are never posted twice: not again when an answer that is not Telegram's came back", async () => {
     telegram.override = () => new Response("<html>502 Bad Gateway</html>", { status: 502 });
-    expect((await runAt(vilnius("10:00"))).outcome).toBe("failed");
-    await neverAgain("Telegram answered 502 without saying");
+    await neverAgain(await runAt(vilnius("10:00")));
   });
 
   it("are not posted on a skipped Sunday, nor before the Matchday is on Lichess, which the run says", async () => {
@@ -265,23 +264,57 @@ describe("the Recap", () => {
   it("writes each name so that Telegram can make no link of it: no address, @username, #hashtag, $cashtag, /command or number", async () => {
     Object.assign(people.get("ana")!, { name: "Ana evil.example https://t.me/scam" });
     Object.assign(people.get("ben")!, { name: "@pretend_scammer #free $USD /start +37060000000 ben@mail.example" });
-    Object.assign(people.get("cora")!, { name: `J. R. O'Neil-Šimkutė ${"x".repeat(300)}` });
+    Object.assign(people.get("cora")!, { name: `J. R. O'Neil-Šimkutė ${"ą".repeat(300)}` });
     await collectAt(OVER);
     const [, top, awards] = posted()[0].split("\n\n");
     expect(top.split("\n")).toEqual([
       "1. Ana evil example https t me scam: 4 points",
       "2. pretend scammer free USD start ben mail example: 2 points",
-      `3. J. R. O'Neil-Šimkutė ${"x".repeat(100 - "J. R. O'Neil-Šimkutė ".length)}: 0.5 points`,
+      `3. J. R. O'Neil-Šimkutė ${"ą".repeat(100 - "J. R. O'Neil-Šimkutė ".length)}: 0.5 points`,
     ]);
     expect(awards).toContain("Biggest upset: Ana evil example https t me scam beat someone");
     Object.assign(people.get("ana")!, { name: "@@@ 123" });
     expect(await postRecap(DATE, OVER)).toBe("Nothing to post."); // sent already: a new text would not be
   });
 
-  it("names someone whose name is nothing a post can write as \"a Member\"", async () => {
-    Object.assign(people.get("ana")!, { name: "@@@ 123 ://" });
+  // Whether Telegram's apps take `text` for an address in the TON blockchain, as TDLib checks one
+  // (TonWalletManager::check_ton_address): 48 characters of base64, 36 bytes whose first is tagged 0x11 in its low six
+  // bits and whose last two are the CRC-16/XMODEM of the rest.
+  const isTonAddress = (text: string) => {
+    const bytes = Buffer.from(text, "base64url");
+    let crc = 0;
+    for (const byte of bytes.subarray(0, 34)) {
+      crc ^= byte << 8;
+      for (let bit = 0; bit < 8; bit++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
+    return text.length === 48 && bytes.length === 36 && (bytes[0] & 0x3f) === 0x11 && crc === bytes.readUInt16BE(34);
+  };
+
+  it("writes no TON address, which can be letters alone: an unbroken run of 40 or more ASCII characters is left out", async () => {
+    const address = "UQDgfzSWkgMaLQUjwGDxcetPqbqfyqXyQKbIcKxuGEJeCxjl";
+    expect(isTonAddress(address)).toBe(true);
+    const run = (length: number) => "Ab-".repeat(14).slice(0, length);
+    Object.assign(people.get("ana")!, { name: `Ana ${address}` });
+    Object.assign(people.get("ben")!, { name: `Ben ${run(39)}` });
+    Object.assign(people.get("cora")!, { name: `Cora ${run(40)}Šimkutė` });
     await collectAt(OVER);
-    expect(posted()[0]).toContain("\n1. a Member: 4 points\n");
+    expect(posted()[0].split("\n\n")[1].split("\n")).toEqual(["1. Ana: 4 points", `2. Ben ${run(39)}: 2 points`, "3. Cora Šimkutė: 0.5 points"]);
+    expect(posted()[0]).not.toContain(address);
+  });
+
+  it("keeps a Cyrillic, Greek or CJK name as it is", async () => {
+    const names = { ana: "Иван Петров", ben: "Ἀριστοτέλης Παπαδόπουλος", cora: "山田太郎" };
+    for (const [id, name] of Object.entries(names)) Object.assign(people.get(id)!, { name });
+    await collectAt(OVER);
+    expect(posted()[0].split("\n\n")[1].split("\n")).toEqual([`1. ${names.ana}: 4 points`, `2. ${names.ben}: 2 points`, `3. ${names.cora}: 0.5 points`]);
+  });
+
+  it("names someone whose name is nothing a post can write, or only full stops, hyphens and apostrophes, as \"a Member\"", async () => {
+    Object.assign(people.get("ana")!, { name: "@@@ 123 ://" });
+    Object.assign(people.get("ben")!, { name: "..." });
+    Object.assign(people.get("cora")!, { name: "- '’ -." });
+    await collectAt(OVER);
+    expect(posted()[0].split("\n\n")[1].split("\n")).toEqual(["1. a Member: 4 points", "2. a Member: 2 points", "3. a Member: 0.5 points"]);
   });
 
   it("is posted once: not by later runs, nor when pnpm ingest or another collection finds it stored", async () => {
@@ -350,34 +383,92 @@ describe("the posts the site keeps", () => {
 const refused = () => Response.json({ ok: false, error_code: 500, description: "Internal Server Error" }, { status: 500 });
 
 describe("a post Telegram may have posted, wherever it was sent from", () => {
-  it("is reported by the next run when it was the Recap Collecting results sent", async () => {
+  const failures = () => [...jobFailures.values()].map(({ job, problem }) => `${job}: ${problem}`);
+
+  it("is one failure, found by the next run, when it was the Recap Collecting results sent", async () => {
     telegram.override = () => "lost";
     vi.setSystemTime(OVER);
     const run = collectResults(OVER);
     await vi.advanceTimersByTimeAsync(SETTLE_MS + 10_000);
     expect((await run).outcome).toBe("done");
     telegram.override = undefined;
-    expect(await runAt(at("2026-11-29T20:07:00Z"))).toMatchObject({ outcome: "failed", detail: unsure(RECAP) });
+    for (const time of ["2026-11-29T20:07:00Z", "2026-11-29T21:07:00Z"])
+      expect(await runAt(at(time))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
+    expect(failures()).toEqual([`${JOB}: ${unsure(RECAP)}`]);
     expect(posted()).toEqual([RECAP]); // the one Telegram got, and no other
   });
 
-  it("is reported by the next run when it was a notice the change sent", async () => {
+  it("is one failure, found by the next run, when it was a notice the change sent", async () => {
     telegram.override = () => "lost";
     const skipping = skipMatchday("2026-12-06", WEDNESDAY);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await skipping).toMatchObject({ problem: false });
     telegram.override = undefined;
     const notice = "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.";
-    expect(await runAt(at("2026-11-25T13:07:00Z"))).toMatchObject({ outcome: "failed", detail: unsure(notice) });
+    for (const time of ["2026-11-25T13:07:00Z", "2026-11-25T14:07:00Z"])
+      expect(await runAt(at(time))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
+    expect(failures()).toEqual([`${JOB}: ${unsure(notice)}`]);
     expect(posted()).toEqual([notice]);
   });
 
-  it("is reported once a delivery has held it for 15 minutes without sending it, as when the run died", async () => {
+  it("is a failure once a delivery has held it for 15 minutes without sending it, as when the run died", async () => {
     await queuePost({ key: "reminder:2026-11-29:10", text: MORNING, until: vilnius("19:00") });
     telegramPosts.get("reminder:2026-11-29:10")!.claimedAt = vilnius("10:00"); // and then nothing
     expect(await runAt(vilnius("10:14"))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
-    expect(await runAt(vilnius("10:15"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    expect(failures()).toEqual([]);
+    expect(await runAt(vilnius("10:15"))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
+    expect(failures()).toEqual([`${JOB}: ${unsure(MORNING)}`]);
     expect(posted()).toEqual([]);
+  });
+
+  it("is a failure each time, though the same reminder was lost the Sunday before", async () => {
+    for (const date of [DATE, "2026-12-06"]) {
+      await queuePost({ key: `reminder:${date}:10`, text: MORNING, until: vilnius("19:00", date) });
+      telegramPosts.get(`reminder:${date}:10`)!.claimedAt = vilnius("10:00", date); // and then nothing
+      await runAt(vilnius("11:07", date));
+    }
+    expect(failures()).toEqual([`${JOB}: ${unsure(MORNING)}`, `${JOB}: ${unsure(MORNING)}`]);
+  });
+
+  it("is none of the posts Telegram took: a Sunday of posts is no failure, and nothing for the Organiser", async () => {
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+    telegram = createFakeTelegram({ token: TOKEN, chats: [GROUP, "123456789"] });
+    for (const time of ["10:00", "19:00"]) await runAt(vilnius(time));
+    await collectAt(OVER);
+    const later = at("2026-11-29T21:07:00Z");
+    await runAt(later);
+    expect(await alertOrganiser(later)).toMatchObject({ outcome: "skipped", detail: "Nothing to tell you." });
+    expect(posted()).toEqual([MORNING, HOUR_BEFORE, RECAP]);
+    expect(failures()).toEqual([]);
+  });
+
+  it("is let go a day after it was sent, though it is kept, never sent, until its Sunday: a notice a year ahead", async () => {
+    telegram.override = () => "lost";
+    const skipping = skipMatchday("2027-11-21", WEDNESDAY);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await skipping).toMatchObject({ problem: false });
+    telegram.override = undefined;
+    const [notice] = posted();
+    for (const time of ["2026-11-25T13:07:00Z", "2026-11-26T11:59:00Z", "2026-11-26T12:00:00Z", "2027-03-01T10:07:00Z", "2027-11-20T10:07:00Z"])
+      expect((await runAt(at(time))).outcome).not.toBe("failed");
+    expect(failures()).toEqual([`${JOB}: ${unsure(notice)}`]);
+    expect([...telegramPosts.values()]).toMatchObject([{ text: notice, sentAt: null, claimedAt: expect.any(Date) }]);
+    await runAt(matchdayStart("2027-11-21"));
+    expect(telegramPosts.size).toBe(0);
+    expect(posted()).toEqual([notice]);
+  });
+
+  it("leaves each run to record what it did: one that posts a notice meanwhile is done", async () => {
+    telegram.override = () => "lost";
+    vi.setSystemTime(vilnius("10:00"));
+    const run = postToTelegram(vilnius("10:00"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await run).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    telegram.override = undefined;
+    await skipSunday("2026-12-13", vilnius("11:00"));
+    expect(await runAt(vilnius("11:07"))).toEqual({ outcome: "done", detail: POSTED_ONE, matchdayDate: null });
+    expect(failures()).toEqual([`${JOB}: ${unsure(MORNING)}`]);
+    expect(posted()).toEqual([MORNING, "No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00."]);
   });
 });
 
@@ -425,13 +516,15 @@ describe("a skipped Sunday", () => {
     expect(posted()).toEqual([notice]);
   });
 
-  it("leaves a reminder Telegram may have posted, which the runs go on reporting", async () => {
+  it("leaves a reminder Telegram may have posted as it is, never sent again, and its one failure", async () => {
     telegram.override = () => new Response("Bad Gateway", { status: 502 });
-    await runAt(vilnius("10:00"));
+    expect(await runAt(vilnius("10:00"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
     telegram.override = undefined;
     vi.setSystemTime(vilnius("15:00"));
     expect(await skipMatchday(DATE, vilnius("15:00"))).toMatchObject({ text: expect.stringMatching(/^Sunday 29 November is skipped/) });
-    expect(await runAt(vilnius("15:07"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    expect(await runAt(vilnius("15:07"))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
+    expect(telegramPosts.get(`reminder:${DATE}:10`)).toMatchObject({ sentAt: null, claimedAt: expect.any(Date) });
+    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([unsure(MORNING)]);
     expect(posted()).toEqual([notice]);
   });
 });

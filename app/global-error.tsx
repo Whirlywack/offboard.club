@@ -26,6 +26,7 @@ export default function GlobalError({ retry }: { error: unknown; retry: () => vo
             <a className={ui.quiet} href="/">
               Home
             </a>
+            <a href="/privacy">Privacy and terms</a>
           </div>
         </main>
       </body>

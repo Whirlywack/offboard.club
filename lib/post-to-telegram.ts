@@ -22,7 +22,7 @@ import { matchdayOn } from "./matchdays";
 import { getRecap, type Recap } from "./recaps";
 import { addDays, latestSunday, matchdayStart, START_HOUR } from "./schedule";
 import { upcomingMatchday } from "./seasons";
-import { deliverPosts, postDay, postingSetUp, queued, queuePost, type Delivery, type Post } from "./telegram";
+import { deliverPosts, forgetPastPosts, postDay, postingSetUp, queuePost, type Delivery, type Post } from "./telegram";
 
 export const JOB = "post-to-telegram";
 
@@ -41,8 +41,9 @@ export const postToTelegram = (now: Date) => runJob(JOB, () => post(now));
 
 async function post(now: Date): Promise<JobRun> {
   if (!postingSetUp()) return skipped("Telegram isn't set up, so nothing is posted.");
+  await forgetPastPosts(now);
   const note = await queueReminder(now);
-  await queueRecap(latestSunday(now), now);
+  await queueRecap(latestSunday(now));
   return outcome(await deliverPosts(now), note);
 }
 
@@ -60,13 +61,11 @@ async function queueReminder(now: Date): Promise<string | null> {
   return null;
 }
 
-// Queues the Recap of the Matchday of `date` once its results are in, until the next Matchday starts.
-async function queueRecap(date: string, now: Date) {
-  const until = matchdayStart(addDays(date, 7));
-  const key = `recap:${date}`;
-  if (now >= until || (await queued(key))) return;
+// Queues the Recap of the Matchday of `date` once its results are in, worth posting until the next Matchday starts; once
+// only, by its key, however often it is asked.
+async function queueRecap(date: string) {
   const recap = await getRecap(date);
-  if (recap) await queuePost(recapPost(recap, key, until));
+  if (recap) await queuePost(recapPost(recap, `recap:${date}`, matchdayStart(addDays(date, 7))));
 }
 
 // For Collecting results and pnpm ingest, once they have stored the results of the Matchday of `date`: posts its Recap
@@ -75,7 +74,7 @@ async function queueRecap(date: string, now: Date) {
 export async function postRecap(date: string, now: Date): Promise<string> {
   if (!postingSetUp()) return "Telegram isn't set up, so the Recap wasn't posted.";
   try {
-    await queueRecap(date, now);
+    await queueRecap(date);
     return outcome(await deliverPosts(now), null).detail;
   } catch (error) {
     const why = error instanceof Error ? error.message : "unknown error";

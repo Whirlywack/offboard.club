@@ -165,14 +165,15 @@ async function reclaim(q: Queryable, date: string, tournamentId: string): Promis
   return rowCount === 1;
 }
 
-// For a redo: removes the Matchday's results and Games, and only that Matchday's. Returns the Company each Member's
-// result recorded, null included.
+// For a redo: removes the Matchday's results and Games, and only that Matchday's, but for Games against someone who has
+// left the Club since (#15), which are kept for their opponents' histories: the person is no longer a Member, so the
+// redo would not store them again. Returns the Company each Member's result recorded, null included.
 async function clear(q: Queryable, date: string) {
   const { rows } = await q.query<{ userId: string; companyDomain: string | null }>(
     `select "userId", "companyDomain" from "matchdayResult" where "matchdayDate" = $1`,
     [date],
   );
-  await q.query(`delete from "game" where "matchdayDate" = $1`, [date]);
+  await q.query(`delete from "game" where "matchdayDate" = $1 and "whiteId" is not null and "blackId" is not null`, [date]);
   await q.query(`delete from "matchdayResult" where "matchdayDate" = $1`, [date]);
   return rows;
 }
@@ -198,13 +199,16 @@ async function storeResults(q: Queryable, date: string, scores: Score[]) {
   );
 }
 
+// A Game a redo kept, against someone who has left, stays as it is, even if they have since come back with the same
+// Lichess account as a new Member: leaving took the Game from them.
 async function storeGames(q: Queryable, date: string, games: Game[]) {
   const column = <T>(value: (g: Game) => T) => games.map(value);
   await q.query(
     `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
      select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt"
      from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[])
-       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")`,
+       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
+     on conflict ("lichessGameId") do nothing`,
     [
       date,
       column((g) => g.lichessGameId),

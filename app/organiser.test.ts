@@ -303,8 +303,8 @@ describe("connecting the Organiser's Lichess account", () => {
     lichess.team.withoutTournaments.add("boss");
     expect(await connectAs("boss")).toBe("/organiser?lichess=connected");
     const html = await openPage();
-    expect(html).toContain("who has the team&#x27;s permission to manage tournaments");
-    expect(html).toContain("The site doesn&#x27;t use the second yet.");
+    expect(html).toContain("a leader of the Club&#x27;s team with its “Tournaments” and “Remove” permissions.");
+    expect(html).toContain("Managing the team is how the site removes people from it when they leave the Club.");
     expect(html).not.toContain("can be removed from the team");
   });
 
@@ -411,6 +411,7 @@ describe("the scheduled jobs on the Organiser page", () => {
   describe.each([
     ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
     ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."],
+    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
   ])("%s", (job, title, neverRun) => {
     const part = async () => {
       const html = await openPage();
@@ -482,6 +483,47 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-29T20:05:00.000Z">29 November 2026 at 22:05</time></dd>');
     expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
     expect(html).not.toContain("The job stopped");
+  });
+});
+
+describe("Telegram on the Organiser page", () => {
+  const telegram = async () => {
+    const html = await openPage();
+    const from = html.indexOf('<h2 id="telegram">');
+    expect(from).toBeGreaterThan(0);
+    return html.slice(from, html.indexOf("</section>", from));
+  };
+  const set = { TELEGRAM_BOT_TOKEN: "a-pretend-telegram-token", TELEGRAM_GROUP_ID: "@pretend_group", TELEGRAM_INVITE_LINK: "https://t.me/+a-pretend" };
+
+  it.each([
+    [
+      "none of its settings",
+      { TELEGRAM_BOT_TOKEN: "", TELEGRAM_GROUP_ID: "", TELEGRAM_INVITE_LINK: "" },
+      "Telegram isn't set up: TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_ID and TELEGRAM_INVITE_LINK are missing or not in the form .env.example gives, so the bot posts nothing and Members aren't shown the group's invite link.",
+    ],
+    [
+      "no group",
+      { ...set, TELEGRAM_GROUP_ID: "" },
+      "Telegram isn't set up: TELEGRAM_GROUP_ID is missing or not in the form .env.example gives, so the bot posts nothing.",
+    ],
+    [
+      "an invite link that is not one",
+      { ...set, TELEGRAM_INVITE_LINK: "https://example.com/join" },
+      "Telegram isn't set up: TELEGRAM_INVITE_LINK is missing or not in the form .env.example gives, so Members aren't shown the group's invite link.",
+    ],
+  ])("says plainly what is off, and which settings are missing, with %s", async (_, settings, line) => {
+    for (const [name, value] of Object.entries(settings)) vi.stubEnv(name, value);
+    const html = await telegram();
+    expect(html).toMatch(alertSaying(line));
+    if (settings.TELEGRAM_BOT_TOKEN) expect(html).not.toContain(settings.TELEGRAM_BOT_TOKEN);
+  });
+
+  it("says what the bot does once every setting is in place, and shows none of them", async () => {
+    for (const [name, value] of Object.entries(set)) vi.stubEnv(name, value);
+    const html = await telegram();
+    expect(html).toContain("The bot posts reminders, Recaps and notices to the group");
+    expect(html).not.toContain('role="alert"');
+    for (const value of Object.values(set)) expect(html).not.toContain(value);
   });
 });
 
@@ -592,6 +634,14 @@ describe("the next Matchday on the Organiser page", () => {
     vi.stubEnv("CRON_SECRET", "");
     at("2026-11-24T12:00:00Z");
     expect(await panel()).toMatch(alertSaying("It's due on Lichess now, but the site can't create it until the problems below are fixed."));
+  });
+
+  it("moves on to the next Matchday once one starts, while Members can still join that one from the home page", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    at("2026-11-29T18:05:00Z");
+    const html = await panel();
+    expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
+    expect(html).not.toContain("AbCd1234");
   });
 
   it("links it on Lichess once it is there", async () => {

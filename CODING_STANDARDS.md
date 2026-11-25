@@ -11,7 +11,7 @@ A **guard** is any line that refuses: a sign-in or Member check, a consent or ma
 
 ## The public sees names; Members see each other
 
-`docs/adr/0002-the-public-sees-names-members-see-each-other.md` is the rule. On any page a signed-out visitor can open, a Member is their name and their Company. Everything that identifies them elsewhere (photo, Profile, Lichess username, a link to Lichess, a Game replayed on Lichess's board) is behind `requireSignedUp` or `viewerIsMember`. In a Profile's Games, someone who has left the Club appears as "a former member", with no link. A marked or closed Lichess account is left out of Leaderboards and Awards.
+`docs/adr/0002-the-public-sees-names-members-see-each-other.md` is the rule. On any page a signed-out visitor can open, a Member is their name and their Company. Everything that identifies them elsewhere (photo, Profile, Lichess username, a link to Lichess, a Game replayed on Lichess's board) is behind `requireSignedUp` or `viewerIsMember`. In a Profile's Games, someone who has left the Club appears as "a former member", with no link, and an Award won against them shows its Game to nobody. A marked or closed Lichess account is left out of Leaderboards and Awards.
 
 Check each new piece of a page against that, and check the same for anything the page lets a browser fetch from a third party on a Member's behalf.
 

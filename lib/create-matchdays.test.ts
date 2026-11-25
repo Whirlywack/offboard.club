@@ -152,6 +152,12 @@ describe("creating the upcoming Matchday's tournament", () => {
     expect((await runAt(new Date(START.getTime() - SIX_DAYS))).outcome).toBe("done");
   });
 
+  it("moves on to the next Matchday once one starts, while Members can still join that one from the home page", async () => {
+    expect(await runAt(at("2026-11-29T18:05:00Z"))).toMatchObject({ outcome: "skipped", matchdayDate: "2026-12-06" });
+    expect(lichess.calls).toEqual([]);
+    expect(matchdays.size).toBe(0);
+  });
+
   it("does nothing when no Season is scheduled, and says so", async () => {
     seasons.clear();
     const run = await runAt(DUE);

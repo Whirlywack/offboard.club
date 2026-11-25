@@ -32,8 +32,8 @@ async function main(args: string[]): Promise<number> {
       console.log(
         `${redone ? "Ingested again" : "Ingested"} the Matchday of ${date}: ${members} of the ${participants} participants are Members and ${participants - members} are not; ${games} Games between Members. Its Recap is at /recaps/${date}.`,
       );
-      // Once only, and only until the next Matchday starts (lib/post-to-telegram.ts); a redo has nothing new to tell.
-      if (!redone) console.log(await postRecap(date, new Date()));
+      // Once only, and only until the next Matchday starts (lib/post-to-telegram.ts).
+      console.log(await postRecap(date, new Date()));
       return 0;
     }
     case "unchanged":

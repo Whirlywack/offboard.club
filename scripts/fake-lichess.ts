@@ -8,6 +8,10 @@
 // Its approval page asks who you are on Lichess: a new account, which connects (and which /organiser refuses, as it
 // leads no team); a seeded Member's, as the database has it then, which is "taken", "marked" for the marked one, and
 // fails for the closed one; the Organiser's, which leads the Club's team; or nobody, which declines.
+//
+// The Organiser's permission the seed stores was issued by a fake inside the seed, which this one does not know: until
+// the Organiser connects Lichess again on /organiser, removing someone who leaves (/profile/leave) from the team is
+// refused, and the Organiser page lists their account to remove by hand.
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { notLocal } from "./local-db.mjs";

@@ -103,10 +103,10 @@ export async function queuePost({ key, text, until }: Post) {
   await db.query(`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do nothing`, [key, text, until]);
 }
 
-// Whether a post with this key has been queued.
-export async function queued(key: string): Promise<boolean> {
-  const { rowCount } = await db.query(`select 1 from "telegramPost" where "key" = $1`, [key]);
-  return rowCount === 1;
+// Deletes the posts whose "until" has passed as of `now`, sent or not. None is queued again after it, and a Recap's
+// post names Members, so none is kept longer: a Recap's until the next Matchday starts.
+export async function forgetPastPosts(now: Date) {
+  await db.query(`delete from "telegramPost" where "until" <= $1`, [now]);
 }
 
 // How many a delivery sends at most: Telegram lets a bot post 20 messages a minute to a group, and a run has a few
@@ -128,7 +128,7 @@ export type Delivery = { posted: number; failed: { text: string; problem: string
 export async function deliverPosts(now: Date): Promise<Delivery> {
   const group = setting("TELEGRAM_GROUP_ID");
   let posted = 0;
-  if (!group || !postingSetUp()) return { posted, failed: null };
+  if (!group) return { posted, failed: null };
   while (posted < MAX_PER_DELIVERY) {
     const { rows } = await db.query<{ key: string; text: string }>(
       `update "telegramPost" set "claimedAt" = now()
@@ -144,7 +144,7 @@ export async function deliverPosts(now: Date): Promise<Delivery> {
       posted++;
       continue;
     }
-    if (sent.posted === false) await db.query(`update "telegramPost" set "claimedAt" = null where "key" = $1 and "sentAt" is null`, [post.key]);
+    if (sent.posted === false) await db.query(`update "telegramPost" set "claimedAt" = null where "key" = $1`, [post.key]);
     return { posted, failed: { text: post.text, problem: sent.problem, perhaps: sent.posted === "perhaps" } };
   }
   return { posted, failed: null };

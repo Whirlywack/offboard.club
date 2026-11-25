@@ -1,5 +1,5 @@
 // For tests only: the database's "user", "company", "matchday", "matchdayResult", "game", "season", "skippedSunday",
-// "organiserLichess", "scheduledJob", "jobFailure" and "telegramPost" tables in memory, standing
+// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval" and "telegramPost" tables in memory, standing
 // in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement the app sends by its
 // full text, written out again below, and throws on any other: a condition dropped from a query in the app fails the
 // tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
@@ -79,6 +79,7 @@ export type ScheduledJobRow = {
   lastDetail: string | null;
 };
 export type JobFailureRow = { id: number; job: string; at: Date; matchdayDate: string | null; problem: string };
+export type TeamRemovalRow = { lichessId: string; at: Date; problem: string };
 // `order` stands for the moment it was queued: each statement here is its own transaction, and Postgres's now() is
 // later in each, even within one millisecond.
 export type TelegramPostRow = {
@@ -101,6 +102,7 @@ export const skippedSundays = new Map<string, { date: string }>(); // by date
 export const organiserLichess = new Map<string, OrganiserLichessRow>(); // at most one row, by "singleton"
 export const scheduledJobs = new Map<string, ScheduledJobRow>(); // by job
 export const jobFailures = new Map<string, JobFailureRow>(); // by String(id)
+export const teamRemovals = new Map<string, TeamRemovalRow>(); // by lichessId
 export const telegramPosts = new Map<string, TelegramPostRow>(); // by key
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
@@ -138,7 +140,20 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games, seasons, skippedSundays, organiserLichess, scheduledJobs, jobFailures, telegramPosts };
+const tables = {
+  people,
+  companies,
+  matchdays,
+  results,
+  games,
+  seasons,
+  skippedSundays,
+  organiserLichess,
+  scheduledJobs,
+  jobFailures,
+  teamRemovals,
+  telegramPosts,
+};
 let lastFailureId = 0;
 let lastPostOrder = 0;
 
@@ -363,8 +378,8 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   // A redo clearing its Matchday, keeping each result's Company first.
   [`select "userId", "companyDomain" from "matchdayResult" where "matchdayDate" = $1`]: (date) =>
     answer([...results.values()].filter((r) => r.matchdayDate === date).map(({ userId, companyDomain }) => ({ userId, companyDomain }))),
-  [`delete from "game" where "matchdayDate" = $1`]: (date) => {
-    const gone = [...games.values()].filter((g) => g.matchdayDate === date);
+  [`delete from "game" where "matchdayDate" = $1 and "whiteId" is not null and "blackId" is not null`]: (date) => {
+    const gone = [...games.values()].filter((g) => g.matchdayDate === date && g.whiteId !== null && g.blackId !== null);
     for (const game of gone) games.delete(game.lichessGameId);
     return answer([], gone.length);
   },
@@ -428,13 +443,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], rows.length);
     },
 
-  // storeGames
-  [`insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt") select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt" from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[]) as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")`]:
+  // storeGames: a Game already stored under the same id is left as it is.
+  [`insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt") select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt" from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[]) as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt") on conflict ("lichessGameId") do nothing`]:
     (...params) => {
       const [date, ids, whiteIds, blackIds, winners, statuses, plies, whiteRatings, blackRatings, clocks, finishedAt] =
         given<[string, string[], string[], string[], GameRow["winner"][], string[], number[], number[], number[], (number | null)[], string[]]>(params);
       if (!matchdays.has(date)) throw violation("23503", "game_matchdayDate_fkey");
-      const rows: GameRow[] = ids.map((lichessGameId, i) => ({
+      const proposed: GameRow[] = ids.map((lichessGameId, i) => ({
         lichessGameId,
         matchdayDate: date,
         whiteId: whiteIds[i],
@@ -447,11 +462,11 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         winnerClockCentis: clocks[i],
         finishedAt: new Date(finishedAt[i]),
       }));
-      for (const [i, row] of rows.entries()) {
+      // A row whose id is stored already, or comes earlier in the same statement, is not inserted.
+      const rows = proposed.filter((row, i) => !games.has(row.lichessGameId) && !proposed.slice(0, i).some((r) => r.lichessGameId === row.lichessGameId));
+      for (const row of rows) {
         if (row.whiteId !== null && !people.has(row.whiteId)) throw violation("23503", "game_whiteId_fkey");
         if (row.blackId !== null && !people.has(row.blackId)) throw violation("23503", "game_blackId_fkey");
-        if (games.has(row.lichessGameId) || rows.slice(0, i).some((r) => r.lichessGameId === row.lichessGameId))
-          throw violation("23505", "game_pkey");
         if (row.winner === null && row.winnerClockCentis !== null) throw new Error('violates check constraint on "game"');
       }
       for (const row of rows) games.set(row.lichessGameId, row);
@@ -586,8 +601,12 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   [`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do nothing`]: (key, text, until) =>
     addPost(key, text, until),
 
-  // queued
-  [`select 1 from "telegramPost" where "key" = $1`]: (key) => answer(telegramPosts.has(key) ? [{}] : []),
+  // forgetPastPosts
+  [`delete from "telegramPost" where "until" <= $1`]: (now) => {
+    const gone = [...telegramPosts.values()].filter((p) => p.until <= new Date(now as unknown as Date));
+    for (const post of gone) telegramPosts.delete(post.key);
+    return answer([], gone.length);
+  },
 
   // deliverPosts' claim: the oldest post nobody has claimed whose "until" is after $1.
   [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
@@ -610,9 +629,9 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   },
 
   // deliverPosts, giving back a post Telegram did not post
-  [`update "telegramPost" set "claimedAt" = null where "key" = $1 and "sentAt" is null`]: (key) => {
+  [`update "telegramPost" set "claimedAt" = null where "key" = $1`]: (key) => {
     const post = telegramPosts.get(key);
-    if (!post || post.sentAt !== null) return answer();
+    if (!post) return answer();
     post.claimedAt = null;
     return answer([], 1);
   },
@@ -629,6 +648,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       if (!people.has(userId)) throw violation("23503", "organiserLichess_userId_fkey");
       organiserLichess.set("singleton", { userId, lichessId, scopes: String(scopes), token: String(token), expiresAt: new Date(expiresAt as Date), connectedAt: new Date() });
       return answer([], 1);
+    },
+
+  // organiserName
+  [`select name from "user" where id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    (id) => {
+      const person = people.get(id);
+      return answer(isMember(person) ? [{ name: person.name }] : []);
     },
 
   // --- Scheduled jobs (lib/jobs.ts) ---
@@ -675,6 +701,46 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       const latest = [...jobFailures.values()].sort((a, b) => b.at.getTime() - a.at.getTime() || b.id - a.id)[0];
       return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
     },
+
+  // --- Leaving the Club (lib/leaving.ts) ---
+
+  // removeMember: the person's Lichess account, if they are there at all.
+  [`select "lichessId" from "user" where id = $1`]: (id) => {
+    const person = people.get(id);
+    return answer(person ? [{ lichessId: person.lichessId }] : []);
+  },
+
+  // removeMember, with what Postgres does by the foreign keys onto "user": their results and the Organiser's permission
+  // they connected go with them (on delete cascade), and their side of each Game empties (on delete set null). Their
+  // sessions and account rows would go too; there are none here.
+  [`delete from "user" where id = $1`]: (id) => {
+    if (!people.delete(id)) return answer([], 0);
+    for (const [key, result] of results) if (result.userId === id) results.delete(key);
+    for (const game of games.values()) {
+      if (game.whiteId === id) game.whiteId = null;
+      if (game.blackId === id) game.blackId = null;
+    }
+    for (const [key, row] of organiserLichess) if (row.userId === id) organiserLichess.delete(key);
+    return answer([], 1);
+  },
+
+  // removeMember: an account the site could not remove from the Lichess team, kept once however often it is recorded.
+  [`insert into "teamRemoval" ("lichessId", "problem") values ($1, $2) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
+    (lichessId, problem) => {
+      teamRemovals.set(lichessId, { lichessId, at: new Date(), problem: String(problem) });
+      return answer([], 1);
+    },
+
+  // teamRemovals: the oldest first.
+  [`select "lichessId", "problem" from "teamRemoval" order by "at", "lichessId"`]: () =>
+    answer(
+      [...teamRemovals.values()]
+        .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.lichessId < b.lichessId ? -1 : 1))
+        .map(({ lichessId, problem }) => ({ lichessId, problem })),
+    ),
+
+  // teamRemovalDone
+  [`delete from "teamRemoval" where "lichessId" = $1`]: (lichessId) => answer([], teamRemovals.delete(lichessId) ? 1 : 0),
 
   // --- Season and all-time Leaderboards (lib/leaderboards.ts) ---
 

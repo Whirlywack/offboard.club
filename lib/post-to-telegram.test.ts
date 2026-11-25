@@ -14,7 +14,7 @@ import { ingestTournament, registerTournament } from "./matchdays";
 import { JOB, postRecap, postToTelegram } from "./post-to-telegram";
 import { matchdayStart } from "./schedule";
 import { setSeasonStart, skipSunday, unskipSunday, upcomingMatchday } from "./seasons";
-import { deliverPosts } from "./telegram";
+import { deliverPosts, queuePost } from "./telegram";
 
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
@@ -301,6 +301,20 @@ describe("the Recap", () => {
   });
 });
 
+describe("the posts the site keeps", () => {
+  it("are deleted by the first run after they stop being worth posting: a Recap's, which names Members, by the next Matchday", async () => {
+    await collectAt(OVER);
+    await skipSunday("2026-12-13", WEDNESDAY);
+    expect(telegramPosts.size).toBe(2);
+    await runAt(new Date(matchdayStart("2026-12-06").getTime() - MINUTE));
+    expect(telegramPosts.size).toBe(2);
+    await runAt(matchdayStart("2026-12-06"));
+    expect([...telegramPosts.values()].map((post) => post.text)).toEqual([
+      "No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00.",
+    ]);
+  });
+});
+
 describe("the notices of the schedule", () => {
   it("tell the group once when a Sunday is skipped, with the next Matchday", async () => {
     expect(await skipSunday("2026-12-06", WEDNESDAY)).toBeNull();
@@ -337,14 +351,11 @@ describe("the notices of the schedule", () => {
   it("announce a Season's start once when the Organiser sets it, and again when it moves", async () => {
     expect(await setSeasonStart(2, "2027-01-24", WEDNESDAY)).toBeNull();
     await Promise.all([setSeasonStart(2, "2027-01-24", WEDNESDAY), setSeasonStart(2, "2027-01-24", WEDNESDAY)]);
-    // Season 2 would start on 17 January by itself: setting that is not news.
-    expect(await setSeasonStart(3, "2027-03-21", WEDNESDAY)).toBeNull();
+    // Season 3 starts on 14 March by itself, two weeks after Season 2's last Matchday: setting that is not news.
+    expect(await setSeasonStart(3, "2027-03-14", WEDNESDAY)).toBeNull();
+    expect(seasons.get(3)).toEqual({ number: 3, start: "2027-03-14" });
     expect(await setSeasonStart(2, "2027-01-31", WEDNESDAY)).toBeNull();
-    expect(posted()).toEqual([
-      "Season 2 starts on Sunday 24 January at 20:00.",
-      "Season 3 starts on Sunday 21 March at 20:00.",
-      "Season 2 starts on Sunday 31 January at 20:00.",
-    ]);
+    expect(posted()).toEqual(["Season 2 starts on Sunday 24 January at 20:00.", "Season 2 starts on Sunday 31 January at 20:00."]);
   });
 
   it("announce Season 1 once when the sixteenth sign-up schedules it, at the next run, not on the page being read", async () => {
@@ -386,6 +397,27 @@ describe("with Telegram not set up", () => {
     expect(telegramPosts.size).toBe(0);
     expect(telegram.calls).toEqual([]);
     expect(jobFailures.size).toBe(0);
+  });
+});
+
+describe("a delivery", () => {
+  it("sends at most ten posts, and leaves the rest for the next", async () => {
+    for (let n = 1; n <= 11; n++) await queuePost({ key: `post ${n}`, text: `Post ${n}`, until: START });
+    expect(await deliverPosts(WEDNESDAY)).toEqual({ posted: 10, failed: null });
+    expect(await deliverPosts(WEDNESDAY)).toEqual({ posted: 1, failed: null });
+    expect(posted()).toEqual(Array.from({ length: 11 }, (_, i) => `Post ${i + 1}`));
+  });
+
+  it("sends nothing without the group, and asks Telegram nothing without the token, leaving the post to wait", async () => {
+    await queuePost({ key: "waiting", text: "Waiting", until: START });
+    vi.stubEnv("TELEGRAM_GROUP_ID", "");
+    expect(await deliverPosts(WEDNESDAY)).toEqual({ posted: 0, failed: null });
+    vi.stubEnv("TELEGRAM_GROUP_ID", GROUP);
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    expect(await deliverPosts(WEDNESDAY)).toEqual({ posted: 0, failed: { text: "Waiting", problem: "TELEGRAM_BOT_TOKEN isn't set", perhaps: false } });
+    expect(telegram.calls).toEqual([]);
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    expect(await deliverPosts(WEDNESDAY)).toEqual({ posted: 1, failed: null });
   });
 });
 

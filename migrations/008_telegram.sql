@@ -5,7 +5,8 @@
 -- - A run takes a post by setting "claimedAt", and no other run sends it then. "sentAt" is set once Telegram has posted
 --   it. When Telegram refused it, or was never reached, the claim is given back and a later run tries again; when it is
 --   not known whether Telegram posted it, it stays claimed, so that it is never posted twice.
--- - "until" is when it stops being worth posting, such as a reminder once its Matchday has started.
+-- - "until" is when it stops being worth posting, such as a reminder once its Matchday has started. No post is queued
+--   again after it, so the next run deletes it then: a Recap's, which names Members, is kept a week at most.
 create table "telegramPost" (
   "key" text not null primary key,
   "text" text not null,

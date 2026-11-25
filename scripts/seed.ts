@@ -9,11 +9,15 @@
 //
 // club: Season 1 over with one champion, Season 2 over with a shared title and a Sunday whose results never came in (on
 // the Organiser page's list), Season 3 under way with a skipped Sunday, a warm-up before Season 1 (all draws) and a
-// Matchday in the week off that nobody now on the Leaderboards played; the Organiser (org) connected and both scheduled
-// jobs run. season-over: Season 1 just over, its
-// champion on the home page, Season 2's first Matchday played on Lichess and its results not collected yet, the
-// Organiser's permission expired and the job's failure recorded. empty: two sign-ups short of sixteen, nothing played or
-// connected. Each has step1 and step2 part-way through signing up.
+// Matchday in the week off that nobody now on the Leaderboards played; the Organiser (org) connected, both scheduled
+// jobs run, and gone left and removed from the Lichess team. season-over: Season 1 just over, its champion on the home
+// page, Season 2's first Matchday played on Lichess and its results not collected yet, the Organiser's permission
+// expired and the job's failure recorded, then gone left and could not be removed from the Lichess team. empty: two
+// sign-ups short of sixteen, nothing played or connected. Each has step1 and step2 part-way through signing up.
+//
+// club's Organiser page also has Posting to Telegram run once, which posted the latest Recap to an in-process fake
+// Telegram; with `pnpm fake-telegram` running, the seed prints the `pnpm post-to-telegram` commands that post the next
+// Matchday's two reminders there, and in season-over `pnpm collect-results` posts the Recap of the Matchday it collects.
 //
 // Season 2's first Matchday in season-over is on Lichess only: with LICHESS_URL set, the seed writes its tournament,
 // finished, to fake-lichess.json beside the database, where `pnpm fake-lichess` finds it, and `pnpm collect-results`
@@ -32,17 +36,21 @@ import { collectResults, JOB as COLLECT, uncollected } from "@/lib/collect-resul
 import { createUpcomingMatchday, dueFrom, JOB as CREATE, tournamentName } from "@/lib/create-matchdays";
 import { db } from "@/lib/db";
 import { createFakeLichess, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
+import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { GAMES_SHOWN, getHistory } from "@/lib/history";
 import { lastFailure, lastRun } from "@/lib/jobs";
 import { getAllTime, getSeason, newChampions, readLeaderboards, seasonOfMatchday } from "@/lib/leaderboards";
+import { removeMember, teamRemovals } from "@/lib/leaving";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
 import { finishOrganiserConnection, organiserPermission, startOrganiserConnection } from "@/lib/organiser-lichess";
+import { JOB as POST, postToTelegram, REMINDER_HOURS } from "@/lib/post-to-telegram";
 import { getRecap, recapDates } from "@/lib/recaps";
-import { addDays, firstSeasonStart, latestSunday, matchdayStart, MEMBERS_TO_START, signUpsNeeded } from "@/lib/schedule";
+import { addDays, firstSeasonStart, latestSunday, matchdayStart, MEMBERS_TO_START, signUpsNeeded, START_HOUR } from "@/lib/schedule";
 import { readSchedule, seasonDates, upcomingMatchday, type Schedule } from "@/lib/seasons";
 import { countSignUps, signUpTimes } from "@/lib/signups";
+import { postingSetUp } from "@/lib/telegram";
 import { tokenKey } from "@/lib/token-box";
 
 type Person = {
@@ -60,6 +68,7 @@ type Person = {
 };
 
 const ORGANISER = "org";
+const GONE = "gone";
 
 const PEOPLE: Person[] = [
   { id: ORGANISER, name: "Rasa Arbiter", rating: 1560, plays: /^(warmup|s1m[1-4]|s2m[2-6]|s3)/, position: "Engineering lead",
@@ -87,8 +96,8 @@ const PEOPLE: Person[] = [
     about: "Lichess marked the account, so it is left off every Leaderboard and Award" },
   { id: "closed", name: "Greta Closedfile", rating: 1400, plays: /^(s1m[1-3]|off)$/, closed: true,
     about: "the Lichess account is closed, so likewise" },
-  { id: "gone", name: "Paulius Resigns", rating: 1550, plays: /^(warmup|s1m[1-4]|off)$/, leaves: true,
-    about: "left the Club: their results went with them, and their Games show 'a former member'" },
+  { id: GONE, name: "Paulius Resigns", rating: 1550, plays: /^(warmup|s1m[1-4]|off)$/, leaves: true,
+    about: "left the Club: their results and Awards went with them, their Games show 'a former member', and Awards won against them show no Game" },
   { id: "newbie", name: "Lukas Firstmove", rating: null, joins: "lately",
     about: "a Member who has not played a Matchday yet, whose account had no blitz rating" },
   { id: "guest", name: "Ieva Bye", rating: 1300, plays: /^s3m3$/, joins: "s3m3", noGames: true,
@@ -128,6 +137,8 @@ const FAKE_LICHESS_FILE = "fake-lichess.json";
 // The tournament of the Matchday whose results never came in. No Lichess has it.
 const LOST = "PreTend2";
 const now = new Date();
+// What the in-process fake Telegram was sent while seeding.
+let telegramPosts: string[] = [];
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 // Two hyphens in a row, which no new Lichess account may have (lila's nameRules.newUsernameLetters).
@@ -152,6 +163,18 @@ function random() {
 }
 const between = (low: number, high: number) => low + Math.floor(random() * (high - low + 1));
 
+// The items in an order drawn from that sequence (Fisher-Yates), the same on every JavaScript engine. A sort with a
+// random comparator is not: how often, and on which pairs, an engine calls the comparator is the engine's own choice, so
+// another Node.js draws other pairings and seeds another history.
+function shuffled<T>(items: T[]): T[] {
+  const order = [...items];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
 // A drawn face on a coloured square, as LinkedIn's photo would sit there: plainly not anyone's photo.
 const face = (background: string) =>
   `data:image/svg+xml,${encodeURIComponent(
@@ -164,11 +187,14 @@ type Game = [id: string, date: string, white: string, black: string, winner: "wh
 // A Swiss-like evening: five rounds of pairings by the circle method, a bye (a point, no Game) for an odd one out.
 // Games follow ratings, except that the Season 1 champion beats everyone in Season 1 and the two who share Season 2
 // beat everyone else in Season 2 and draw with each other. The warm-up is all draws, so it has no Awards; Season 2's
-// last has no win with under a minute left, so its closest call reads in minutes.
+// last has no win with under a minute left, so its closest call reads in minutes. In Season 1's first, the first
+// opponent in good standing of the one who leaves mates them in a few moves, far faster than any other mate, so that
+// a Recap has an Award won against someone who has since left, whatever the draw.
 function evening(tag: string, date: string, players: Person[], games: Game[]) {
   const ratings = new Map(players.map((p) => [p.id, (p.rating ?? 1500) + between(-15, 15)]));
   const points = new Map(players.map((p) => [p.id, 0]));
-  const seats: (Person | null)[] = players.filter((p) => !p.noGames).sort(() => random() - 0.5);
+  const seats: (Person | null)[] = shuffled(players.filter((p) => !p.noGames));
+  let quickMate = tag === "s1m1";
   if (seats.length % 2) seats.push(null);
   for (let round = 0; round < Math.min(5, seats.length - 1); round++) {
     for (let i = 0; i < seats.length / 2; i++) {
@@ -181,18 +207,22 @@ function evening(tag: string, date: string, players: Person[], games: Game[]) {
       const [rw, rb] = [ratings.get(white.id)!, ratings.get(black.id)!];
       const forced = (id: string) =>
         (/^s1/.test(tag) && id === "champ") || (/^s2/.test(tag) && (id === "twin1" || id === "twin2"));
-      const winner =
+      let winner: "white" | "black" | null =
         tag === "warmup" || (forced(white.id) && forced(black.id)) ? null
         : forced(white.id) ? "white"
         : forced(black.id) ? "black"
         : random() < 0.12 ? null
         : random() < 1 / (1 + 10 ** ((rb - rw) / 400)) ? "white"
         : "black";
-      const status = winner ? ["mate", "resign", "resign", "outoftime"][between(0, 3)] : "draw";
+      let status = winner ? ["mate", "resign", "resign", "outoftime"][between(0, 3)] : "draw";
       let plies = between(24, 110);
       if (status === "mate" && plies % 2 !== (winner === "white" ? 1 : 0)) plies++; // the mating move is the winner's
-      const clock = !winner ? null : tag === "s2m6" ? between(6000, 24000) : status === "outoftime" ? between(150, 4000) : between(300, 24000);
+      let clock = !winner ? null : tag === "s2m6" ? between(6000, 24000) : status === "outoftime" ? between(150, 4000) : between(300, 24000);
       const finished = new Date(matchdayStart(date).getTime() + (round * 14 + between(4, 12)) * 60_000);
+      // After every draw for this Game, so that the rest of the sequence, and of the history, stays as it was.
+      if (quickMate && (white.leaves || black.leaves) && ![white, black].some((p) => p.marked || p.closed)) {
+        [winner, status, plies, clock, quickMate] = [white.leaves ? "black" : "white", "mate", white.leaves ? 4 : 5, clock ?? 18_000, false];
+      }
       games.push([`pretend${String(games.length + 1).padStart(4, "0")}`, date, white.id, black.id, winner, status, plies, rw, rb, clock, finished]);
       for (const [id, colour] of [[white.id, "white"], [black.id, "black"]] as const)
         points.set(id, points.get(id)! + (winner === colour ? 1 : winner === null ? 0.5 : 0));
@@ -267,7 +297,7 @@ async function seed(name: string) {
     await client.query("begin");
     await client.query(
       `truncate "game", "matchdayResult", "matchday", "skippedSunday", "season", "session", "account", "verification", "user",
-         "company", "organiserLichess", "scheduledJob", "jobFailure" cascade`,
+         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "telegramPost" cascade`,
     );
     await client.query(
       `insert into "company" ("domain", "name", "fetchedAt", "fetchAttempts") values
@@ -320,8 +350,6 @@ async function seed(name: string) {
            "blackRating", "winnerClockCentis", "finishedAt") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         game,
       );
-    // Leaving deletes the account: the results go, and each Game stays with that side empty.
-    await client.query(`delete from "user" where id = any($1)`, [people.filter((p) => p.leaves).map((p) => p.id)]);
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -329,7 +357,7 @@ async function seed(name: string) {
   } finally {
     client.release();
   }
-  if (name !== "empty") await organiser(name);
+  if (name !== "empty") telegramPosts = await organiser(name);
   // Without LICHESS_URL there is no fake Lichess to read it.
   if (process.env.LICHESS_URL)
     writeFileSync(await besideDatabase(FAKE_LICHESS_FILE), JSON.stringify(waiting ? [waiting.swiss] : []), { mode: 0o600 });
@@ -337,6 +365,11 @@ async function seed(name: string) {
   console.log(`Seeded "${name}": ${people.length} people, ${results.length} Matchdays, ${games.length} Games, as of ${now.toISOString()}.`);
   if (waiting)
     console.log(`The Matchday of ${waiting.date} was played on Lichess, and its results are not collected yet: with pnpm fake-lichess running, pnpm collect-results collects them.`);
+  const next = await upcomingMatchday(now);
+  if (next && (await matchdayOn(next.date))?.lichessTournamentId && postingSetUp()) {
+    const reminder = (hour: number) => new Date(next.start.getTime() - (START_HOUR - hour) * HOUR).toISOString();
+    console.log(`With pnpm fake-telegram running, these post the next Matchday's reminders there: ${REMINDER_HOURS.map((h) => `pnpm post-to-telegram ${reminder(h)}`).join(", then ")}.`);
+  }
   console.log("Sign in as any of them but the one who left with the cookies pnpm seed:cookies writes:");
   for (const p of people) console.log(`  ${p.id.padEnd(10)} ${p.name.padEnd(40)} ${p.about ?? "a Member who plays some Sundays"}`);
 }
@@ -375,18 +408,24 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
   };
 }
 
-// The Organiser's Lichess permission and the scheduled jobs' runs, written by the site's own code against an in-process
-// fake Lichess, so nothing leaves this process: the Organiser connects as the leader of the Club's team, then the jobs
-// run once. In season-over the permission has since expired, and Creating Matchdays runs at the next Matchday's due
-// time at the latest, so that it reaches the permission and records the failure; Collecting results has not run, and
-// would find a tournament this fake does not have.
+// The Organiser's Lichess permission, the scheduled jobs' runs and the one who left, written by the site's own code
+// against an in-process fake Lichess, so nothing leaves this process: the Organiser connects as the leader of the Club's
+// team, the jobs run once, and then the one who left leaves (lib/leaving.ts), which removes them from the team. In
+// season-over the permission has since expired, and Creating Matchdays runs at the next Matchday's due time at the
+// latest, so that it reaches the permission and records the failure; Collecting results has not run, and would find a
+// tournament this fake does not have; and the one who left, leaving after that, cannot be removed from the team, so the
+// Organiser page lists their account to remove by hand. In club, Posting to Telegram runs twice against an in-process fake
+// Telegram, whose posts it returns.
 async function organiser(name: string) {
   const org = PEOPLE.find((p) => p.id === ORGANISER)!;
   const lichess = createFakeLichess({ teamId: process.env.LICHESS_TEAM_ID!, teamPassword: "", accounts: [{ id: lichessId(org), username: lichessName(org) }] });
   lichess.team.leaders.add(lichessId(org));
+  for (const p of PEOPLE) if (!p.step) lichess.team.members.add(lichessId(p));
   lichess.signedInAs = lichessId(org);
+  const telegram = createFakeTelegram({ token: process.env.TELEGRAM_BOT_TOKEN ?? "", chats: [process.env.TELEGRAM_GROUP_ID ?? ""] });
   const realFetch = globalThis.fetch;
-  globalThis.fetch = lichess.fetch as typeof fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    new URL(input instanceof Request ? input.url : String(input)).pathname.startsWith("/bot") ? telegram.fetch(input, init) : lichess.fetch(input, init)) as typeof fetch;
   try {
     const started = startOrganiserConnection(ORGANISER);
     const back = new URL((await lichess.handle(new Request(started.url))).headers.get("location")!);
@@ -398,9 +437,15 @@ async function organiser(name: string) {
     const due = next ? dueFrom(next.start) : now;
     await createUpcomingMatchday(name === "season-over" && due > now ? due : now);
     if (name === "club") await collectResults(now);
+    if (name === "club") for (let run = 0; run < 2; run++) await postToTelegram(now);
+    for (const p of PEOPLE.filter((person) => person.leaves)) {
+      if (!(await removeMember(p.id))) throw new Error(`${p.id} could not leave: they were not there.`);
+      if (name === "club" && lichess.team.members.has(lichessId(p))) throw new Error(`${p.id} left, but is still in the fake Lichess team.`);
+    }
   } finally {
     globalThis.fetch = realFetch;
   }
+  return telegram.posts.map((post) => post.text);
 }
 
 // What each scenario promises, asked of the database through the same code the pages use.
@@ -417,7 +462,14 @@ async function check(name: string) {
   const played = (s: Awaited<ReturnType<typeof season>>) => s?.matchdays?.filter((m) => m.ingested).length ?? 0;
   const recaps = (await Promise.all((await recapDates()).map(getRecap))).filter((r) => r !== null);
   const allTime = await getAllTime();
-  const [permission, run, collecting, failure] = await Promise.all([organiserPermission(), lastRun(CREATE), lastRun(COLLECT), lastFailure()]);
+  const [permission, run, collecting, failure, removals, posting] = await Promise.all([
+    organiserPermission(),
+    lastRun(CREATE),
+    lastRun(COLLECT),
+    lastFailure(),
+    teamRemovals(),
+    lastRun(POST),
+  ]);
   const promises: [string, boolean][] = [
     ["every seeded person signs in with their cookie, as Better Auth reads it",
       people.every((p) => sessions.get(p.id)?.id === p.id)],
@@ -430,9 +482,11 @@ async function check(name: string) {
       ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(await countSignUps()) === 2],
       ["no Season scheduled, so no next Matchday", (await upcomingMatchday(now)) === null && (await season(1))?.matchdays === null],
       ["no Recaps and an empty all-time Leaderboard", recaps.length === 0 && allTime.length === 0],
-      ["nothing on the Organiser page: no permission, no run, no failure", permission === null && run === null && collecting === null && failure === null],
+      ["nothing on the Organiser page: no permission, no run, no failure, nobody to remove from the Lichess team",
+        permission === null && run === null && collecting === null && failure === null && removals.length === 0],
     );
   } else {
+    const gone = PEOPLE.find((p) => p.id === GONE)!;
     const [s1, s2, s3, s4, s5] = await Promise.all([1, 2, 3, 4, 5].map(season));
     const champions = await newChampions(now);
     const histories = new Map(
@@ -458,6 +512,9 @@ async function check(name: string) {
       ["a marked and a closed Lichess account, which played but are on no Leaderboard",
         ["marked", "closed"].every((id) => histories.get(id)!.played > 0 && !onLeaderboards.has(id))],
       ["Games against a former member", [...histories.values()].some((h) => h.games.some((g) => g.opponent === null))],
+      ["the one who left is in no Recap, on no Leaderboard and has no Profile",
+        !onLeaderboards.has(gone.id) && !recaps.some((r) => r.awards.some((a) => a.memberId === gone.id)) && (await getProfile(gone.id)) === null],
+      ["an Award won against a former member, whose Game is shown to nobody", recaps.some((r) => r.awards.some((a) => a.opponentLeft))],
       ["a Member with every optional Profile field and a Company",
         !!(ana?.company && ana.position && ana.openTo && ana.linkedInUrl)],
       ["a Member with none of them", !!plain && !plain.company && !plain.position && !plain.openTo && !plain.linkedInUrl],
@@ -474,6 +531,9 @@ async function check(name: string) {
             JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![0].date, lichessTournamentId: WAITING }])],
         ["the Organiser's permission has expired, and the job's failure is recorded",
           !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
+        ["Posting to Telegram has not run, and nothing was posted", posting === null && telegramPosts.length === 0],
+        ["the one who left could not be removed from the Lichess team, so the Organiser page lists their account to remove by hand",
+          removals.length === 1 && removals[0].lichessId === lichessId(gone) && removals[0].problem.includes("expired")],
       );
     else {
       const ana = histories.get("ana")!;
@@ -494,11 +554,17 @@ async function check(name: string) {
         ["a Company named by its domain alone", allTime.some((row) => !!row.company && row.company.name === row.company.domain)],
         ["a Member whose older Recaps keep the Company they had then",
           recaps.some((r) => !!company("mover", r.leaderboard) && company("mover", r.leaderboard) !== company("mover", allTime))],
-        ["the Organiser's permission connected and readable, and both jobs last ran without failing",
-          !!permission?.readable && permission.expiresAt > now && [run, collecting].every((r) => !!r && r.outcome !== "failed") && failure === null],
+        ["the Organiser's permission connected and readable, and all three jobs last ran without failing",
+          !!permission?.readable && permission.expiresAt > now && [run, collecting, posting].every((r) => !!r && r.outcome !== "failed") && failure === null],
+        postingSetUp()
+          ? ["Posting to Telegram posted the latest Recap to the group once, though it ran twice, and the next Matchday is on Lichess for its reminders",
+              telegramPosts.length === 1 && telegramPosts[0].startsWith(`The Recap of `) && telegramPosts[0].includes(`/recaps/${latestSunday(now)}`) &&
+                posting?.detail === "Nothing to post." && !!(await matchdayOn((await upcomingMatchday(now))!.date))?.lichessTournamentId]
+          : ["Posting to Telegram ran, and says Telegram isn't set up: .env.local has no Telegram settings", posting?.detail === "Telegram isn't set up, so nothing is posted."],
         ["a Matchday whose results never came in, which runs no longer look for, listed on the Organiser page",
           JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![3].date, lichessTournamentId: LOST }]) &&
             s2!.matchdays![3].date < latestSunday(now)],
+        ["the one who left was removed from the Lichess team, so nobody is left to remove by hand", removals.length === 0],
       );
     }
   }

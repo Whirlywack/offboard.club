@@ -1,6 +1,6 @@
 // The Organiser's Lichess permission: the Organiser approves Offboard on Lichess with an account that leads the Club's
-// team, and the site keeps the token, sealed (lib/token-box.ts), to create each Matchday's tournament (#11) and, later,
-// to cancel one (#16) and remove a Member from the team (#15, #16).
+// team, and the site keeps the token, sealed (lib/token-box.ts), to create each Matchday's tournament (#11), to remove
+// someone who leaves the Club from the team (#15) and, later, to cancel a tournament (#16).
 //
 // The same authorization code flow with PKCE as a Member's connection (lib/connect-lichess.ts), with its own callback,
 // cookie and signature. The token is never logged, put in a URL or a cookie, or sent to the browser: the page sees
@@ -14,9 +14,9 @@ import { organiserId } from "./organiser";
 import { vilniusDate } from "./schedule";
 import { openToken, sealToken, tokenKey } from "./token-box";
 
-// tournament:write creates each Matchday's tournament, and lets #16 cancel one; team:lead lets #15 and #16 remove a
-// Member from the team. Both are asked for now because a token cannot gain a scope later: that would mean approving
-// again. Lichess warns about team:lead on its approval page.
+// tournament:write creates each Matchday's tournament, and lets #16 cancel one; team:lead removes someone who leaves the
+// Club from the team (lib/leaving.ts). Both were asked for from the start because a token cannot gain a scope later:
+// that would mean approving again. Lichess warns about team:lead on its approval page.
 export const ORGANISER_SCOPES = "tournament:write team:lead";
 
 export const ORGANISER_FLOW: Flow = {
@@ -157,14 +157,25 @@ export async function organiserToken(now: Date): Promise<{ token: string; liches
   return { token, lichessId: row.lichessId };
 }
 
-// A Lichess refusal of the Organiser's token, or of creating the team's tournament with it, as a sentence; null for
+// The stored permission's token if `userId` connected it and it is still valid and readable, for revoking on Lichess
+// when they leave the Club; null otherwise.
+export async function tokenConnectedBy(userId: string, now: Date): Promise<string | null> {
+  const row = await storedRow();
+  return row && row.userId === userId && row.expiresAt > now ? open(row, tokenKey()) : null;
+}
+
+// A Lichess refusal of the Organiser's token, or of what the site does with it on the team, as a sentence; null for
 // anything else. The site checks only that the account is shown as one of the team's leaders; lila also wants that
-// leader to have the team's permission for tournaments (Swiss.apiCreate: isGranted(teamId, _.Tour)), and says only
-// "You're not a leader of that team" when they do not.
+// leader to have the team's permission for tournaments to create one (Swiss.apiCreate: isGranted(teamId, _.Tour)), and
+// says only "You're not a leader of that team" when they do not; and its permission to remove members to remove one
+// (TeamApi.kickUser: isGranted(teamId, _.Kick)), saying "Insufficient team permissions".
 export function refusedPermission(error: unknown, lichessId: string): string | null {
   if (!(error instanceof LichessError)) return null;
   if (error.status === 401) return `Lichess refused the Organiser's permission, which may have been revoked on Lichess; ${RECONNECT}.`;
+  const lacking = (permission: string) =>
+    `${error.message}. The likely cause: ${lichessId} leads the Club's team but without the team's permission to ${permission}, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it`;
   if (error.request.startsWith("POST /api/swiss/new/") && (error.status === 403 || error.status === 404))
-    return `${error.message}. The likely cause: ${lichessId} leads the Club's team but without the team's permission to manage tournaments, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it`;
+    return lacking("manage tournaments");
+  if (error.request.startsWith("POST /api/team/{teamId}/kick/") && error.status === 400) return lacking("remove members");
   return null;
 }

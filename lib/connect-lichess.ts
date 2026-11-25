@@ -171,9 +171,9 @@ export async function finishConnection(
       return problem("team");
     }
     if (!(await saveConnection(person.id, account))) return problem("taken");
-    // ponytail: on a swap the old account (person.lichessId) stays in the Club's Lichess team, because removing it
-    // needs the Organiser's Lichess permission (kept since #11, with team:lead); remove it here along with #15's
-    // removal from the team.
+    // ponytail: on a swap the old account (person.lichessId) stays in the Club's Lichess team. Removing it needs the
+    // Organiser's Lichess permission, as removing someone who leaves does (lib/leaving.ts, #15, which does not cover
+    // a swap); if wanted, remove it here the same way.
     return swap ? `/profiles/${person.id}` : "/welcome/profile";
   } catch (error) {
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);

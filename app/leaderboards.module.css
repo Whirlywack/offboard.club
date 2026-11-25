@@ -53,11 +53,12 @@
   color: var(--muted);
 }
 
-/* Words wrap whole: a long name breaks at its spaces and hyphens */
+/* A long name breaks at its spaces and hyphens, and inside a word only when nothing else fits. Unlike break-word,
+   anywhere lets the cell narrow below its longest word, so on the narrowest phone the numbers stay in view. */
 .table tbody th {
   position: relative;
   font-weight: 600;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* The whole name cell, Company included, is the link's target, however short the name */
@@ -101,6 +102,13 @@
 
   .company {
     font-size: var(--text-xs);
+  }
+}
+
+/* On the narrowest phones a name takes the smaller size, so most still break only between words */
+@media (max-width: 22.49rem) {
+  .table tbody th {
+    font-size: var(--text-sm);
   }
 }
 

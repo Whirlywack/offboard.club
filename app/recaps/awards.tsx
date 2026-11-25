@@ -17,14 +17,22 @@ const inText = (award: RecapAward) => TITLES[award.kind].toLowerCase();
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-// Seconds as the clock showed them: to a tenth, never rounded up, so 2.78 seconds left is 2.7.
-const seconds = (centis: number) => (Math.floor(centis / 10) / 10).toFixed(1);
+// Time left as a clock shows it, never rounded up: under a minute in seconds to a tenth, so 2.78 seconds is "2.7
+// seconds"; from a minute up in minutes and whole seconds, so 272.34 seconds is "4:32".
+function timeLeft(centis: number) {
+  if (centis < 6000) return { n: (Math.floor(centis / 10) / 10).toFixed(1), unit: " seconds" };
+  const seconds = Math.floor(centis / 100);
+  return { n: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`, unit: "" };
+}
 
 // What the winner did, with the Award's number in it.
 function feat({ kind, value }: RecapAward): ReactNode {
-  const n = <strong>{kind === "leastTimeLeft" ? seconds(value) : value}</strong>;
+  if (kind === "leastTimeLeft") {
+    const { n, unit } = timeLeft(value);
+    return <>Won with <strong>{n}</strong>{unit} left on the clock.</>;
+  }
+  const n = <strong>{value}</strong>;
   if (kind === "biggestUpset") return <>Beat someone rated {n} {plural(value, "point", "points")} higher.</>;
-  if (kind === "leastTimeLeft") return <>Won with {n} seconds left on the clock.</>;
   return <>Checkmated their opponent in {n} {plural(value, "move", "moves")}.</>;
 }
 

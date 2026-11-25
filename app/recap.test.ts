@@ -252,6 +252,20 @@ describe("a Recap's Awards", () => {
     ]);
   });
 
+  it("gives time left in seconds to a tenth under a minute, and in minutes and seconds from a minute up", async () => {
+    // A favourite's win by resignation: the closest call is the only Award.
+    played("CLOCK001", "ana", "ben", { whiteRating: 1700, blackRating: 1500 });
+    const shown = async (centis: number) => {
+      games.get("CLOCK001")!.winnerClockCentis = centis;
+      return awardsIn(await open(DATE))?.map((a) => a.feat);
+    };
+    // Never rounded up, as a clock never shows more time than is left.
+    expect(await shown(5_999)).toEqual(["Won with 59.9 seconds left on the clock."]);
+    expect(await shown(6_000)).toEqual(["Won with 1:00 left on the clock."]);
+    expect(await shown(27_230)).toEqual(["Won with 4:32 left on the clock."]);
+    expect(await shown(61_230)).toEqual(["Won with 10:12 left on the clock."]);
+  });
+
   it("says 1 point, not 1 points", async () => {
     played("UPSET001", "ben", "cora", { whiteRating: 1500, blackRating: 1501 });
     expect(awardsIn(await open(DATE))?.[0].feat).toBe("Beat someone rated 1 point higher.");
@@ -311,7 +325,7 @@ describe("a Recap's Awards", () => {
     const withoutGame = async () => {
       const html = await open(DATE);
       expect(awardsIn(html)).toEqual([
-        { title: "Closest call", winner: "Ben Kazlauskas", feat: "Won with 60.0 seconds left on the clock.", game: null },
+        { title: "Closest call", winner: "Ben Kazlauskas", feat: "Won with 1:00 left on the clock.", game: null },
       ]);
       expect(html).not.toMatch(theGame);
       expect(html).toContain("Signed-in Members can replay each Game.");

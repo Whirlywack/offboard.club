@@ -70,6 +70,16 @@ export function timeLimit(ms: number, reason: string, within?: AbortSignal) {
   };
 }
 
+// Why Lichess was not asked at all.
+export const NO_TIME_LEFT = "There was no time left to ask Lichess.";
+
+// A time limit for asking Lichess that ends at `by` (a time, in ms), or after `most` ms if that comes first, in whole
+// seconds, so that the reason it gives says how long; null when not a second is left, so that Lichess is not asked.
+export function limitBy(by: number, most = Infinity) {
+  const seconds = Math.floor(Math.min(most, by - Date.now()) / 1000);
+  return seconds > 0 ? timeLimit(seconds * 1000, `Lichess took more than ${seconds} s`) : null;
+}
+
 // Settles with `promise`, or rejects as soon as `signal` aborts.
 function unlessAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;

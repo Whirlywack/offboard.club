@@ -210,6 +210,8 @@
   grid-template-columns: 2rem minmax(0, 1fr);
   column-gap: var(--space-2);
   row-gap: var(--space-1);
+  /* Two steps share a row, and the shorter one must not spread its heading and text over the taller one's height. */
+  align-content: start;
 }
 
 .steps li::before {

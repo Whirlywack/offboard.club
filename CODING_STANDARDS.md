@@ -4,7 +4,7 @@ Read at review, with the diff in hand. What a machine can check is checked by CI
 
 ## Every guard goes red
 
-A **guard** is any line that refuses: a sign-in or Member check, a consent or marked-account condition in SQL, a cap, a validation, a privacy condition in a page. For each guard the change adds or touches, delete it and run the tests, which `pnpm guards <file>:<line>` does (`--replace <text> <with>` for an argument or a condition in SQL). One must go **red**. A guard whose removal leaves the suite green is untested, whatever the test is called.
+A **guard** is any line that refuses: a sign-in or Member check, a consent or marked-account condition in SQL, a cap, a validation, a privacy condition in a page. For each guard the change adds or touches, delete it and run the tests, which `pnpm guards <file>:<line>` does (`--replace <text> <with>` for an argument or a condition in SQL). One must go **red**: a test that passes without the deletion fails with it, and `pnpm guards` names that test. A guard whose removal leaves the suite green is untested, whatever the test is called.
 
 - A stand-in refuses what the real thing refuses. `lib/fake-db.ts` and `lib/fixtures/fake-lichess.ts` are worth what their fidelity is worth: where the diff leans on how Postgres or Lichess behaves, check the stand-in against a `*.postgres.test.ts` suite or against Lichess's own source.
 - New SQL has a `*.postgres.test.ts` case that goes red when a condition in the query is wrong. A case that only shows the query returns rows does not count.

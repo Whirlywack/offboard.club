@@ -65,16 +65,21 @@ if (name === process.env.FAKE_SLOW) {
 } else process.exit(fail || (name === "test" && process.env.FAKE_FAIL === "exit") ? 1 : 0);
 `;
 
-function fakeCheckout() {
+const SETUP_NODE = "      - uses: actions/setup-node@v7\n        with:\n          node-version: 26\n        image: postgres:18\n";
+// As ticket #58 has CI read the Node.js version: from package.json's devEngines.
+const NODE_FROM_PACKAGE = "      - uses: actions/setup-node@v7\n        with:\n          node-version-file: package.json\n        image: postgres:18\n";
+
+function fakeCheckout(ci = SETUP_NODE) {
   const root = checkout();
   const scripts = Object.fromEntries(["lint", "typecheck", "test", "build", "seed", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
-  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts }));
+  const devEngines = { runtime: { name: "node", version: "26.x" } };
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts, ...(ci === NODE_FROM_PACKAGE ? { devEngines } : {}) }));
   writeFileSync(join(root, "fake.mjs"), FAKE);
   writeFileSync(join(root, ".gitignore"), "tmp\nfake.log\nfake.log.pid\n");
   mkdirSync(join(root, "migrations"));
   writeFileSync(join(root, "migrations/001_first.sql"), "create table a (b int);\n");
   mkdirSync(join(root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(root, ".github/workflows/ci.yml"), "      - uses: actions/setup-node@v7\n        with:\n          node-version: 26\n        image: postgres:18\n");
+  writeFileSync(join(root, ".github/workflows/ci.yml"), ci);
   const git = (...args: string[]) =>
     spawnSync("git", ["-c", "user.name=Pretend", "-c", "user.email=pretend@pretend.invalid", ...args], { cwd: root, encoding: "utf8" });
   git("init", "--quiet");
@@ -166,8 +171,9 @@ describe("a check", () => {
   }, 60_000);
 
   it("fails the tests when vitest exits 1 though its report is clean, and when a test file is one vitest never runs", () => {
-    const { root, log } = fakeCheckout();
+    const { root, log } = fakeCheckout(NODE_FROM_PACKAGE);
     const exit = check(root, { FAKE_LOG: log, FAKE_FAIL: "exit" });
+    expect(exit.stdout).toContain("; CI runs Node.js 26.x and Postgres 18.\n");
     expect(exit.stdout).toContain("\npnpm check failed: tests, in ");
     expect(exit.stdout).toContain("✗ tests (");
     expect(exit.stdout).toContain("  vitest exited 1\n");

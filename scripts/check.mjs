@@ -264,7 +264,10 @@ function provenance(checkout, database) {
   const workflow = join(checkout, ".github/workflows/ci.yml");
   const ci = existsSync(workflow) ? readFileSync(workflow, "utf8") : "";
   const node = spawnSync("pnpm", ["exec", "node", "--version"], { cwd: checkout, encoding: "utf8" }).stdout?.trim() || "an unknown version";
-  const versions = `Ran on Node.js ${node} and Postgres ${database ? serverVersion(database.dir) : "(none started)"}; CI runs Node.js ${/node-version: (\d+)/.exec(ci)?.[1] ?? "?"} and Postgres ${/image: postgres:(\d+)/.exec(ci)?.[1] ?? "?"}.`;
+  // setup-node's version, or the one package.json gives pnpm when CI reads it from there.
+  const runtime = /node-version-file: package.json/.test(ci) ? readJson(join(checkout, "package.json"))?.devEngines?.runtime?.version : null;
+  const ciNode = /node-version: (\d+)/.exec(ci)?.[1] ?? runtime ?? "?";
+  const versions = `Ran on Node.js ${node} and Postgres ${database ? serverVersion(database.dir) : "(none started)"}; CI runs Node.js ${ciNode} and Postgres ${/image: postgres:(\d+)/.exec(ci)?.[1] ?? "?"}.`;
   let commit;
   try {
     const head = git(["log", "-1", "--format=%h %s"]).trim();

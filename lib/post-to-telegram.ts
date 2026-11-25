@@ -25,7 +25,7 @@ import { matchdayOn } from "./matchdays";
 import { getRecap, type Recap } from "./recaps";
 import { addDays, latestSunday, matchdayStart, START_HOUR } from "./schedule";
 import { upcomingMatchday } from "./seasons";
-import { deliverPosts, forgetPastPosts, postDay, postingSetUp, queuePost, stuckPost, type Delivery, type Post } from "./telegram";
+import { deliverPosts, forgetPastPosts, forgetReminders, postDay, postingSetUp, queuePost, stuckPost, type Delivery, type Post } from "./telegram";
 
 export const JOB = "post-to-telegram";
 
@@ -47,24 +47,28 @@ async function post(now: Date): Promise<JobRun> {
   // First, so that nothing is kept longer while Telegram is switched off.
   await forgetPastPosts(now);
   if (!postingSetUp()) return skipped("Telegram isn't set up, so nothing is posted.");
-  const note = await queueReminder(now);
+  const note = await reminders(now);
   await queueRecap(latestSunday(now));
   const run = outcome(await deliverPosts(now), note);
   const stuck = run.outcome === "failed" ? null : await stuckPost(now);
   return stuck ? failed(unknown(stuck)) : run;
 }
 
-// The reminder due at `now`, queued once; or why the one due cannot be posted. Nothing before 10:00 on a Matchday, and
-// nothing for one whose tournament is not on Lichess, as the home page would have no link to it.
-async function queueReminder(now: Date): Promise<string | null> {
+// The reminders, decided on what is true as they are sent, just after this: each waiting is taken back unless it is the
+// next Matchday's and that Matchday is on Lichess, as a skipped Sunday, a Season's new start or a tournament cleared
+// from its Sunday (lib/reschedule.ts) may have made it untrue since it was queued. Then the reminder due at `now` is
+// queued, once; or the run says why it cannot be posted. Nothing before 10:00 on a Matchday, and nothing for one
+// whose tournament is not on Lichess, as the home page would have no link to it.
+async function reminders(now: Date): Promise<string | null> {
   const next = await upcomingMatchday(now);
+  const onLichess = next !== null && !!(await matchdayOn(next.date))?.lichessTournamentId;
+  await forgetReminders(onLichess ? `reminder:${next.date}:` : null);
   if (!next) return null;
   const times = REMINDER_HOURS.map((hour) => new Date(next.start.getTime() - (START_HOUR - hour) * HOUR));
   const due = times.filter((at) => at <= now).length - 1;
   if (due < 0) return null;
   const hour = REMINDER_HOURS[due];
-  if (!(await matchdayOn(next.date))?.lichessTournamentId)
-    return `The Matchday of ${postDay(next.date)} isn't on Lichess, so its ${hour}:00 reminder wasn't posted.`;
+  if (!onLichess) return `The Matchday of ${postDay(next.date)} isn't on Lichess, so its ${hour}:00 reminder wasn't posted.`;
   await queuePost({ key: `reminder:${next.date}:${hour}`, text: reminderText(hour), until: times[due + 1] ?? next.start });
   return null;
 }

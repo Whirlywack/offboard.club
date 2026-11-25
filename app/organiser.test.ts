@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons } from "@/lib/fake-db";
+import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
@@ -533,6 +533,18 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).not.toContain("Backups aren't set up");
     expect(html).not.toContain("Alerts are off");
     for (const value of ["vercel_blob_rw_pretendstore_a-pretend-blob-token", "a-pretend-telegram-token", "123456789"]) expect(html).not.toContain(value);
+  });
+});
+
+describe("the Organiser page as a whole", () => {
+  it("has each of its parts once: the lists to act on by hand, the forms, Telegram's set-up and every scheduled job", async () => {
+    seasons.set(1, { number: 1, start: "2026-12-13" });
+    tournamentCancellations.set("PreTend9", { lichessTournamentId: "PreTend9", date: "2026-12-06", problem: "Lichess refused." });
+    teamRemovals.set("pretend--left", { lichessId: "pretend--left", at: new Date(), problem: "Lichess refused." });
+    const html = await openPage();
+    const parts = ["lichess", "cancellations", "removals", "schedule", "remove", "telegram", "jobs"].map((id) => `<h2 id="${id}">`);
+    const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure"].map((title) => `<h3>${title}</h3>`);
+    for (const part of [...parts, ...jobs]) expect([part, html.split(part).length - 1]).toEqual([part, 1]);
   });
 });
 

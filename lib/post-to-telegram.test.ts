@@ -3,15 +3,19 @@
 // pnpm ingest storing a Matchday's results (postRecap); and the changes to the schedule (lib/seasons.ts). Faked:
 // Telegram (lib/fixtures/fake-telegram.ts) and Lichess (lib/fixtures/fake-lichess.ts), standing in for fetch, the
 // database (lib/fake-db.ts) and the clock. Everything else is the app's own code.
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as cronRequest } from "@/app/api/jobs/post-to-telegram/route";
-import { addCompany, addPerson, db, games, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
+import { addCompany, addPerson, db, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { collectResults, SETTLE_MS } from "./collect-results";
+import { removeMember } from "./leaving";
 import { ingestTournament, registerTournament } from "./matchdays";
+import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
 import { JOB, postRecap, postToTelegram } from "./post-to-telegram";
+import { changeSeasonStart, skipMatchday, unskipMatchday } from "./reschedule";
 import { matchdayStart } from "./schedule";
 import { setSeasonStart, skipSunday, unskipSunday, upcomingMatchday } from "./seasons";
 import { deliverPosts, queuePost } from "./telegram";
@@ -359,9 +363,9 @@ describe("a post Telegram may have posted, wherever it was sent from", () => {
 
   it("is reported by the next run when it was a notice the change sent", async () => {
     telegram.override = () => "lost";
-    const skipping = skipSunday("2026-12-06", WEDNESDAY);
+    const skipping = skipMatchday("2026-12-06", WEDNESDAY);
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(await skipping).toBeNull();
+    expect(await skipping).toMatchObject({ problem: false });
     telegram.override = undefined;
     const notice = "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.";
     expect(await runAt(at("2026-11-25T13:07:00Z"))).toMatchObject({ outcome: "failed", detail: unsure(notice) });
@@ -378,17 +382,13 @@ describe("a post Telegram may have posted, wherever it was sent from", () => {
 });
 
 describe("a Recap waiting to be posted", () => {
-  // Leaving deletes the "user" row: their results go with it, and each Game keeps an empty side (migrations/006).
-  const leaves = (id: string) => {
-    people.delete(id);
-    for (const [key, row] of results) if (row.userId === id) results.delete(key);
-    for (const g of games.values()) Object.assign(g, { whiteId: g.whiteId === id ? null : g.whiteId, blackId: g.blackId === id ? null : g.blackId });
-  };
+  // Leaving, and the Organiser's removing a Member, are this one removal (lib/leaving.ts, app/organiser/actions.ts).
+  const leaves = async (id: string) => expect(await removeMember(id)).toBe(true);
 
-  it("names nobody who has left since it was queued", async () => {
+  it("names nobody who has left, or been removed by the Organiser, since it was queued", async () => {
     telegram.override = refused;
     await collectAt(OVER);
-    leaves("ben");
+    await leaves("ben");
     telegram.override = undefined;
     await runAt(at("2026-11-29T20:07:00Z"));
     expect(posted()).toEqual([RECAP.replace("2. Member ben: 2 points\n3. Member cora: 0.5 points", "2. Member cora: 0.5 points")]);
@@ -406,7 +406,7 @@ describe("a Recap waiting to be posted", () => {
   it("keeps the text it was sent with once a delivery has claimed it", async () => {
     telegram.override = () => new Response("Bad Gateway", { status: 502 });
     await collectAt(OVER);
-    leaves("ben");
+    await leaves("ben");
     await runAt(at("2026-11-29T20:07:00Z"));
     expect(telegramPosts.get("recap:2026-11-29")?.text).toBe(RECAP);
   });
@@ -415,12 +415,12 @@ describe("a Recap waiting to be posted", () => {
 describe("a skipped Sunday", () => {
   const notice = "No Matchday on Sunday 29 November. The next one is on Sunday 6 December at 20:00.";
 
-  it("takes back its reminder that Telegram refused, so that only the notice goes out", async () => {
+  it("gets no reminder Telegram refused before it was skipped: only the notice goes out", async () => {
     telegram.override = refused;
     await runAt(vilnius("10:00"));
     telegram.override = undefined;
     vi.setSystemTime(vilnius("15:00"));
-    expect(await skipSunday(DATE, vilnius("15:00"))).toBeNull();
+    expect(await skipMatchday(DATE, vilnius("15:00"))).toMatchObject({ text: expect.stringMatching(/^Sunday 29 November is skipped/) });
     for (const time of ["15:07", "16:07", "19:00", "19:07"]) await runAt(vilnius(time));
     expect(posted()).toEqual([notice]);
   });
@@ -430,22 +430,116 @@ describe("a skipped Sunday", () => {
     await runAt(vilnius("10:00"));
     telegram.override = undefined;
     vi.setSystemTime(vilnius("15:00"));
-    expect(await skipSunday(DATE, vilnius("15:00"))).toBeNull();
+    expect(await skipMatchday(DATE, vilnius("15:00"))).toMatchObject({ text: expect.stringMatching(/^Sunday 29 November is skipped/) });
     expect(await runAt(vilnius("15:07"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
     expect(posted()).toEqual([notice]);
   });
 });
 
-describe("a change to the schedule", () => {
+describe("a waiting reminder, decided on what is true when it is sent", () => {
+  const refusedAtTen = async () => {
+    telegram.override = refused;
+    await runAt(vilnius("10:00"));
+    telegram.override = undefined;
+  };
+
+  it("is not sent once a Season's new start has made its Sunday no Matchday", async () => {
+    await refusedAtTen();
+    vi.setSystemTime(vilnius("10:30"));
+    expect(await changeSeasonStart(1, "2026-12-06", vilnius("10:30"))).toMatchObject({ text: expect.stringContaining("Season 1 now starts on Sunday 6 December") });
+    expect(matchdays.has(DATE)).toBe(false); // its tournament cleared, to cancel on Lichess (lib/reschedule.ts)
+    for (const time of ["11:07", "19:00", "19:07"]) await runAt(vilnius(time));
+    expect(posted()).toEqual(["Season 1 starts on Sunday 6 December at 20:00."]);
+  });
+
+  it("is not sent once its Sunday's tournament has been cleared, and the run says why", async () => {
+    await refusedAtTen();
+    matchdays.delete(DATE); // as Creating Matchdays' sweep clears one (lib/reschedule.ts, sweepTournaments)
+    expect(await runAt(vilnius("11:07"))).toMatchObject({
+      outcome: "skipped",
+      detail: "The Matchday of Sunday 29 November isn't on Lichess, so its 10:00 reminder wasn't posted.",
+    });
+    expect(posted()).toEqual([]);
+    expect(telegramPosts.size).toBe(0);
+  });
+});
+
+describe("a change to the schedule from the Organiser page", () => {
   it("posts the notice it queued, or an older one, and nothing else: one request to Telegram at most", async () => {
     telegram.override = refused;
     await collectAt(OVER); // the Recap, refused, waits
-    await skipSunday("2026-12-13", OVER); // its notice, refused, waits
+    await skipMatchday("2026-12-13", OVER); // its notice, refused, waits
     telegram.override = undefined;
     const before = telegram.calls.length;
-    expect(await skipSunday("2026-12-20", OVER)).toBeNull();
+    expect(await skipMatchday("2026-12-20", OVER)).toMatchObject({ problem: false });
     expect(telegram.calls.length - before).toBe(1);
     expect(posted()).toEqual(["No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00."]);
+  });
+
+  it("posts its notice after the change is saved, and after Lichess is asked to cancel the tournament it strands", async () => {
+    vi.stubEnv("ORGANISER_USER_ID", "ana");
+    vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
+    vi.stubEnv("BETTER_AUTH_SECRET", "test secret");
+    lichess.accounts.set("boss", { id: "boss", username: "Boss" });
+    lichess.team.leaders.add("boss");
+    lichess.signedInAs = "boss";
+    const { url, cookie } = startOrganiserConnection("ana");
+    const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
+    expect(await finishOrganiserConnection({ id: "ana" }, back.searchParams, cookie)).toBe("/organiser?lichess=connected");
+    Object.assign(lichess.tournaments.get(TOURNAMENT)!, { status: "created", createdBy: "boss" });
+    const events: string[] = [];
+    const connect = db.connect.getMockImplementation()!;
+    db.connect.mockImplementation(async () => {
+      const connection = await connect();
+      return { ...connection, query: ((sql: string, params?: unknown[]) => (sql === "commit" && events.push("saved"), connection.query(sql, params))) as typeof connection.query };
+    });
+    lichess.override = (call) => void (call.path.endsWith("/terminate") && events.push("cancelled on Lichess"));
+    telegram.override = () => void events.push("posted to Telegram");
+    expect(await skipMatchday(DATE, WEDNESDAY)).toMatchObject({ problem: false });
+    expect(events).toEqual(["saved", "cancelled on Lichess", "posted to Telegram"]);
+    expect(posted()).toEqual(["No Matchday on Sunday 29 November. The next one is on Sunday 6 December at 20:00."]);
+  });
+
+  it("queues no notice for a change the site stops before saving, posts none, and takes back no reminder", async () => {
+    await queuePost({ key: "reminder:2026-12-06:10", text: MORNING, until: vilnius("19:00", "2026-12-06") });
+    const connect = db.connect.getMockImplementation()!;
+    db.connect.mockImplementation(async () => {
+      const connection = await connect();
+      return { ...connection, query: ((sql: string, params?: unknown[]) => (sql === "commit" ? Promise.reject(new Error("Connection terminated unexpectedly")) : connection.query(sql, params))) as typeof connection.query };
+    });
+    await expect(skipMatchday("2026-12-06", WEDNESDAY)).rejects.toThrow("Connection terminated unexpectedly");
+    db.connect.mockImplementation(connect);
+    expect(skippedSundays.size).toBe(0);
+    expect([...telegramPosts.keys()]).toEqual(["reminder:2026-12-06:10"]);
+    expect(telegram.calls).toEqual([]);
+  });
+
+  it("is made, and says so, when the database fails as it posts the notice; the next run posts it", async () => {
+    const answer = db.query.getMockImplementation()!;
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('set "claimedAt" = now()')) throw new Error("the database went away");
+      return answer(sql, params);
+    });
+    expect(await skipMatchday("2026-12-06", WEDNESDAY)).toMatchObject({ problem: false });
+    db.query.mockImplementation(answer);
+    expect(skippedSundays.has("2026-12-06")).toBe(true);
+    expect(logged).toContain("Posting a notice to Telegram failed: the database went away");
+    await runAt(at("2026-11-25T13:07:00Z"));
+    expect(posted()).toEqual(["No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00."]);
+  });
+
+  it("queues one notice for two skips of a Sunday at the same moment, the second told it is already skipped", async () => {
+    const said = await Promise.all([skipSunday("2026-12-06", WEDNESDAY), skipSunday("2026-12-06", WEDNESDAY)]);
+    expect(said).toEqual([null, "2026-12-06 is already skipped."]);
+    const twice = await Promise.all([skipMatchday("2026-12-13", WEDNESDAY), skipMatchday("2026-12-13", WEDNESDAY)]);
+    expect(twice.map((s) => s.problem)).toEqual([false, true]);
+    expect(twice[1].text).toBe("Sunday 13 December is already skipped.");
+    // The second skip's change posted the oldest notice waiting, the first's; the run, the other.
+    await runAt(at("2026-11-25T13:07:00Z"));
+    expect(posted()).toEqual([
+      "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.",
+      "No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00.",
+    ]);
   });
 });
 
@@ -482,21 +576,17 @@ describe("Telegram's answers", () => {
 
 describe("the notices of the schedule", () => {
   it("tell the group once when a Sunday is skipped, with the next Matchday", async () => {
-    expect(await skipSunday("2026-12-06", WEDNESDAY)).toBeNull();
+    expect(await skipMatchday("2026-12-06", WEDNESDAY)).toMatchObject({ problem: false });
     expect(posted()).toEqual(["No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00."]);
-    expect(await skipSunday("2026-12-06", WEDNESDAY)).toBeNull();
-    await Promise.all([skipSunday("2026-12-13", WEDNESDAY), skipSunday("2026-12-13", WEDNESDAY)]);
+    expect(await skipMatchday("2026-12-06", WEDNESDAY)).toEqual({ text: "Sunday 6 December is already skipped.", problem: true });
     await runAt(at("2026-11-25T13:07:00Z"));
-    expect(posted()).toEqual([
-      "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.",
-      "No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00.",
-    ]);
+    expect(posted()).toEqual(["No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00."]);
   });
 
   it("tell the group when a skipped Sunday has its Matchday back, in the order they happened", async () => {
-    await skipSunday("2026-12-06", WEDNESDAY);
-    expect(await unskipSunday("2026-12-06", WEDNESDAY)).toBeNull();
-    expect(await unskipSunday("2026-12-06", WEDNESDAY)).toBeNull();
+    await skipMatchday("2026-12-06", WEDNESDAY);
+    expect(await unskipMatchday("2026-12-06", WEDNESDAY)).toMatchObject({ problem: false });
+    expect(await unskipMatchday("2026-12-06", WEDNESDAY)).toMatchObject({ problem: true });
     expect(posted()).toEqual([
       "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.",
       "Sunday 6 December has a Matchday after all, at 20:00.",
@@ -514,13 +604,21 @@ describe("the notices of the schedule", () => {
   });
 
   it("announce a Season's start once when the Organiser sets it, and again when it moves", async () => {
-    expect(await setSeasonStart(2, "2027-01-24", WEDNESDAY)).toBeNull();
-    await Promise.all([setSeasonStart(2, "2027-01-24", WEDNESDAY), setSeasonStart(2, "2027-01-24", WEDNESDAY)]);
-    // Season 3 starts on 14 March by itself, two weeks after Season 2's last Matchday: setting that is not news.
-    expect(await setSeasonStart(3, "2027-03-14", WEDNESDAY)).toBeNull();
-    expect(seasons.get(3)).toEqual({ number: 3, start: "2027-03-14" });
-    expect(await setSeasonStart(2, "2027-01-31", WEDNESDAY)).toBeNull();
-    expect(posted()).toEqual(["Season 2 starts on Sunday 24 January at 20:00.", "Season 2 starts on Sunday 31 January at 20:00."]);
+    expect(await changeSeasonStart(2, "2027-01-24", WEDNESDAY)).toMatchObject({ problem: false });
+    expect(await changeSeasonStart(2, "2027-01-24", WEDNESDAY)).toMatchObject({ problem: true });
+    // Set by two callers at once, without the Organiser page's check, the start is changed, and announced, once.
+    await Promise.all([setSeasonStart(2, "2027-02-07", WEDNESDAY), setSeasonStart(2, "2027-02-07", WEDNESDAY)]);
+    // Season 3 then starts on 28 March by itself, two weeks after Season 2's last Matchday: setting that is not news.
+    expect(await setSeasonStart(3, "2027-03-28", WEDNESDAY)).toBeNull();
+    expect(seasons.get(3)).toEqual({ number: 3, start: "2027-03-28" });
+    // This change posts the oldest notice waiting, 7 February's; the run, its own.
+    expect(await changeSeasonStart(2, "2027-01-31", WEDNESDAY)).toMatchObject({ problem: false });
+    await runAt(at("2026-11-25T13:07:00Z"));
+    expect(posted()).toEqual([
+      "Season 2 starts on Sunday 24 January at 20:00.",
+      "Season 2 starts on Sunday 7 February at 20:00.",
+      "Season 2 starts on Sunday 31 January at 20:00.",
+    ]);
   });
 
   it("announce Season 1 once when the sixteenth sign-up schedules it, at the next run, not on the page being read", async () => {
@@ -535,9 +633,9 @@ describe("the notices of the schedule", () => {
 
   it("leave the change made when Telegram refuses them, and are posted by the next run until their Sunday begins", async () => {
     telegram.override = () => Response.json({ ok: false, error_code: 500, description: "Internal Server Error" }, { status: 500 });
-    expect(await skipSunday("2026-12-06", WEDNESDAY)).toBeNull();
+    expect(await skipMatchday("2026-12-06", WEDNESDAY)).toMatchObject({ problem: false });
     // The skip moves Season 2 to 24 January by itself; the Organiser sets it a week later.
-    expect(await setSeasonStart(2, "2027-01-31", WEDNESDAY)).toBeNull();
+    expect(await changeSeasonStart(2, "2027-01-31", WEDNESDAY)).toMatchObject({ problem: false });
     expect(skippedSundays.has("2026-12-06")).toBe(true);
     expect(seasons.get(2)).toEqual({ number: 2, start: "2027-01-31" });
     telegram.override = undefined;

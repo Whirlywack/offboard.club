@@ -15,6 +15,7 @@ import { matchdayOn, registerTournament } from "./matchdays";
 import { createSwiss, teamSwissNamed, timeLimit, type Swiss } from "./lichess";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { organiserToken, refusedPermission } from "./organiser-lichess";
+import { sweepTournaments } from "./reschedule";
 import { upcomingMatchday, type Matchday } from "./seasons";
 
 export const JOB = "create-matchdays";
@@ -46,8 +47,16 @@ export const matchdayTournament = ({ date, start }: Pick<Matchday, "date" | "sta
   description: DESCRIPTION,
 });
 
-// One run of the job at `now`: what it did and why. Throws only if the database cannot record the run.
-export const createUpcomingMatchday = (now: Date) => runJob(JOB, () => createIfDue(now));
+// One run of the job at `now`: what it did and why. Whatever that was, the run then cancels on Lichess any tournament a
+// change to the schedule has left without a Matchday (lib/reschedule.ts), including one this job recorded while the
+// change was being made. Throws only if the database cannot record the run.
+export const createUpcomingMatchday = (now: Date) =>
+  runJob(JOB, async () => {
+    const run = await createIfDue(now);
+    const cancelled = await sweepTournaments(now);
+    if (cancelled.length === 0) return run;
+    return { ...run, outcome: run.outcome === "failed" ? "failed" : "done", detail: [run.detail, ...cancelled].join(" ") };
+  });
 
 async function createIfDue(now: Date): Promise<JobRun> {
   const next = await upcomingMatchday(now);

@@ -21,7 +21,12 @@ function fake(init: { seasons?: StoredSeason[]; skipped?: string[]; signUps?: Da
     setStart: async (season) => {
       db.seasons = [...db.seasons.filter((s) => s.number !== season.number), { ...season }];
     },
-    setSkipped: async (date, skipped) => void (skipped ? db.skipped.add(date) : db.skipped.delete(date)),
+    setSkipped: async (date, skipped) => {
+      const changed = db.skipped.has(date) !== skipped;
+      if (skipped) db.skipped.add(date);
+      else db.skipped.delete(date);
+      return changed;
+    },
     ingestedDates: async () => [...db.ingested],
   };
   return { store, db };
@@ -143,6 +148,16 @@ describe("skipping a Sunday", () => {
     await skipSunday("2026-12-27", beforeSeasonOne, store);
     expect(await unskipSunday("2026-12-27", beforeSeasonOne, store)).toBeNull();
     expect((await matchdaysOfSeason(1, beforeSeasonOne, store))?.at(-1)).toBe("2027-01-17");
+  });
+
+  it("is made once by two requests at once, and the other is told it already is", async () => {
+    const { store, db } = fake({ seasons: seasonOne() });
+    const both = await Promise.all([skipSunday("2026-12-27", beforeSeasonOne, store), skipSunday("2026-12-27", beforeSeasonOne, store)]);
+    expect(both.sort()).toEqual(["2026-12-27 is already skipped.", null].sort());
+    expect(db.skipped).toEqual(new Set(["2026-12-27"]));
+    const undone = await Promise.all([unskipSunday("2026-12-27", beforeSeasonOne, store), unskipSunday("2026-12-27", beforeSeasonOne, store)]);
+    expect(undone.sort()).toEqual(["2026-12-27 is not skipped.", null].sort());
+    expect(db.skipped.size).toBe(0);
   });
 
   it("can be done before Season 1 is scheduled", async () => {

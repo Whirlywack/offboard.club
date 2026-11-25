@@ -175,3 +175,12 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* A Sunday in the schedule: the day and what it holds, then its button, on one line where there is room */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}

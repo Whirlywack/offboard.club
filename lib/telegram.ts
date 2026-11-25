@@ -8,7 +8,7 @@
 // token travels in the path, so no address, request or answer is logged or put in a message.
 //
 // Every post is queued in "telegramPost" (migrations/008_telegram.sql) and sent from there, once, by deliverPosts or,
-// for a notice of the schedule, deliverNotice; an alert, by deliverAlerts alone, and never to the group.
+// for a notice of the schedule, postNotice; an alert, by deliverAlerts alone, and never to the group.
 
 import { db } from "./db";
 import { timeLimit } from "./lichess";
@@ -181,11 +181,22 @@ export const deliverAlerts = (chat: string, now: Date) => deliver(chat, now, ALE
 // The start of a notice's key: lib/seasons.ts queues each under it and a random id.
 export const NOTICE = "notice:";
 
-// Sends the oldest notice of the schedule waiting, and nothing else: one request to Telegram at most, cut off at 10 s,
-// for the change that queued it, which waits on it. Throws if the database fails.
-export async function deliverNotice(now: Date) {
+// For a change to the schedule, once it is kept: sends the oldest notice waiting, which is the change's own unless an
+// older one is still waiting, and nothing else. At most one request to Telegram, cut off at 10 s, and two statements
+// besides. It never throws: a failure leaves the notice for the next run of Posting to Telegram, which tries a refused
+// one again and reports one Telegram may have posted.
+export async function postNotice(now: Date) {
   const group = setting("TELEGRAM_GROUP_ID");
-  if (group) await deliverOne(group, now, NOTICE);
+  if (group)
+    await deliverOne(group, now, NOTICE).catch((error: Error) => void console.error("Posting a notice to Telegram failed:", error.message));
+}
+
+// Deletes the reminders waiting, claimed by no delivery, but those whose key starts with `keep`: so that none is sent
+// for a Sunday that is no longer the next Matchday on Lichess.
+export async function forgetReminders(keep: string | null) {
+  await db.query(`delete from "telegramPost" where "key" like 'reminder:%' and "claimedAt" is null and ($1::text is null or "key" not like $1)`, [
+    keep && `${keep}%`,
+  ]);
 }
 
 // How long a delivery may hold one post, its 10 s request included, before the post counts as stuck.

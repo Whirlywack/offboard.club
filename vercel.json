@@ -5,6 +5,8 @@
     { "path": "/api/jobs/collect-results", "schedule": "*/5 17-23 * * 0" },
     { "path": "/api/jobs/collect-results", "schedule": "7 * * * *" },
     { "path": "/api/jobs/post-to-telegram", "schedule": "0 7,8,16,17 * * 0" },
-    { "path": "/api/jobs/post-to-telegram", "schedule": "7 * * * *" }
+    { "path": "/api/jobs/post-to-telegram", "schedule": "7 * * * *" },
+    { "path": "/api/jobs/backup", "schedule": "7 1 * * *" },
+    { "path": "/api/jobs/alert-organiser", "schedule": "7 * * * *" }
   ]
 }

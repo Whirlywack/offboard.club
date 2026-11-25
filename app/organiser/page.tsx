@@ -7,7 +7,9 @@ import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
 import { TeamRemovals } from "./team-removals";
+import { alertsProblem, JOB as ALERTS, JOB_TITLES } from "@/lib/alerts";
 import { getSession, requireOrganiser } from "@/lib/auth";
+import { backupProblem, JOB as BACKUP } from "@/lib/backup";
 import { JOB as COLLECT, lastTryAt, uncollected, type Uncollected } from "@/lib/collect-results";
 import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
@@ -78,6 +80,9 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
     upcomingMatchday(now),
     teamRemovals(),
   ]);
+  // The jobs #17 added: the nightly backup and the alerts to the Organiser.
+  const [backingUp, alerting] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS)]);
+  const runs: Record<string, LastRun | null> = { [CREATE]: creating, [COLLECT]: collecting, [POST]: posting, [BACKUP]: backingUp, [ALERTS]: alerting };
   const telegram = telegramProblem();
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage((await searchParams).lichess);
@@ -134,16 +139,31 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
-        <JobStatus title={JOBS[CREATE]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={creating} now={now} />
+        <JobStatus title={JOB_TITLES[CREATE]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={creating} now={now} />
         <JobStatus
-          title={JOBS[COLLECT]}
+          title={JOB_TITLES[COLLECT]}
           neverRun="Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."
           run={collecting}
           now={now}
         />
-        <JobStatus title={JOBS[POST]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={posting} now={now} />
+        <JobStatus title={JOB_TITLES[POST]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={posting} now={now} />
+        <JobStatus
+          title={JOB_TITLES[BACKUP]}
+          neverRun="Not run yet: Vercel runs it every night once CRON_SECRET is set."
+          run={backingUp}
+          now={now}
+          daily
+          off={backupProblem()}
+        />
+        <JobStatus
+          title={JOB_TITLES[ALERTS]}
+          neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set."
+          run={alerting}
+          now={now}
+          off={alertsProblem()}
+        />
         <ResultsNotIn matchdays={notIn} now={now} />
-        <LastFailure failure={failure} />
+        <LastFailure failure={failure} since={failure ? (runs[failure.job] ?? null) : null} />
       </section>
 
       <nav aria-label="More" className={ui.backLinks}>
@@ -272,18 +292,20 @@ function Unreadable({ lichessId }: { lichessId: string }) {
 
 const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Nothing to do", failed: "Failed" };
 
-// Each scheduled job by its name on the page, over its own part and in the last failure.
-const JOBS: Record<string, string> = { [CREATE]: "Creating Matchdays", [COLLECT]: "Collecting results", [POST]: "Posting to Telegram" };
+const DAY_MS = 86_400_000;
 
-// A scheduled job's last run, and plainly when it has never run or has not run for over two hours. The outcome comes
-// first, in the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome
-// and a late last run are flagged where they stand, and explained in an alert below. A run that went well keeps its
-// sentence quiet.
-function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: string; run: LastRun | null; now: Date }) {
-  const late = run !== null && now.getTime() - run.at.getTime() > OVERDUE_MS;
+type Status = { title: string; neverRun: string; run: LastRun | null; now: Date; daily?: boolean; off?: string | null };
+
+// A scheduled job's last run, and plainly when it has never run or has not run for over two hours, or a day and two
+// hours for one that runs nightly, and why it does nothing when it is switched off (`off`). The outcome comes first, in
+// the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome and a late
+// last run are flagged where they stand, and explained in an alert below. A run that went well keeps its sentence quiet.
+function JobStatus({ title, neverRun, run, now, daily = false, off = null }: Status) {
+  const late = run !== null && now.getTime() - run.at.getTime() > (daily ? DAY_MS : 0) + OVERDUE_MS;
   return (
     <div className={styles.part}>
       <h3>{title}</h3>
+      {off && <Alert>{off}</Alert>}
       {run ? (
         <>
           <dl className={styles.facts}>
@@ -301,8 +323,8 @@ function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: str
           )}
           {late && (
             <Alert>
-              It hasn&apos;t run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are
-              enabled.
+              It hasn&apos;t run for over {daily ? "a day" : "two hours"}. Check that CRON_SECRET is set on Vercel and that
+              cron jobs are enabled.
             </Alert>
           )}
         </>
@@ -339,19 +361,30 @@ function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date 
   );
 }
 
-// The most recent failure of any scheduled job, which job it was and when it began: a problem that stands for days is
-// one failure.
-function LastFailure({ failure }: { failure: Failure | null }) {
+// The most recent failure of any scheduled job, which job it was, when it began (a problem that stands for days is one
+// failure) and whether the job has run without failing since, by its last run (`since`).
+function LastFailure({ failure, since }: { failure: Failure | null; since: LastRun | null }) {
   return (
     <div className={styles.part}>
       <h3>Last failure</h3>
       {failure ? (
         <>
           <dl className={styles.facts}>
-            <Fact label="Job">{JOBS[failure.job] ?? failure.job}</Fact>
+            <Fact label="Job">{JOB_TITLES[failure.job] ?? failure.job}</Fact>
             <Fact label="Began">
               <Time at={failure.at} as={DATE_TIME} />
             </Fact>
+            {since && (
+              <Fact label="Since">
+                {since.outcome === "failed" ? (
+                  "Still failing"
+                ) : (
+                  <>
+                    Ran without failing on <Time at={since.at} as={DATE_TIME} />
+                  </>
+                )}
+              </Fact>
+            )}
           </dl>
           <p className={styles.detail}>{failure.problem}</p>
         </>

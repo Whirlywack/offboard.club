@@ -405,14 +405,23 @@ describe("the scheduled jobs on the Organiser page", () => {
       lastDetail: detail,
     });
 
-  beforeEach(() => vi.stubEnv("CRON_SECRET", SECRET));
+  beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", SECRET);
+    // Backups and alerts set up, so that neither says it is off.
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_pretendstore_a-pretend-blob-token");
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+  });
 
-  // Each job has its own part of the page, from its heading to the next.
+  // Each job has its own part of the page, from its heading to the next. An hourly job is late after two hours; the
+  // nightly backup after a day and two hours.
   describe.each([
-    ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
-    ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."],
-    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
-  ])("%s", (job, title, neverRun) => {
+    ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["backup", "Backing up", "Not run yet: Vercel runs it every night once CRON_SECRET is set.", 26 * 60, "a day"],
+    ["alert-organiser", "Alerting you", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+  ])("%s", (job, title, neverRun, lateAfter, late) => {
     const part = async () => {
       const html = await openPage();
       const from = html.indexOf(`<h3>${title}</h3>`);
@@ -436,15 +445,15 @@ describe("the scheduled jobs on the Organiser page", () => {
       expect(await part()).toMatch(alertSaying(neverRun));
     });
 
-    it("flags plainly a last run more than two hours old, and marks its time", async () => {
-      ran(119, "skipped", "Nothing to do.", job);
+    it(`flags plainly a last run more than ${late} old, and marks its time`, async () => {
+      ran(lateAfter - 1, "skipped", "Nothing to do.", job);
       let html = await part();
-      expect(html).not.toContain("for over two hours");
+      expect(html).not.toContain(`for over ${late}`);
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">/);
-      ran(121, "skipped", "Nothing to do.", job);
+      ran(lateAfter + 1, "skipped", "Nothing to do.", job);
       html = await part();
       expect(html).toMatch(
-        alertSaying("It hasn't run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled."),
+        alertSaying(`It hasn't run for over ${late}. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled.`),
       );
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+" class="[^"]+">/);
     });
@@ -483,6 +492,47 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-29T20:05:00.000Z">29 November 2026 at 22:05</time></dd>');
     expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
     expect(html).not.toContain("The job stopped");
+  });
+
+  it("says of the latest failure whether its job has run without failing since, for any job, the backup too", async () => {
+    const lastFailure = async () => {
+      const html = await openPage();
+      return html.slice(html.indexOf("<h3>Last failure</h3>"));
+    };
+    jobFailures.set("1", { id: 1, job: "backup", at: new Date(Date.now() - 50 * 60 * 60_000), matchdayDate: null, problem: "The backup failed: oops." });
+    ran(30, "failed", "The backup failed: oops.", "backup");
+    let html = await lastFailure();
+    expect(html).toContain("<dt>Job</dt><dd>Backing up</dd>");
+    expect(html).toContain("<dt>Since</dt><dd>Still failing</dd>");
+    ran(20, "done", "Backed up the database (3 kB). Each backup is kept for at least 12 days.", "backup");
+    html = await lastFailure();
+    expect(html).toMatch(/<dt>Since<\/dt><dd>Ran without failing on <time dateTime="[^"]+">\d{1,2} \w+ \d{4} at \d\d:\d\d<\/time><\/dd>/);
+    // A job the page doesn't know any more: its name, and nothing said of since, whatever the other jobs did.
+    ran(10, "done", "Created it.", "create-matchdays");
+    jobFailures.set("2", { id: 2, job: "an-old-job", at: new Date(), matchdayDate: null, problem: "Gone." });
+    html = await lastFailure();
+    expect(html).toContain("<dt>Job</dt><dd>an-old-job</dd>");
+    expect(html).not.toContain("<dt>Since</dt>");
+  });
+
+  it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
+    let html = await openPage();
+    expect(html).toMatch(alertSaying("Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up."));
+    expect(html).toMatch(
+      alertSaying("Alerts are off: TELEGRAM_ORGANISER_CHAT_ID is missing or not in the form .env.example gives, so the bot can't message you."),
+    );
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    html = await openPage();
+    expect(html).toMatch(alertSaying("Alerts are off: TELEGRAM_BOT_TOKEN and TELEGRAM_ORGANISER_CHAT_ID are missing"));
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_pretendstore_a-pretend-blob-token");
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+    html = await openPage();
+    expect(html).not.toContain("Backups aren't set up");
+    expect(html).not.toContain("Alerts are off");
+    for (const value of ["vercel_blob_rw_pretendstore_a-pretend-blob-token", "a-pretend-telegram-token", "123456789"]) expect(html).not.toContain(value);
   });
 });
 

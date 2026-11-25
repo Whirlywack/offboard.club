@@ -102,6 +102,8 @@ describe("the privacy and terms page", () => {
       markup("If you signed in but didn't finish joining: what came from LinkedIn, your sign-in records and any acceptances, until you choose “Delete your account” on the sign-up step you stopped at."),
     );
     expect(howLong).not.toContain("ask the Organiser");
+    // The backups delete themselves within 14 days of being made (lib/backup.ts), so what leaving deletes goes from them too.
+    expect(howLong).toContain("Deleted data stays in the nightly backups of the database, kept by Vercel in Frankfurt, for up to 14 days.");
     const leaving = section(html, "leaving");
     expect(leaving).toContain('To leave, choose “Delete your account” on <a href="/profile">Edit your Profile</a>');
     expect(leaving).toContain("results and acceptances are deleted at once");

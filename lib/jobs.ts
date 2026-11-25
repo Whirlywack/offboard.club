@@ -1,5 +1,6 @@
-// The bookkeeping every scheduled job shares (migrations/007_organiser.sql): one run at a time, each run's outcome and
-// why, and its failures, kept where the Organiser page (#16) and the failure alerts (#17) read them.
+// The bookkeeping every scheduled job shares (migrations/007_organiser.sql, 011): one run at a time, each run's outcome
+// and why, when it last did its work, and its failures, kept where the Organiser page (#16) and the private alerts to
+// the Organiser (#17, lib/alerts.ts) read them.
 
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
@@ -53,7 +54,8 @@ export async function runJob(job: string, work: () => Promise<JobRun>): Promise<
     await db.query(`insert into "jobFailure" ("job", "matchdayDate", "problem") values ($1, $2, $3)`, [job, run.matchdayDate, run.detail]);
   // Only while this run still holds the job: one whose hold lapsed leaves the next run's alone.
   await db.query(
-    `update "scheduledJob" set "lastRunAt" = now(), "lastOutcome" = $3, "lastDetail" = $4, "lockedBy" = null, "lockedUntil" = null
+    `update "scheduledJob" set "lastRunAt" = now(), "lastOutcome" = $3, "lastDetail" = $4,
+       "lastDoneAt" = case when $3 = 'done' then now() else "lastDoneAt" end, "lockedBy" = null, "lockedUntil" = null
      where "job" = $1 and "lockedBy" = $2`,
     [job, hold, run.outcome, run.detail],
   );
@@ -69,6 +71,20 @@ export async function lastRun(job: string): Promise<LastRun | null> {
     [job],
   );
   return rows[0] ?? null;
+}
+
+// When the job last did its work, or, if it never has, when it first ran; null if it has never run.
+export async function doneSince(job: string): Promise<Date | null> {
+  const { rows } = await db.query<{ lastDoneAt: Date }>(`select "lastDoneAt" from "scheduledJob" where "job" = $1`, [job]);
+  return rows[0]?.lastDoneAt ?? null;
+}
+
+// The jobs whose last run failed, each with why.
+export async function failingJobs(): Promise<{ job: string; detail: string }[]> {
+  const { rows } = await db.query<{ job: string; detail: string }>(
+    `select "job", "lastDetail" as "detail" from "scheduledJob" where "lastOutcome" = 'failed'`,
+  );
+  return rows;
 }
 
 export type Failure = { job: string; at: Date; matchdayDate: string | null; problem: string };

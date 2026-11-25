@@ -77,6 +77,9 @@ export type ScheduledJobRow = {
   lastRunAt: Date | null;
   lastOutcome: "done" | "skipped" | "failed" | null;
   lastDetail: string | null;
+  // Set by the hold that makes the row, as the column's default is (migrations/011); a row a test makes by hand may
+  // leave it out.
+  lastDoneAt?: Date;
 };
 export type JobFailureRow = { id: number; job: string; at: Date; matchdayDate: string | null; problem: string };
 export type TeamRemovalRow = { lichessId: string; at: Date; problem: string };
@@ -612,10 +615,10 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], 1);
     },
 
-  // stuckPost: the oldest post claimed at or before $1 and never sent.
-  [`select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 order by "claimedAt", "key" limit 1`]: (before) => {
+  // stuckPost: the oldest post for the group claimed at or before $1 and never sent.
+  [`select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "key" not like 'alert:%' order by "claimedAt", "key" limit 1`]: (before) => {
     const post = [...telegramPosts.values()]
-      .filter((p) => p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date))
+      .filter((p) => p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date) && !likePrefix(p.key, "alert:%"))
       .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1))[0];
     return answer(post ? [{ text: post.text }] : []);
   },
@@ -627,13 +630,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], gone.length);
   },
 
-  // A delivery's claim: the oldest post nobody has claimed whose "until" is after $1 and whose key is like $2. Each
-  // statement here runs whole, so none can take a post another is claiming: lib/telegram.postgres.test.ts shows that of
-  // Postgres, with two connections.
-  [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
-    (now, pattern) => {
+  // A delivery's claim: the oldest post nobody has claimed whose "until" is after $1 and whose key is like $2, an alert
+  // if and only if $3. Each statement here runs whole, so none can take a post another is claiming:
+  // lib/telegram.postgres.test.ts shows that of Postgres, with two connections.
+  [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2 and ("key" like 'alert:%') = $3 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
+    (now, pattern, alerts) => {
       const post = [...telegramPosts.values()]
-        .filter((p) => p.claimedAt === null && p.until > new Date(now as unknown as Date) && likePrefix(p.key, pattern))
+        .filter((p) => p.claimedAt === null && p.until > new Date(now as unknown as Date) && likePrefix(p.key, pattern) && likePrefix(p.key, "alert:%") === alerts)
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.order - b.order)[0];
       if (!post) return answer();
       post.claimedAt = new Date();
@@ -686,7 +689,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       const lockedUntil = new Date(Date.now() + 15 * 60_000);
       const row = scheduledJobs.get(job);
       if (!row) {
-        scheduledJobs.set(job, { job, lockedBy, lockedUntil, lastRunAt: null, lastOutcome: null, lastDetail: null });
+        scheduledJobs.set(job, { job, lockedBy, lockedUntil, lastRunAt: null, lastOutcome: null, lastDetail: null, lastDoneAt: new Date() });
         return answer([{ lastOutcome: null, lastDetail: null }]);
       }
       if (row.lockedUntil !== null && row.lockedUntil > new Date()) return answer([], 0);
@@ -707,14 +710,26 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], 1);
   },
 
-  // runJob's record of the run, which lets go of the job: only while the run still holds it.
-  [`update "scheduledJob" set "lastRunAt" = now(), "lastOutcome" = $3, "lastDetail" = $4, "lockedBy" = null, "lockedUntil" = null where "job" = $1 and "lockedBy" = $2`]:
+  // runJob's record of the run, which lets go of the job: only while the run still holds it. A run that did its work
+  // is when the job last did.
+  [`update "scheduledJob" set "lastRunAt" = now(), "lastOutcome" = $3, "lastDetail" = $4, "lastDoneAt" = case when $3 = 'done' then now() else "lastDoneAt" end, "lockedBy" = null, "lockedUntil" = null where "job" = $1 and "lockedBy" = $2`]:
     (job, lockedBy, outcome, detail) => {
       const row = scheduledJobs.get(job);
       if (!row || row.lockedBy !== lockedBy) return answer([], 0);
       Object.assign(row, { lastRunAt: new Date(), lastOutcome: outcome, lastDetail: detail, lockedBy: null, lockedUntil: null });
+      if (outcome === "done") row.lastDoneAt = new Date();
       return answer([], 1);
     },
+
+  // doneSince
+  [`select "lastDoneAt" from "scheduledJob" where "job" = $1`]: (job) => {
+    const row = scheduledJobs.get(job);
+    return answer(row ? [{ lastDoneAt: row.lastDoneAt }] : []);
+  },
+
+  // failingJobs
+  [`select "job", "lastDetail" as "detail" from "scheduledJob" where "lastOutcome" = 'failed'`]: () =>
+    answer([...scheduledJobs.values()].filter((row) => row.lastOutcome === "failed").map((row) => ({ job: row.job, detail: row.lastDetail }))),
 
   // lastFailure
   [`select "job", "at", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" order by "at" desc, "id" desc limit 1`]:

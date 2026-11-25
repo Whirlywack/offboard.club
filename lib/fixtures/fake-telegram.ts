@@ -6,6 +6,9 @@
 // - a text that is empty, or longer than 4096 characters, is 400 "Bad Request: message text is empty" or "message is
 //   too long";
 // - a posted message comes back as the Message, with its id, chat and text.
+// And getUpdates, for scripts/telegram-chats.ts: the bot's updates waiting in `updates`, at most `limit` of them (100 if
+// not given), from the earliest not yet confirmed. Calling it with an `offset` confirms, and forgets, every update whose
+// update_id is below it. While a webhook is set (`webhook`), it is refused with 409, as Telegram refuses it.
 //
 // Every request is recorded in `calls`, and each posted message in `posts`. `override` stands in for Telegram's answer:
 // a Response; "unreachable", a connection that is never made; "silent", a request that is never answered; "lost", a
@@ -32,6 +35,8 @@ export function createFakeTelegram(options: { token: string; chats: string[] }) 
   const fake = {
     calls: [] as FakeTelegramCall[],
     posts: [] as FakeTelegramPost[],
+    updates: [] as { update_id: number; [kind: string]: unknown }[],
+    webhook: false,
     override: undefined as ((call: FakeTelegramCall) => Override) | undefined,
 
     async handle(request: Request): Promise<Response> {
@@ -50,6 +55,12 @@ export function createFakeTelegram(options: { token: string; chats: string[] }) 
       if (override instanceof Response) return { call, response: override, override };
       if (override === "unreachable" || override === "silent") return { call, response: null, override };
       if (call.token !== options.token) return { call, response: answer(401, "Unauthorized"), override };
+      if (call.method.toLowerCase() === "getupdates") {
+        if (fake.webhook)
+          return { call, response: answer(409, "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first"), override };
+        if (call.params.offset !== undefined) fake.updates = fake.updates.filter((update) => update.update_id >= Number(call.params.offset));
+        return { call, response: Response.json({ ok: true, result: fake.updates.slice(0, Number(call.params.limit ?? 100)) }), override };
+      }
       if (call.method.toLowerCase() !== "sendmessage") return { call, response: answer(404, "Not Found"), override };
       const chatId = String(call.params.chat_id ?? "");
       const text = typeof call.params.text === "string" ? call.params.text : "";

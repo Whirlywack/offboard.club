@@ -18,6 +18,8 @@
 // club's Organiser page also has Posting to Telegram run once, which posted the latest Recap to an in-process fake
 // Telegram; with `pnpm fake-telegram` running, the seed prints the `pnpm post-to-telegram` commands that post the next
 // Matchday's two reminders there, and in season-over `pnpm collect-results` posts the Recap of the Matchday it collects.
+// Both have Backing up run, which says backups aren't set up, as no local block has the store's token, and Alerting you
+// run twice, which in season-over sends the Organiser the failure privately, once, and in club has nothing to send.
 //
 // Season 2's first Matchday in season-over is on Lichess only: with LICHESS_URL set, the seed writes its tournament,
 // finished, to fake-lichess.json beside the database, where `pnpm fake-lichess` finds it, and `pnpm collect-results`
@@ -30,7 +32,9 @@
 import { createHmac } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { madeByDbStart, notLocal } from "./local-db.mjs";
+import { alertOrganiser, alertsProblem, JOB as ALERTS } from "@/lib/alerts";
 import { auth, getProfile } from "@/lib/auth";
+import { backUp, backupProblem, JOB as BACKUP } from "@/lib/backup";
 import { mustWelcome } from "@/lib/consent";
 import { collectResults, JOB as COLLECT, uncollected } from "@/lib/collect-results";
 import { createUpcomingMatchday, dueFrom, JOB as CREATE, tournamentName } from "@/lib/create-matchdays";
@@ -137,8 +141,9 @@ const FAKE_LICHESS_FILE = "fake-lichess.json";
 // The tournament of the Matchday whose results never came in. No Lichess has it.
 const LOST = "PreTend2";
 const now = new Date();
-// What the in-process fake Telegram was sent while seeding.
+// What the in-process fake Telegram was sent while seeding: to the group, and to the Organiser alone.
 let telegramPosts: string[] = [];
+let alertsSent: string[] = [];
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 // Two hyphens in a row, which no new Lichess account may have (lila's nameRules.newUsernameLetters).
@@ -357,7 +362,7 @@ async function seed(name: string) {
   } finally {
     client.release();
   }
-  if (name !== "empty") telegramPosts = await organiser(name);
+  if (name !== "empty") [telegramPosts, alertsSent] = await organiser(name);
   // Without LICHESS_URL there is no fake Lichess to read it.
   if (process.env.LICHESS_URL)
     writeFileSync(await besideDatabase(FAKE_LICHESS_FILE), JSON.stringify(waiting ? [waiting.swiss] : []), { mode: 0o600 });
@@ -422,7 +427,8 @@ async function organiser(name: string) {
   lichess.team.leaders.add(lichessId(org));
   for (const p of PEOPLE) if (!p.step) lichess.team.members.add(lichessId(p));
   lichess.signedInAs = lichessId(org);
-  const telegram = createFakeTelegram({ token: process.env.TELEGRAM_BOT_TOKEN ?? "", chats: [process.env.TELEGRAM_GROUP_ID ?? ""] });
+  const group = process.env.TELEGRAM_GROUP_ID ?? "";
+  const telegram = createFakeTelegram({ token: process.env.TELEGRAM_BOT_TOKEN ?? "", chats: [group, process.env.TELEGRAM_ORGANISER_CHAT_ID ?? ""] });
   const realFetch = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
     new URL(input instanceof Request ? input.url : String(input)).pathname.startsWith("/bot") ? telegram.fetch(input, init) : lichess.fetch(input, init)) as typeof fetch;
@@ -442,10 +448,13 @@ async function organiser(name: string) {
       if (!(await removeMember(p.id))) throw new Error(`${p.id} could not leave: they were not there.`);
       if (name === "club" && lichess.team.members.has(lichessId(p))) throw new Error(`${p.id} left, but is still in the fake Lichess team.`);
     }
+    await backUp(now);
+    for (let run = 0; run < 2; run++) await alertOrganiser(now);
   } finally {
     globalThis.fetch = realFetch;
   }
-  return telegram.posts.map((post) => post.text);
+  const texts = (toGroup: boolean) => telegram.posts.filter((post) => (post.chatId === group) === toGroup).map((post) => post.text);
+  return [texts(true), texts(false)];
 }
 
 // What each scenario promises, asked of the database through the same code the pages use.
@@ -568,6 +577,19 @@ async function check(name: string) {
       );
     }
   }
+  // The nightly backup and the alerts to the Organiser (#17).
+  if (name !== "empty") {
+    const [backingUp, alerting] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS)]);
+    promises.push(["Backing up ran, and says backups aren't set up, as no local block has the store's token",
+      backingUp?.outcome === "skipped" && backingUp.detail === backupProblem()]);
+    if (alertsProblem())
+      promises.push(["Alerting you ran, and says alerts are off, as the environment hasn't the Telegram settings for them",
+        alerting?.detail === alertsProblem() && alertsSent.length === 0]);
+    else if (name === "season-over")
+      promises.push(["Alerting you sent the Organiser the failure of Creating Matchdays privately, once though it ran twice, and nothing to the group",
+        alertsSent.length === 1 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && alerting?.detail === "Nothing to tell you." && telegramPosts.length === 0]);
+    else promises.push(["Alerting you ran twice, and had nothing to tell the Organiser", alertsSent.length === 0 && alerting?.detail === "Nothing to tell you."]);
+  }
   for (const [promise, kept] of promises) console.log(`${kept ? "✓" : "✗ MISSING:"} ${promise}`);
   const kept = promises.filter(([, k]) => k).length;
   console.log(`${kept} of ${promises.length} states the "${name}" scenario promises are there.`);
@@ -600,6 +622,8 @@ function problem(args: string[]) {
   if (missing) return `${missing} is not set: put the block from pnpm db:start in .env.local.`;
   if (process.env.ORGANISER_USER_ID !== ORGANISER || !tokenKey())
     return `ORGANISER_USER_ID must be ${ORGANISER} and LICHESS_TOKEN_KEY 32 bytes, as pnpm db:start's block has them.`;
+  // The seed runs the nightly backup, which would store the seeded Club in whatever store that token opens.
+  if (process.env.BLOB_READ_WRITE_TOKEN) return "BLOB_READ_WRITE_TOKEN is set, and the seed backs up to no real store: unset it first.";
   return null;
 }
 

@@ -1,14 +1,14 @@
 // The Club's Telegram bot (#13). It only posts, through the one request below, sendMessage, which can post to any chat:
 // to the Club's group, the reminders and Recaps (lib/post-to-telegram.ts) and the notices of the schedule
-// (lib/seasons.ts). It reads nothing and sends no message to a Member. Members join the group by its invite link, which
-// the site shows to Members only.
+// (lib/seasons.ts); to the Organiser's own chat, the private alerts (lib/alerts.ts, #17). It reads nothing and sends no
+// message to a Member. Members join the group by its invite link, which the site shows to Members only.
 //
 // Telegram's Bot API (core.telegram.org/bots/api): POST https://api.telegram.org/bot<token>/sendMessage with chat_id and
 // text; the answer is JSON whose "ok" says whether the message was posted, with a "description" when it was not. The
 // token travels in the path, so no address, request or answer is logged or put in a message.
 //
 // Every post is queued in "telegramPost" (migrations/008_telegram.sql) and sent from there, once, by deliverPosts or,
-// for a notice of the schedule, deliverNotice.
+// for a notice of the schedule, deliverNotice; an alert, by deliverAlerts alone, and never to the group.
 
 import { db } from "./db";
 import { timeLimit } from "./lichess";
@@ -27,7 +27,11 @@ const setting = (name: Setting) => {
   return value && FORMS[name].test(value) ? value : null;
 };
 
-export const postingSetUp = () => setting("TELEGRAM_BOT_TOKEN") !== null && setting("TELEGRAM_GROUP_ID") !== null;
+export const botSetUp = () => setting("TELEGRAM_BOT_TOKEN") !== null;
+export const postingSetUp = () => botSetUp() && setting("TELEGRAM_GROUP_ID") !== null;
+
+// Whether a value is in the form of a bot's token, which goes in a request's path.
+export const isBotToken = (value: string) => FORMS.TELEGRAM_BOT_TOKEN.test(value);
 
 // The group's invite link, for Members only: never on a page a visitor can open, nor in one built ahead.
 export const inviteLink = () => setting("TELEGRAM_INVITE_LINK");
@@ -124,8 +128,11 @@ const MAX_PER_DELIVERY = 10;
 // have posted it all the same.
 export type Delivery = { posted: number; failed: { text: string; problem: string; perhaps: boolean } | null };
 
-// Claims and sends the oldest post waiting whose key starts with `prefix`: null if there is none, else how it went.
-// Exactly once:
+// The start of an alert's key (lib/alerts.ts): a private message to the Organiser, which only deliverAlerts sends.
+export const ALERT = "alert:";
+
+// Claims and sends to `chat` the oldest post waiting whose key starts with `prefix`, an alert only when `prefix` is
+// ALERT: null if there is none, else how it went. Exactly once:
 // - The post is claimed before it is sent, by one statement that takes a post nobody has claimed and skips one another
 //   delivery is claiming at that moment, so of deliveries at the same moment each sends different posts, and a post
 //   claimed is sent by its claimer alone.
@@ -137,9 +144,9 @@ async function deliverOne(group: string, now: Date, prefix: string): Promise<Del
   const { rows } = await db.query<{ key: string; text: string }>(
     `update "telegramPost" set "claimedAt" = now()
      where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2
-                    order by "createdAt", "key" limit 1 for update skip locked)
+                    and ("key" like 'alert:%') = $3 order by "createdAt", "key" limit 1 for update skip locked)
      returning "key", "text"`,
-    [now, `${prefix}%`],
+    [now, `${prefix}%`, prefix === ALERT],
   );
   const post = rows[0];
   if (!post) return null;
@@ -152,19 +159,24 @@ async function deliverOne(group: string, now: Date, prefix: string): Promise<Del
   return { posted: 0, failed: { text: post.text, problem: sent.problem, perhaps: sent.posted === "perhaps" } };
 }
 
-// Sends the posts that are waiting, oldest first, to the Club's group, until one cannot be sent. Throws if the database
+// Sends the posts waiting under `prefix`, oldest first, to `chat`, until one cannot be sent. Throws if the database
 // fails.
-export async function deliverPosts(now: Date): Promise<Delivery> {
-  const group = setting("TELEGRAM_GROUP_ID");
+async function deliver(chat: string | null, now: Date, prefix: string): Promise<Delivery> {
   let posted = 0;
-  while (group && posted < MAX_PER_DELIVERY) {
-    const one = await deliverOne(group, now, "");
+  while (chat && posted < MAX_PER_DELIVERY) {
+    const one = await deliverOne(chat, now, prefix);
     if (!one) break;
     if (one.failed) return { posted, failed: one.failed };
     posted++;
   }
   return { posted, failed: null };
 }
+
+// The posts waiting for the Club's group, alerts never among them.
+export const deliverPosts = (now: Date) => deliver(setting("TELEGRAM_GROUP_ID"), now, "");
+
+// The alerts waiting for the Organiser, to their own chat.
+export const deliverAlerts = (chat: string, now: Date) => deliver(chat, now, ALERT);
 
 // The start of a notice's key: lib/seasons.ts queues each under it and a random id.
 export const NOTICE = "notice:";
@@ -179,12 +191,13 @@ export async function deliverNotice(now: Date) {
 // How long a delivery may hold one post, its 10 s request included, before the post counts as stuck.
 const STUCK_MS = 15 * 60_000;
 
-// The text of the oldest post claimed more than 15 minutes before `now` and never sent: Telegram may have posted it
-// without saying so, or its delivery died while sending it. Either way it is not sent again, so the Organiser is asked
-// to look. Null if there is none. It stands until its "until", when a run deletes it.
+// The text of the oldest post for the group claimed more than 15 minutes before `now` and never sent: Telegram may have
+// posted it without saying so, or its delivery died while sending it. Either way it is not sent again, so the Organiser
+// is asked to look at the group. Null if there is none. It stands until its "until", when a run deletes it.
 export async function stuckPost(now: Date): Promise<string | null> {
   const { rows } = await db.query<{ text: string }>(
-    `select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 order by "claimedAt", "key" limit 1`,
+    `select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "key" not like 'alert:%'
+     order by "claimedAt", "key" limit 1`,
     [new Date(now.getTime() - STUCK_MS)],
   );
   return rows[0]?.text ?? null;

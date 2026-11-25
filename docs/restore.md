@@ -6,19 +6,21 @@ Every night at 01:07 UTC a scheduled job dumps the whole database and stores the
 
 ## 1. Where the dumps are (not tried)
 
-In the private Vercel Blob store `offboard-backups` (Frankfurt), connected to the project's Production environment, as `backups/<UTC date and time>.json.gz`, such as `backups/2026-11-29T01-07-12Z.json.gz`. The store deletes each 12 to 14 days after it was made, so there are usually 12 to 14. The Organiser page shows how the last night's went.
+In the private Vercel Blob store `offboard-backups` (Frankfurt), connected to the project's Production environment, as `backups/<UTC date and time>.json.gz`, such as `backups/2026-11-29T01-07-12Z.json.gz`. The store deletes each after 12 days by itself, and each night's run deletes any made more than 13 days before, so there are 12 to 14. The Organiser page shows how the last night's went.
 
 ## 2. Download one (not tried)
 
-From the [Vercel CLI docs](https://vercel.com/docs/cli/blob), in an empty folder outside the repository, with the store's read-write token, which Vercel put in the project's Production environment variables as `BLOB_READ_WRITE_TOKEN`, in the shell, read without showing it:
+The store's read-write token is the `BLOB_READ_WRITE_TOKEN` among the project's Production environment variables on Vercel, which can be shown there. From the [Vercel CLI docs](https://vercel.com/docs/cli/blob), in a new folder outside the repository, `~/offboard-restore`, with the token read without showing it:
 
 ```sh
+mkdir ~/offboard-restore && cd ~/offboard-restore
 read -rs BLOB_READ_WRITE_TOKEN    # paste the token, then Enter; nothing is shown
 vercel blob list --prefix backups/ --rw-token "$BLOB_READ_WRITE_TOKEN"
-vercel blob get backups/2026-11-29T01-07-12Z.json.gz --access private --output dump.json.gz --rw-token "$BLOB_READ_WRITE_TOKEN"
+vercel blob get backups/2026-11-29T01-07-12Z.json.gz --access private --output ~/offboard-restore/dump.json.gz --rw-token "$BLOB_READ_WRITE_TOKEN"
+unset BLOB_READ_WRITE_TOKEN
 ```
 
-The dump holds every Member's personal data. Delete `dump.json.gz` once the restore is done.
+The dump holds every Member's personal data. Delete `~/offboard-restore` once the restore is done.
 
 ## 3. Restore it into a new, empty database (tried locally)
 
@@ -28,7 +30,7 @@ The dump holds every Member's personal data. Delete `dump.json.gz` once the rest
    ```sh
    read -rs DATABASE_URL && export DATABASE_URL    # paste the new database's address, then Enter
    pnpm migrate
-   pnpm restore ../dump.json.gz
+   pnpm restore ~/offboard-restore/dump.json.gz
    unset DATABASE_URL
    ```
 
@@ -36,7 +38,13 @@ The dump holds every Member's personal data. Delete `dump.json.gz` once the rest
 
 ## 4. Point the site at it (not tried)
 
-In Vercel, the project's **Settings**, **Environment Variables**: set `DATABASE_URL` for Production to the new address, then redeploy production (a setting takes effect only with a deploy). The next production build migrates the new database, which has every migration already.
+`DATABASE_URL` on Vercel is a secret set by hand, which can't be read back: replace it with the new address, then redeploy production, as a setting takes effect only with a deploy. On your own machine, signed in to the Vercel CLI:
+
+```sh
+vercel --scope ketflows-projects env add DATABASE_URL production --project offboard --sensitive --force
+```
+
+It asks for the value: paste the new database's address there, never as an argument or through `pbpaste |`. Then redeploy production, `vercel --scope ketflows-projects redeploy <the latest production deployment's address>`. The build migrates the new database, which has every migration already.
 
 ## What a restore brings back that should not come back
 

@@ -28,7 +28,7 @@ Members; people who signed in with LinkedIn but have not finished joining; the O
 | Creating Matchdays | The Organiser's Lichess token, AES-256-GCM | `organiserLichess` | (f), the Organiser's own data |
 | Logs | Error text from scheduled jobs; server request logs | `jobFailure`, `scheduledJob`; Vercel | (f) running the service |
 | Backups (#17) | A nightly dump of every table but sessions and one-time sign-in values: everything above, the Organiser's token still sealed | Vercel Blob, private store `offboard-backups` | (f) recovering the service after a loss |
-| Alerts to the Organiser (#17) | The sentence a failing job or the Lichess permission's end gives, with no Member's data; the Organiser's chat id is a setting, not in the database | `telegramPost`, a day at most; then the Organiser's chat on Telegram | (f), the Organiser's own data |
+| Alerts to the Organiser (#17) | The sentence a failing job, a missing backup or the Lichess permission's end gives, with no Member's data; the Organiser's chat id is a setting, not in the database | `telegramPost`: a day for a failure or a missing backup; until the next warning is due for the Lichess permission, at most 23 days; then the Organiser's chat on Telegram | (f), the Organiser's own data |
 
 No special-category data. No decisions under Art 22. No email sent, no payments, no analytics or tracking.
 
@@ -60,7 +60,7 @@ USA, through Vercel (EU-U.S. Data Privacy Framework and 2021 SCCs, Module Two) a
 | A failed team removal (`teamRemoval`) | Until the Organiser has removed the account on Lichess and pressed Done on the Organiser page |
 | The Organiser's Lichess token | Until replaced or expired (one year); deleted, and revoked on Lichess, when the Organiser's account is deleted |
 | Neon restore history | 6 hours |
-| Backups in Vercel Blob | Each deleted by the store 12 days after it was made, applied at the next UTC midnight and "usually" done within a day after: within 14 days. Deletions in the database reach the backups in that time (`lib/backup.ts`, `docs/restore.md`) |
+| Backups in Vercel Blob | Within 14 days: each night's run deletes every backup made more than 13 days before. Each is also written to expire after 12 days, which the store applies by itself, at UTC midnight and "usually" within a day after, so they go even if the job stops. Deletions in the database reach the backups in that time (`lib/backup.ts`, `docs/restore.md`) |
 | Vercel runtime logs | 1 day |
 | Neon `development` branch | A copy of live data made 2026-11-25, with no expiry; deletions do not reach it |
 

@@ -90,6 +90,23 @@ describe("pnpm telegram-chats", () => {
     expect(result.out + result.err).not.toContain(TOKEN);
   }, 30_000);
 
+  it("never shows the token when Telegram can't be reached, or never answers", async () => {
+    let result = await run(`${TOKEN}\n`, [], { TELEGRAM_URL: "http://127.0.0.1:1" });
+    expect([result.code, result.err]).toEqual([1, "Couldn't reach Telegram.\n"]);
+    expect(result.out + result.err).not.toContain(TOKEN);
+    // A Telegram that takes the request and never answers: the script gives up after 10 s.
+    const silent = createServer(() => {});
+    await new Promise<void>((resolve) => silent.listen(0, "127.0.0.1", resolve));
+    try {
+      result = await run(`${TOKEN}\n`, [], { TELEGRAM_URL: `http://127.0.0.1:${(silent.address() as { port: number }).port}` });
+      expect([result.code, result.err]).toEqual([1, "Telegram didn't answer within 10 s.\n"]);
+      expect(result.out + result.err).not.toContain(TOKEN);
+    } finally {
+      silent.closeAllConnections();
+      await new Promise((resolve) => silent.close(resolve));
+    }
+  }, 30_000);
+
   it("takes the token only when asked, never as an argument, and only in a token's form, asking Telegram nothing otherwise", async () => {
     let result = await run("", [TOKEN]);
     expect([result.code, result.out, result.err]).toEqual([1, "", "Usage: pnpm telegram-chats, with no arguments: it asks for the bot's token, which is never an argument.\n"]);

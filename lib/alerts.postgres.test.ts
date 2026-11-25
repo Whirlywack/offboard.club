@@ -84,22 +84,29 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
   });
 
   it("sends the group's posts to the group and the alerts to the Organiser, never one to the other, and reports only the group's as stuck", async () => {
-    const add = (key: string, minutesAgo: number, claimed = false) =>
+    // A post made `minutesAgo`, and claimed `claimedMinutesAgo` by a delivery that never sent it.
+    const add = (key: string, minutesAgo: number, claimedMinutesAgo: number | null = null) =>
       client.query(
         `insert into "telegramPost" ("key", "text", "until", "createdAt", "claimedAt") values ($1, $1, $2, now() - make_interval(mins => $3), $4)`,
-        [key, LATER, minutesAgo, claimed ? new Date(NOW.getTime() - 30 * 60_000) : null],
+        [key, LATER, minutesAgo, claimedMinutesAgo === null ? null : new Date(NOW.getTime() - claimedMinutesAgo * 60_000)],
       );
     await add("alert:older", 10);
     await add("recap:2026-11-29", 5);
     await add("alert:newer", 1);
-    await add("alert:stuck", 20, true);
+    await add("alert:stuck", 20, 30);
+    await add("alert:being-sent", 20, 10);
     expect(await deliverPosts(NOW)).toEqual({ posted: 1, failed: null });
     expect(sent()).toEqual([`${GROUP} recap:2026-11-29`]);
     expect(await stuckPost(NOW)).toBeNull();
-    expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 2, failed: null });
-    expect(sent()).toEqual([`${GROUP} recap:2026-11-29`, `${CHAT} alert:older`, `${CHAT} alert:newer`]);
-    expect(await select(`select "key" from "telegramPost" where "sentAt" is null order by "key"`)).toEqual([{ key: "alert:stuck" }]);
-    await add("notice:stuck", 20, true);
+    // The alert claimed half an hour ago and never sent is sent again, oldest first; the one claimed ten minutes ago is
+    // left to the delivery that may still be sending it.
+    expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 3, failed: null });
+    expect(sent()).toEqual([`${GROUP} recap:2026-11-29`, `${CHAT} alert:stuck`, `${CHAT} alert:older`, `${CHAT} alert:newer`]);
+    expect(await select(`select "key" from "telegramPost" where "sentAt" is null order by "key"`)).toEqual([{ key: "alert:being-sent" }]);
+    // A group post so claimed is never sent again, and is reported instead.
+    await add("notice:stuck", 20, 30);
+    expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 0, failed: null });
+    expect(await deliverPosts(NOW)).toEqual({ posted: 0, failed: null });
     expect(await stuckPost(NOW)).toBe("notice:stuck");
   });
 });

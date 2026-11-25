@@ -1,7 +1,8 @@
 // Private alerts to the Organiser (#17): direct messages from the Club's bot to the Organiser's own Telegram chat, never
 // to the group, so that a silent failure does not cost a Sunday. Vercel runs this job every hour (vercel.json,
 // app/api/jobs/alert-organiser). A run queues what is due in "telegramPost" under ALERT (lib/telegram.ts), from where
-// each alert is sent once and never twice, then sends what is waiting:
+// each alert is sent once, and again only if its sending died or Telegram may have taken it without saying, as a second
+// copy to the Organiser does no harm and a lost one might (deliverAlerts); then it sends what is waiting:
 // - A scheduled job whose last run failed, by the sentence the Organiser page shows for it (lib/jobs.ts). The same
 //   failure is the same job failing with the same sentence: it is alerted once, and again a day later while it still
 //   fails, as an alert is worth sending for a day and is forgotten then. Another sentence is another failure, alerted
@@ -146,11 +147,11 @@ export async function sendTestMessage(to: "me" | "group"): Promise<{ text: strin
   return { text: `${sent.posted === "perhaps" ? "It isn't known whether Telegram took it" : "Nothing was sent"}: ${sentence(sent.problem)}.${hint}`, problem: true };
 }
 
-// What a run says of a delivery. An alert Telegram refused, or never got, waits for the next run; one it may have sent
-// is not sent again.
+// What a run says of a delivery. An alert Telegram refused, or never got, waits for the next run; so does one it may
+// have taken without saying, which the next run, an hour later, sends again.
 function outcome({ posted, failed: problem }: Delivery): JobRun {
   if (problem?.perhaps)
-    return failed(`It isn't known whether Telegram sent you "${problem.text.split("\n")[0]}" (${sentence(problem.problem)}), so it won't be sent again.`);
+    return failed(`It isn't known whether Telegram sent you "${problem.text.split("\n")[0]}" (${sentence(problem.problem)}), so it is sent again in an hour.`);
   if (problem) return failed(`Couldn't send you an alert: ${sentence(problem.problem)}. The next run tries again.`);
   if (posted > 0) return done(`Sent you ${posted === 1 ? "an alert" : `${posted} alerts`}.`);
   return skipped("Nothing to tell you.");

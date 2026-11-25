@@ -648,6 +648,15 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer(post ? [{ text: post.text }] : []);
   },
 
+  // deliverAlerts: an alert claimed at or before $1 and not sent is given back.
+  [`update "telegramPost" set "claimedAt" = null where "key" like 'alert:%' and "sentAt" is null and "claimedAt" <= $1`]: (before) => {
+    const stuck = [...telegramPosts.values()].filter(
+      (p) => likePrefix(p.key, "alert:%") && p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date),
+    );
+    for (const post of stuck) post.claimedAt = null;
+    return answer([], stuck.length);
+  },
+
   // forgetPastPosts
   [`delete from "telegramPost" where "until" <= $1`]: (now) => {
     const gone = [...telegramPosts.values()].filter((p) => p.until <= new Date(now as unknown as Date));

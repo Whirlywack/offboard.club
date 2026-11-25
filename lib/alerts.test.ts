@@ -130,6 +130,13 @@ describe("a scheduled job's failure", () => {
     expect([...dms()[1]]).toHaveLength(1000);
     expect(dms()[1].endsWith("ąąą…")).toBe(true);
   });
+
+  it("leaves out the database's user name and password as an error says them, not as the address writes them", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://neon%2Bowner:a%2Fpretend%40password@ep-pretend-123456-pooler.eu-central-1.aws.neon.tech/neondb");
+    await jobRun(COLLECT, SUNDAY, failed(`The job stopped: password authentication failed for user "neon+owner" with a/pretend@password.`));
+    await alertAt(SUNDAY);
+    expect(dms()).toEqual(['Collecting results: The job stopped: password authentication failed for user "[hidden]" with [hidden].']);
+  });
 });
 
 describe("the backup", () => {
@@ -221,7 +228,7 @@ describe("sending", () => {
     expect([...telegramPosts.keys()]).toEqual([]);
   });
 
-  it("tries a refused alert again at the next run, and never sends twice one Telegram may have sent", async () => {
+  it("tries a refused alert again at the next run, and sends again one Telegram may have taken without saying", async () => {
     await jobRun(COLLECT, SUNDAY, failed(COULD_NOT));
     telegram.override = () => Response.json({ ok: false, error_code: 403, description: "Forbidden: bot can't initiate conversation with a user" }, { status: 403 });
     expect(await alertAt(SUNDAY)).toEqual({
@@ -236,12 +243,26 @@ describe("sending", () => {
     await jobRun(COLLECT, new Date(SUNDAY.getTime() + 2 * HOUR), failed("Couldn't collect the results of Sunday 29 November: another thing."));
     telegram.override = () => new Response("Bad Gateway", { status: 502 });
     expect((await alertAt(new Date(SUNDAY.getTime() + 2 * HOUR))).detail).toBe(
-      `It isn't known whether Telegram sent you "Collecting results: Couldn't collect the results of Sunday 29 November: another thing." (Telegram answered 502 without saying), so it won't be sent again.`,
+      `It isn't known whether Telegram sent you "Collecting results: Couldn't collect the results of Sunday 29 November: another thing." (Telegram answered 502 without saying), so it is sent again in an hour.`,
     );
     telegram.override = undefined;
     await alertAt(new Date(SUNDAY.getTime() + 3 * HOUR));
+    await alertAt(new Date(SUNDAY.getTime() + 4 * HOUR));
     const tries = telegram.calls.filter((call) => String(call.params.text).endsWith("another thing."));
-    expect(tries).toHaveLength(1);
+    expect(tries).toHaveLength(2);
+    expect(dms().at(-1)).toBe("Collecting results: Couldn't collect the results of Sunday 29 November: another thing.");
+  });
+
+  it("sends an alert whose run died after claiming it, once 15 minutes have passed, and never touches a group post so claimed", async () => {
+    await queuePost({ key: "alert:lost", text: "Your Lichess permission ended on 25 November 2027.", until: new Date(SUNDAY.getTime() + DAY) });
+    await queuePost({ key: "recap:2026-11-29", text: "A Recap.", until: new Date(SUNDAY.getTime() + DAY) });
+    // Claimed by a run that died before it sent them.
+    for (const key of ["alert:lost", "recap:2026-11-29"]) telegramPosts.get(key)!.claimedAt = SUNDAY;
+    await alertAt(new Date(SUNDAY.getTime() + 14 * MINUTE));
+    expect(dms()).toEqual([]);
+    await alertAt(new Date(SUNDAY.getTime() + 15 * MINUTE));
+    expect(dms()).toEqual(["Your Lichess permission ended on 25 November 2027."]);
+    expect(telegramPosts.get("recap:2026-11-29")).toMatchObject({ claimedAt: SUNDAY, sentAt: null });
   });
 
   it("is never the group's: the group's posting sends no alert, and does not report one as stuck", async () => {

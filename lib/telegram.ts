@@ -139,7 +139,7 @@ export const ALERT = "alert:";
 //   claimed is sent by its claimer alone.
 // - A post Telegram refused, or that never reached it, is given back, and the next delivery tries it again.
 // - A post that may have been posted without Telegram saying so stays claimed and is never sent again; so does one
-//   whose delivery died while sending it (stuckPost).
+//   whose delivery died while sending it (stuckPost). An alert is the exception (deliverAlerts).
 // - A post is not sent after its "until", as of `now`.
 async function deliverOne(group: string, now: Date, prefix: string): Promise<Delivery | null> {
   const { rows } = await db.query<{ key: string; text: string }>(
@@ -176,8 +176,16 @@ async function deliver(chat: string | null, now: Date, prefix: string): Promise<
 // The posts waiting for the Club's group, alerts never among them.
 export const deliverPosts = (now: Date) => deliver(groupId(), now, "");
 
-// The alerts waiting for the Organiser, to their own chat.
-export const deliverAlerts = (chat: string, now: Date) => deliver(chat, now, ALERT);
+// The alerts waiting for the Organiser, to their own chat. An alert claimed more than 15 minutes before `now` and not
+// sent, whose delivery died or which Telegram may have taken without saying, is given back and sent again: it goes to the
+// Organiser alone, to whom a second copy does no harm, and one lost could be the only word that the Lichess permission
+// has ended.
+export async function deliverAlerts(chat: string, now: Date): Promise<Delivery> {
+  await db.query(`update "telegramPost" set "claimedAt" = null where "key" like 'alert:%' and "sentAt" is null and "claimedAt" <= $1`, [
+    new Date(now.getTime() - STUCK_MS),
+  ]);
+  return deliver(chat, now, ALERT);
+}
 
 // The start of a notice's key: lib/seasons.ts queues each under it and a random id.
 export const NOTICE = "notice:";

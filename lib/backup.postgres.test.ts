@@ -291,15 +291,18 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     const blob = createFakeBlob({ token: TOKEN, storeId: "pretendstore" });
     let server: Server;
     let logged: string[];
-    // While set, the store takes each request and never answers it.
-    let silent = false;
+    // How the store answers: as it should; never, taking each request; at once with 503, which the SDK tries again with
+    // waits growing from a second; or refusing to delete.
+    let store: "answers" | "silent" | "unavailable" | "keeps everything" = "answers";
 
     beforeAll(async () => {
       server = createServer(async (request, reply) => {
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(chunk);
-        blob.calls.length += silent ? 1 : 0;
-        if (silent) return;
+        if (store === "silent") return void blob.calls.push({ method: request.method ?? "", pathname: null, headers: {} });
+        const refused = (status: number, code: string) => reply.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: { code } }));
+        if (store === "unavailable") return refused(503, "service_unavailable");
+        if (store === "keeps everything" && request.url?.endsWith("/delete")) return refused(400, "bad_request");
         const headers = Object.entries(request.headers).flatMap(([name, value]) => (typeof value === "string" ? [[name, value] as [string, string]] : []));
         const body = chunks.length ? Buffer.concat(chunks) : undefined;
         const response = await blob.handle(new Request(new URL(request.url ?? "/", "http://127.0.0.1"), { method: request.method, headers, body }));
@@ -331,11 +334,11 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     it("stores the whole dump, compressed, as a private file named by its date and time, deleted by the store after 12 days", async () => {
       const run = await backUp(NOW);
       expect(run.outcome).toBe("done");
-      expect(run.detail).toMatch(/^Backed up the database \(\d+ kB\)\. Each backup is kept for at least 12 days\.$/);
+      expect(run.detail).toMatch(/^Backed up the database \(\d+ kB\)\.$/);
       expect(dumpPathname(NOW)).toBe("backups/2026-11-29T01-07-12Z.json.gz");
       const stored = blob.blobs.get("backups/2026-11-29T01-07-12Z.json.gz")!;
       expect(stored).toMatchObject({ contentType: "application/gzip", ttlDays: 12 });
-      expect(blob.calls.at(-1)?.headers).toMatchObject({ "x-vercel-blob-access": "private" });
+      expect(blob.calls.find((call) => call.method === "PUT")?.headers).toMatchObject({ "x-vercel-blob-access": "private" });
       // The store's address of it is nowhere in what the run says.
       expect(JSON.stringify(run)).not.toContain("blob.vercel-storage.com");
       // The same as the dump before but for the moment and the job's own row, which the run itself made.
@@ -369,21 +372,92 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
       vi.stubEnv("BLOB_READ_WRITE_TOKEN", TOKEN);
     });
 
-    it("gives up on a store that never answers, at the run's deadline, and says so", async () => {
-      silent = true;
+    // Ends at the run's deadline, recorded as failed, whatever is keeping it: the route's limit is 60 s past the deadline,
+    // so a run that waited for the SDK's next try would be killed before it recorded anything.
+    describe.each([
+      ["never answers", "silent"],
+      ["answers 503 at once, which the SDK tries again a second or more later", "unavailable"],
+    ] as const)("with a store that %s", (_, answering) => {
+      it("ends at the run's deadline, recorded as failed, with nothing stored", async () => {
+        store = answering;
+        try {
+          const count = blob.blobs.size;
+          const started = Date.now();
+          const run = await backUp(new Date(NOW.getTime() + 4 * 86_400_000));
+          const took = Date.now() - started;
+          expect(run).toEqual({ outcome: "failed", detail: "The backup failed: it took more than 0.5 s.", matchdayDate: null });
+          expect(took).toBeGreaterThanOrEqual(DEADLINE_MS);
+          expect(took).toBeLessThan(DEADLINE_MS + 400);
+          expect(await lastRun()).toEqual({ lastOutcome: "failed", lastDetail: run.detail });
+          expect(blob.blobs.size).toBe(count);
+        } finally {
+          store = "answers";
+        }
+      });
+    });
+
+    it("ends at the run's deadline when the database is what keeps it", async () => {
+      hooks.between = async () => void (await new Promise((resolve) => setTimeout(resolve, 3000)));
       try {
-        const calls = blob.calls.length;
         const started = Date.now();
-        expect(await backUp(new Date(NOW.getTime() + 4 * 86_400_000))).toEqual({
-          outcome: "failed",
-          detail: "The backup failed: it took more than 0.5 s.",
-          matchdayDate: null,
-        });
-        expect(blob.calls.length).toBe(calls + 1);
-        expect(Date.now() - started).toBeGreaterThanOrEqual(DEADLINE_MS);
+        expect((await backUp(new Date(NOW.getTime() + 5 * 86_400_000))).detail).toBe("The backup failed: it took more than 0.5 s.");
+        expect(Date.now() - started).toBeLessThan(DEADLINE_MS + 400);
       } finally {
-        silent = false;
+        hooks.between = null;
+        // The dump that was kept waiting ends, and lets go of its connection.
+        await new Promise((resolve) => setTimeout(resolve, 3500));
       }
+    }, 15_000);
+
+    describe("keeping 13 days of dumps", () => {
+      const DAY = 86_400_000;
+      const LATER = new Date(NOW.getTime() + 30 * DAY);
+      const ago = (days: number) => dumpPathname(new Date(LATER.getTime() - days * DAY));
+
+      it("deletes those under backups/ made more than 13 days before, by the dates in their names, and nothing else", async () => {
+        blob.blobs.clear();
+        const kept = [ago(13 - 1 / 24), ago(12), "other/2020-01-01T00-00-00Z.json.gz", "backupsX/2020-01-01T00-00-00Z.json.gz"];
+        for (const name of [...kept, ago(13 + 1 / 24), ago(14), ago(400)]) blob.add(name);
+        const run = await backUp(LATER);
+        expect(run).toEqual({ outcome: "done", detail: expect.stringMatching(/^Backed up the database \(\d+ kB\), and deleted 3 backups over 13 days old\.$/), matchdayDate: null });
+        expect([...blob.blobs.keys()].sort()).toEqual([...kept, dumpPathname(LATER)].sort());
+      });
+
+      it("goes through every page of the store's list", async () => {
+        blob.blobs.clear();
+        for (let i = 0; i < 1001; i++) blob.add(dumpPathname(new Date(NOW.getTime() - i * 60_000)));
+        expect((await backUp(LATER)).detail).toMatch(/, and deleted 1,?001 backups over 13 days old\.$/);
+        expect([...blob.blobs.keys()]).toEqual([dumpPathname(LATER)]);
+      });
+
+      it("leaves a name it doesn't give alone, and says so as a failure", async () => {
+        blob.blobs.clear();
+        blob.add("backups/by-hand.sql");
+        blob.add("backups/2026-13-45T99-99-99Z.json.gz");
+        const run = await backUp(LATER);
+        expect(run.outcome).toBe("failed");
+        expect(run.detail).toMatch(
+          /^Backed up the database \(\d+ kB\), but left backups\/2026-13-45T99-99-99Z\.json\.gz and 1 more alone: its name isn't one this job gives, so it isn't deleted after 13 days\. Delete it in the store if it isn't wanted\.$/,
+        );
+        expect(blob.blobs.has("backups/by-hand.sql") && blob.blobs.has(dumpPathname(LATER))).toBe(true);
+      });
+
+      it("records a failure to delete as the run's, once the new dump is stored", async () => {
+        blob.blobs.clear();
+        blob.add(ago(20));
+        store = "keeps everything";
+        try {
+          const run = await backUp(LATER);
+          expect(run).toEqual({
+            outcome: "failed",
+            detail: expect.stringMatching(/^Backed up the database \(\d+ kB\), but couldn't delete the backups over 13 days old: Vercel Blob: Bad request\.$/),
+            matchdayDate: null,
+          });
+          expect(blob.blobs.has(dumpPathname(LATER)) && blob.blobs.has(ago(20))).toBe(true);
+        } finally {
+          store = "answers";
+        }
+      });
     });
 
     it("switches itself off without the store's token: skipped, not failed, and asks the store nothing", async () => {

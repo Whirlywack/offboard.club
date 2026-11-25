@@ -13,14 +13,16 @@
 // - Private: the store is private and each dump is written to it as private, so its address opens only with the store's
 //   token. A dump holds Members' personal data, so no part of it is logged or put in a message: a run says how big the
 //   dump was, or why it failed.
-// - Kept for at least 12 days, then deleted by the store itself, so that a dump goes even if this job stops running and
-//   no run has to list the store: each is written with a time to live of 12 days (ttlDays). Vercel applies expirations
-//   at UTC midnight and a dump past its time is "usually gone within a day" (vercel.com/docs/vercel-blob/using-blob-sdk,
-//   "Expire blobs automatically"), so each is gone within 14 days of being made, as /privacy says.
+// - Gone within 14 days, as /privacy says: each run, once its own dump is stored, deletes every dump under backups/ made
+//   more than 13 days before, by the date in its name, so that while the job runs nightly none is kept longer. Each is
+//   also written with a time to live of 12 days (ttlDays), after which the store deletes it by itself, even if this job
+//   stops running: Vercel applies expirations at UTC midnight, and a dump past its time is "usually gone within a day"
+//   (vercel.com/docs/vercel-blob/using-blob-sdk, "Expire blobs automatically"), with no promise beyond that.
 // - Nothing half-written: a dump is made whole in memory, then stored by one request under a name of its own, which
 //   either makes the file or does not. A run that fails leaves nothing, and the next night's makes a whole dump again.
+// - On time: a run ends at its deadline, recording why, whatever the database or the store is doing.
 
-import { put } from "@vercel/blob";
+import { del, list, put } from "@vercel/blob";
 import { escapeIdentifier } from "pg";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
@@ -28,7 +30,7 @@ import { inTransaction } from "./transaction";
 
 export const JOB = "backup";
 
-// How many days the store keeps each dump at least (ttlDays): see "Kept" above.
+// The days after which the store deletes a dump by itself (ttlDays): see "Gone within 14 days" above.
 const KEPT_DAYS = 12;
 
 // The tables a dump leaves out, each with why; the restore says so. Every other table is dumped as it is, among them
@@ -177,27 +179,76 @@ const storeToken = () => process.env.BLOB_READ_WRITE_TOKEN || null;
 export const backupProblem = () => (storeToken() ? null : "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.");
 
 // Where a dump made at `now` goes: by its UTC date and time, as backups/2026-11-29T01-07-12Z.json.gz.
-export const dumpPathname = (now: Date) => `backups/${now.toISOString().replace(/:/g, "-").replace(/\.\d+Z$/, "Z")}.json.gz`;
+const PREFIX = "backups/";
+export const dumpPathname = (now: Date) => `${PREFIX}${now.toISOString().replace(/:/g, "-").replace(/\.\d+Z$/, "Z")}.json.gz`;
+
+// When the dump at `pathname` was made, read back from its name; null for a name this job does not give.
+function madeAt(pathname: string): Date | null {
+  const name = /^backups\/(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.json\.gz$/.exec(pathname);
+  const at = name && new Date(`${name[1]}T${name[2]}:${name[3]}:${name[4]}Z`);
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
+// A run deletes the dumps made more than 13 days before it, so that, run nightly, each is gone within 14.
+const DELETE_AFTER_MS = 13 * 86_400_000;
 
 // One run of the job at `now`: what it did and why. Throws only if the database cannot record the run.
 export const backUp = (now: Date) => runJob(JOB, () => backUpNow(now));
 
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const reason = (error: unknown) => (error instanceof Error ? error.message : "unknown error");
+
 async function backUpNow(now: Date): Promise<JobRun> {
   const token = storeToken();
   if (!token) return skipped(backupProblem()!);
-  // @vercel/blob tries a request again for up to 17 minutes; the run gives up on the store within its route's
-  // maxDuration. Aborted without a reason, which the SDK (2.9.0, requestApi) takes as the end: one aborted with a reason
-  // it would try again, ten times.
+  // The run ends at its deadline whatever @vercel/blob is doing: the SDK tries a request again, with growing waits, for
+  // up to 17 minutes, and has no documented way to try fewer times, so the run stops waiting for it instead, and records
+  // why within its route's maxDuration. The abort has no reason, which the SDK (2.9.0, requestApi) takes as the end the
+  // next time it tries; one aborted with a reason it would try again.
   const deadline = new AbortController();
-  const timer = setTimeout(() => deadline.abort(), JOB_DEADLINE_MS);
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      deadline.abort();
+      reject(new Error(`it took more than ${JOB_DEADLINE_MS / 1000} s`));
+    }, JOB_DEADLINE_MS);
+  });
+  const inTime = <T>(work: Promise<T>) => Promise.race([work, late]);
+  const options = { token, abortSignal: deadline.signal };
   try {
-    const file = gzipSync(JSON.stringify(await dumpDatabase()));
-    await put(dumpPathname(now), file, { access: "private", token, ttlDays: KEPT_DAYS, contentType: "application/gzip", abortSignal: deadline.signal });
-    return done(`Backed up the database (${Math.ceil(file.length / 1024)} kB). Each backup is kept for at least ${KEPT_DAYS} days.`);
-  } catch (error) {
-    // The store's errors and the database's name the request, never a value from the dump.
-    const why = deadline.signal.aborted ? `it took more than ${JOB_DEADLINE_MS / 1000} s` : error instanceof Error ? error.message : "unknown error";
-    return failed(`The backup failed: ${sentence(why)}.`);
+    let size: string;
+    try {
+      const file = gzipSync(JSON.stringify(await inTime(dumpDatabase())));
+      await inTime(put(dumpPathname(now), file, { ...options, access: "private", ttlDays: KEPT_DAYS, contentType: "application/gzip" }));
+      size = `${Math.ceil(file.length / 1024)} kB`;
+    } catch (error) {
+      // The store's errors and the database's name the request, never a value from the dump.
+      return failed(`The backup failed: ${sentence(reason(error))}.`);
+    }
+    // The new dump is stored: now the old ones go, those under backups/ alone, by the date in each name.
+    const old: string[] = [];
+    const strange: string[] = [];
+    try {
+      let cursor: string | undefined;
+      do {
+        const page = await inTime(list({ ...options, prefix: PREFIX, cursor }));
+        for (const { url, pathname } of page.blobs) {
+          const at = madeAt(pathname);
+          if (!at) strange.push(pathname);
+          else if (now.getTime() - at.getTime() > DELETE_AFTER_MS) old.push(url);
+        }
+        cursor = page.hasMore ? page.cursor : undefined;
+      } while (cursor);
+      if (old.length > 0) await inTime(del(old, options));
+    } catch (error) {
+      return failed(`Backed up the database (${size}), but couldn't delete the backups over 13 days old: ${sentence(reason(error))}.`);
+    }
+    const deleted = old.length > 0 ? `, and deleted ${count(old.length, "backup", "backups")} over 13 days old` : "";
+    if (strange.length > 0)
+      return failed(
+        `Backed up the database (${size})${deleted}, but left ${strange[0]}${strange.length > 1 ? ` and ${strange.length - 1} more` : ""} alone: its name isn't one this job gives, so it isn't deleted after 13 days. Delete it in the store if it isn't wanted.`,
+      );
+    return done(`Backed up the database (${size})${deleted}.`);
   } finally {
     clearTimeout(timer);
   }

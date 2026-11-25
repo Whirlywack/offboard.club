@@ -1,3 +1,5 @@
+import { getSessionCookie } from "better-auth/cookies";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -250,11 +252,13 @@ async function SeasonChampions() {
 }
 
 // Who is signed in, or the way to sign in. A Member also gets the Telegram group's invite link, which nobody else is
-// given. A session that cannot be read (only one with a session cookie is read, from the database) is said so plainly,
-// not shown as signed out. Exported for app/home.test.ts.
+// given. When the session cannot be read, someone with a session cookie is told so rather than shown as signed out;
+// anyone else is offered to sign in, since Better Auth reads the database for them too until it has checked its
+// tables there once. Exported for app/home.test.ts.
 export async function You() {
   const session = await getSession().catch(() => undefined);
-  if (session === undefined) return <p className={ui.alert}>Your sign-in can&apos;t be checked right now. Please try again in a minute.</p>;
+  if (session === undefined && getSessionCookie(await headers()))
+    return <p className={ui.alert}>Your sign-in can&apos;t be checked right now. Please try again in a minute.</p>;
   if (!session) return <SignIn />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);

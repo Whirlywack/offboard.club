@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
-import { forgetTeamRemoval, membersToRemove, removeMember, teamRemovals } from "./leaving";
+import { forgetTeamRemoval, isMember, membersToRemove, removeMember, teamRemovals } from "./leaving";
 
 // Leaving the Club's real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
 // so nothing it does is kept: that the foreign keys of migrations/ take everything of the person's with them but their
@@ -132,6 +132,10 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { id: "removable-test-ana", name: "Removable Ana", lichessUsername: "removable-test-ana-on-lichess" },
       { id: "removable-test-zita", name: "Removable Žilvinas", lichessUsername: "removable-test-zita-on-lichess" },
     ]);
+    // Only a Member may be removed.
+    expect(await isMember("removable-test-ana")).toBe(true);
+    expect(await isMember("removable-test-half")).toBe(false);
+    expect(await isMember("removable-test-nobody")).toBe(false);
   });
 
   it("deletes everything of someone part-way through signing up, and asks nothing of Lichess (#43)", async () => {

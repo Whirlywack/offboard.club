@@ -22,7 +22,7 @@ function Outcome({ said, pending }: { said: Said | null; pending: boolean }) {
 
 // One Sunday on the Organiser page, written out by the page in Vilnius time: its Matchday ("Season 3, Matchday 4"), if
 // it has one, and whether it is skipped.
-export type SundayRow = { date: string; day: string; matchday: string | null; skipped: boolean };
+type SundayRow = { date: string; day: string; matchday: string | null; skipped: boolean };
 
 // The next Sundays, a Matchday with a button to skip it, a skipped Sunday with one to undo that. One form, so that every
 // button waits while one press is being sent.
@@ -63,7 +63,7 @@ export function Sundays({ sundays }: { sundays: SundayRow[] }) {
 }
 
 // A Season whose first Matchday is still to come, as the page offers it: "Season 4, now from Sunday 17 January".
-export type SeasonChoice = { number: number; label: string };
+type SeasonChoice = { number: number; label: string };
 
 // A Season's start set by hand. `first` is the first Sunday it can be, which the date picker starts from.
 export function SeasonStart({ seasons, first }: { seasons: SeasonChoice[]; first: string }) {

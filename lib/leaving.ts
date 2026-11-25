@@ -54,6 +54,12 @@ export async function removeMember(memberId: string): Promise<boolean> {
 // Better Auth's ids are 32 characters; anything much longer, sent to the Organiser page, names nobody.
 export const MEMBER_ID_MAX = 64;
 
+// Whether the person `id` is a Member, the only people the Organiser removes.
+export async function isMember(id: string): Promise<boolean> {
+  const { rows } = await db.query(`select 1 from "user" where id = $1 and ${MEMBER_SQL}`, [id]);
+  return rows.length > 0;
+}
+
 export type Removable = { id: string; name: string; lichessUsername: string };
 
 // Every Member but the Organiser, by name, for the Organiser to choose whom to remove; each with their Lichess username,

@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireOrganiser } from "@/lib/auth";
 import { pendingCookie } from "@/lib/connect-lichess";
-import { forgetTeamRemoval, MEMBER_ID_MAX, removeMember } from "@/lib/leaving";
+import { forgetTeamRemoval, isMember, MEMBER_ID_MAX, removeMember } from "@/lib/leaving";
 import { SWISS_ID } from "@/lib/lichess";
 import { ORGANISER_FLOW, organiserLichessConfigured, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { changeSeasonStart, forgetTournamentCancellation, skipMatchday, unskipMatchday, type Said } from "@/lib/reschedule";
@@ -68,11 +68,13 @@ export async function setStart(_previous: Said | null, form: FormData): Promise<
 
 // "Remove" on the step that confirms removing a Member (app/organiser/remove): that Member's account deleted, as if they
 // had deleted it themselves (lib/leaving.ts), and back to the Organiser page saying so. Anyone but the Organiser is not
-// found, and nobody is removed. The Organiser leaves the Club from their Profile, as any Member does, not from here.
+// found, and nobody is removed. The Organiser leaves the Club from their Profile, as any Member does, not from here; and
+// someone part-way through signing up, whom the confirmation step does not offer, is not removed either.
 export async function removeFromClub(form: FormData): Promise<void> {
   const { id } = await requireOrganiser();
   const memberId = form.get("memberId");
   if (memberId === id) redirect("/organiser?member=self");
-  const removed = typeof memberId === "string" && memberId.length <= MEMBER_ID_MAX && (await removeMember(memberId));
+  const removed =
+    typeof memberId === "string" && memberId.length <= MEMBER_ID_MAX && (await isMember(memberId)) && (await removeMember(memberId));
   redirect(`/organiser?member=${removed ? "removed" : "gone"}`);
 }

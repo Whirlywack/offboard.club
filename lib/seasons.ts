@@ -21,7 +21,8 @@ export type Store = {
   // Leaves a Season that is already stored as it is, so of several racing callers only the first is kept.
   addSeason(season: StoredSeason): Promise<void>;
   setStart(season: StoredSeason): Promise<void>;
-  setSkipped(date: string, skipped: boolean): Promise<void>;
+  // False when the Sunday already was so, as when another request got there first.
+  setSkipped(date: string, skipped: boolean): Promise<boolean>;
   // The dates of the Matchdays ingested so far, whose Season no change to the schedule may alter.
   ingestedDates(): Promise<string[]>;
 };
@@ -46,12 +47,13 @@ export const postgresStore = (q: Queryable): Store => ({
     );
   },
   async setSkipped(date, skipped) {
-    await q.query(
+    const { rowCount } = await q.query(
       skipped
         ? `insert into "skippedSunday" ("date") values ($1) on conflict do nothing`
         : `delete from "skippedSunday" where "date" = $1`,
       [date],
     );
+    return rowCount === 1;
   },
   async ingestedDates() {
     const { rows } = await q.query<{ date: string }>(
@@ -187,7 +189,8 @@ async function setSkipped(date: string, skipped: boolean, now: Date, store: Stor
   const after = { ...before, skipped: [...before.skipped.filter((d) => d !== date), ...(skipped ? [date] : [])] };
   const changed = changeProblem(before, after, now, ingested);
   if (changed) return changed;
-  await store.setSkipped(date, skipped);
+  // Of two requests at once, only the first changes it; the other is told so.
+  if (!(await store.setSkipped(date, skipped))) return skipped ? `${date} is already skipped.` : `${date} is not skipped.`;
   return null;
 }
 

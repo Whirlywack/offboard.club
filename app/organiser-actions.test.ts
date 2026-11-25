@@ -16,7 +16,7 @@ import { LICHESS_DEADLINE_MS } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { changeSunday, removeFromClub, setStart, tournamentCancelled } from "./organiser/actions";
 import OrganiserPage from "./organiser/page";
-import RemovePage from "./organiser/remove/page";
+import RemovePage, { generateMetadata as confirmTitle } from "./organiser/remove/page";
 
 const { getSession, refresh, formStatus, actionState } = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -62,6 +62,30 @@ const NOW = new Date("2026-11-25T12:00:00Z");
 let lichess: ReturnType<typeof createFakeLichess>;
 let signedIn: string | null;
 let tournament: string; // the first Matchday's, as the job created it
+
+// The database calling `before` with each statement just before it runs, in a transaction or not: to change a row as
+// another request would, or to stop() as a dropped connection does.
+const fakeQuery = db.query.getMockImplementation()!;
+const fakeConnect = db.connect.getMockImplementation()!;
+function onStatement(before: (sql: string) => void) {
+  const query = (run: (sql: string, params?: unknown[]) => Promise<unknown>) => async (sql: string, params?: unknown[]) => {
+    if (!["begin", "commit", "rollback"].includes(sql)) before(sql.replace(/\s+/g, " ").trim());
+    return run(sql, params);
+  };
+  db.query.mockImplementation(query(fakeQuery) as typeof fakeQuery);
+  db.connect.mockImplementation(async () => {
+    const connection = await fakeConnect();
+    return { ...connection, query: query(connection.query) as typeof connection.query };
+  });
+}
+const stop = () => {
+  onStatement(() => {}); // once
+  throw new Error("Connection terminated unexpectedly");
+};
+function restoreDatabase() {
+  db.query.mockImplementation(fakeQuery);
+  db.connect.mockImplementation(fakeConnect);
+}
 
 const requests = () => lichess.calls.map((c) => `${c.method} ${c.path}`);
 const cancels = () => lichess.calls.filter((c) => c.path.endsWith("/terminate"));
@@ -155,6 +179,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  restoreDatabase();
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -215,12 +240,21 @@ describe("removing a Member", () => {
     expect(lichess.calls).toEqual([]);
   });
 
-  it("is a step nobody but the Organiser can open", async () => {
-    for (const who of ["ben", null]) {
+  it("is a step nobody but the Organiser can open, and whose tab says so", async () => {
+    expect(await confirmTitle()).toEqual({ title: "Remove a Member" });
+    for (const who of ["ben", "half", null]) {
       signedIn = who;
       await expect(confirmPage({ member: "ana" })).rejects.toThrow("not found");
+      expect(await confirmTitle()).toEqual({ title: "Page not found" });
     }
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("removes nobody part-way through signing up, whom the confirmation step does not offer either", async () => {
+    expect(await confirmPage({ member: "half" })).toContain("That Member isn&#x27;t in the Club.");
+    expect(await remove("half")).toBe("/organiser?member=gone");
+    expect(people.has("half")).toBe(true);
+    expect(lichess.calls).toEqual([]);
   });
 
   it("while it is being done, says so, cannot be pressed again, and no longer offers to keep them", async () => {
@@ -427,14 +461,17 @@ describe("skipping a Sunday", () => {
     await problem();
     const said = await skip(FIRST);
     expect(said).toEqual({
-      text: "Sunday 29 November is skipped, so Season 1 now ends on Sunday 10 January. The site couldn't cancel the tournament for Sunday 29 November on Lichess: cancel it there by hand, as listed below.",
+      text: "Sunday 29 November is skipped, so Season 1 now ends on Sunday 10 January. The site couldn't cancel the tournament for Sunday 29 November on Lichess: cancel it there by hand, as listed above.",
       problem: true,
     });
     expect([...skippedSundays.keys()]).toEqual([FIRST]);
     // Cleared all the same, so that Collecting results does not look for it, and kept for the Organiser instead.
     expect(matchdays.has(FIRST)).toBe(false);
     expect([...tournamentCancellations.values()]).toEqual([{ lichessTournamentId: tournament, date: FIRST, problem: why }]);
-    const part = section(await openPage(), "cancellations")!;
+    const html = await openPage();
+    const part = section(html, "cancellations")!;
+    // Above the schedule, where the sentence says it is.
+    expect(html.indexOf('aria-labelledby="cancellations"')).toBeLessThan(html.indexOf('aria-labelledby="schedule"'));
     expect(part).toContain("<h2 id=\"cancellations\">Cancel on Lichess</h2>");
     expect(part).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November</time>');
     expect(text(part)).toContain(why);
@@ -447,7 +484,8 @@ describe("skipping a Sunday", () => {
     vi.stubGlobal("fetch", (_: unknown, init: RequestInit) => new Promise((__, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
     const skipping = skip(FIRST);
     await vi.advanceTimersByTimeAsync(LICHESS_DEADLINE_MS - 1);
-    expect(tournamentCancellations.size).toBe(0);
+    // Kept before Lichess was asked, saying so until it answers.
+    expect(tournamentCancellations.get(tournament)?.problem).toBe("The site stopped before Lichess said whether it had cancelled it.");
     await vi.advanceTimersByTimeAsync(1);
     expect((await skipping).problem).toBe(true);
     expect(tournamentCancellations.get(tournament)?.problem).toBe("Lichess took more than 25 s.");
@@ -458,6 +496,8 @@ describe("skipping a Sunday", () => {
     tournamentCancellations.set("Another1", { lichessTournamentId: "Another1", date: "2026-11-22", problem: "kept" });
     lichess.override = (call) => (call.path.endsWith("/terminate") ? new Response("", { status: 503 }) : undefined);
     await skip(FIRST);
+    // Why Lichess refused is written to that tournament's row alone.
+    expect(tournamentCancellations.get("Another1")?.problem).toBe("kept");
     expect(await redirectedTo(() => tournamentCancelled(form({ lichessTournamentId: tournament })))).toBe("/organiser");
     expect([...tournamentCancellations.keys()]).toEqual(["Another1"]);
     // A value no Swiss tournament's id could be is ignored, whatever is kept.
@@ -469,15 +509,51 @@ describe("skipping a Sunday", () => {
     expect(section(await openPage(), "cancellations")).toBeNull();
   });
 
-  it("leaves a Matchday that changed while Lichess was cancelling its tournament as it now is", async () => {
+  it("leaves a Matchday that changed between finding its tournament and clearing it as it now is", async () => {
     // Ingested by hand, or given another tournament, in the meantime.
     for (const change of [{ ingestedAt: new Date() }, { lichessTournamentId: "Another1" }]) {
       resetSkips();
       matchdays.set(FIRST, { date: FIRST, lichessTournamentId: tournament, ingestedAt: null });
-      lichess.override = (call) => void (call.path.endsWith("/terminate") && Object.assign(matchdays.get(FIRST)!, change));
+      onStatement((sql) => void (sql.startsWith('delete from "matchday"') && Object.assign(matchdays.get(FIRST)!, change)));
       await skip(FIRST);
       expect(matchdays.get(FIRST)).toMatchObject(change);
+      expect(tournamentCancellations.size).toBe(0);
+      expect(cancels()).toEqual([]);
     }
+  });
+
+  it("keeps neither the skip nor the clearing of its tournament if the site stops between them", async () => {
+    // The connection drops at the first statement after the skip is saved.
+    let saved = false;
+    onStatement((sql) => {
+      if (saved) stop();
+      saved = sql.startsWith('insert into "skippedSunday"');
+    });
+    await expect(skip(FIRST)).rejects.toThrow("Connection terminated unexpectedly");
+    expect(skippedSundays.size).toBe(0);
+    expect(matchdays.get(FIRST)?.lichessTournamentId).toBe(tournament);
+    expect(tournamentCancellations.size).toBe(0);
+    expect(cancels()).toEqual([]);
+  });
+
+  it("loses no Sunday if the site stops once Lichess has cancelled the tournament, and the skip is undone", async () => {
+    let answered = false;
+    lichess.override = (call) => void (answered ||= call.path.endsWith("/terminate"));
+    onStatement(() => answered && stop());
+    await expect(skip(FIRST)).rejects.toThrow("Connection terminated unexpectedly");
+    expect(lichess.tournaments.has(tournament)).toBe(false);
+    // The Matchday no longer points at the cancelled tournament, and the Organiser page says what is not known.
+    expect(matchdays.has(FIRST)).toBe(false);
+    expect(text(section(await openPage(), "cancellations")!)).toContain("The site stopped before Lichess said whether it had cancelled it.");
+    restoreDatabase();
+    lichess.override = undefined;
+    await unskip(FIRST);
+    expect(tournamentCancellations.size).toBe(0);
+    // So Creating Matchdays makes the Sunday a new tournament.
+    expect(await createUpcomingMatchday(new Date())).toMatchObject({ outcome: "done", detail: expect.stringContaining("Created tournament") });
+    const made = matchdays.get(FIRST)!.lichessTournamentId!;
+    expect(made).not.toBe(tournament);
+    expect(lichess.tournaments.has(made)).toBe(true);
   });
 
   it("leaves alone a tournament whose Sunday has passed, even one that is not a Matchday", async () => {
@@ -547,6 +623,12 @@ describe("undoing a skip", () => {
   it("is refused for a Sunday that is not skipped", async () => {
     expect(await unskip(SECOND)).toEqual({ text: "Sunday 6 December isn't skipped.", problem: true });
   });
+
+  it("is refused once the Sunday has come, which stays skipped", async () => {
+    skippedSundays.set("2026-11-22", { date: "2026-11-22" });
+    expect(await unskip("2026-11-22")).toEqual({ text: "It is too late to change 2026-11-22.", problem: true });
+    expect([...skippedSundays.keys()]).toEqual(["2026-11-22"]);
+  });
 });
 
 describe("setting a Season's start", () => {
@@ -611,5 +693,55 @@ describe("setting a Season's start", () => {
     expect(await start(season, date)).toEqual({ text: why, problem: true });
     expect([...seasons.values()]).toEqual([{ number: 1, start: FIRST }]);
     expect(lichess.calls).toEqual([]);
+  });
+});
+
+describe("Creating Matchdays, after each run", () => {
+  const terminated = () => cancels().map((c) => c.path.split("/")[3]);
+  const failLichess = () => void (lichess.override = (call) => (call.path.endsWith("/terminate") ? new Response("", { status: 503 }) : undefined));
+
+  it("cancels a tournament it recorded for a Sunday skipped while it was creating it", async () => {
+    // The first Matchday has no tournament yet; the Organiser skips its Sunday while Lichess is making one.
+    matchdays.clear();
+    lichess.tournaments.clear();
+    lichess.override = (call) => void (call.path.startsWith("/api/swiss/new/") && skippedSundays.set(FIRST, { date: FIRST }));
+    const run = await createUpcomingMatchday(NOW);
+    const made = [...lichess.calls].find((c) => c.path.startsWith("/api/swiss/new/"));
+    expect(made).toBeDefined();
+    expect(run.outcome).toBe("done");
+    expect(run.detail).toMatch(/^Created tournament \w{8} on Lichess for the Matchday of 2026-11-29\. The tournament for Sunday 29 November is cancelled on Lichess\.$/);
+    expect(matchdays.has(FIRST)).toBe(false);
+    expect(lichess.tournaments.size).toBe(0);
+    expect(tournamentCancellations.size).toBe(0);
+  });
+
+  it("asks Lichess again to cancel one kept to cancel by hand, and forgets it once Lichess has", async () => {
+    failLichess();
+    await skip(FIRST);
+    lichess.override = undefined;
+    lichess.calls.length = 0;
+    const run = await createUpcomingMatchday(NOW);
+    expect(terminated()).toEqual([tournament]);
+    expect(run).toMatchObject({ outcome: "done", detail: expect.stringMatching(/The tournament for Sunday 29 November is cancelled on Lichess\.$/) });
+    expect(tournamentCancellations.size).toBe(0);
+  });
+
+  it("keeps one Lichess still will not cancel, with why, and says nothing more of it", async () => {
+    failLichess();
+    await skip(FIRST);
+    lichess.override = undefined;
+    lichess.tokens.get(organiserToken())!.revoked = true;
+    lichess.calls.length = 0;
+    const run = await createUpcomingMatchday(NOW);
+    expect(terminated()).toEqual([tournament]);
+    expect(run.detail).not.toContain("Sunday 29 November");
+    expect(tournamentCancellations.get(tournament)?.problem).toMatch(/^Lichess refused the Organiser's permission/);
+  });
+
+  it("leaves alone one kept for a Sunday that has passed", async () => {
+    tournamentCancellations.set("PastOne1", { lichessTournamentId: "PastOne1", date: "2026-11-22", problem: "kept" });
+    await createUpcomingMatchday(NOW);
+    expect(cancels()).toEqual([]);
+    expect(tournamentCancellations.get("PastOne1")?.problem).toBe("kept");
   });
 });

@@ -673,16 +673,11 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // --- Changes to the schedule (lib/reschedule.ts) ---
 
-  // cancelStranded: the Matchdays with a tournament and no results.
-  [`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday" where "ingestedAt" is null and "lichessTournamentId" is not null`]:
-    () =>
-      answer(
-        [...matchdays.values()]
-          .filter((m) => m.ingestedAt === null && m.lichessTournamentId !== null)
-          .map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId })),
-      ),
+  // strand: every Matchday and its tournament, if it has one.
+  [`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday"`]: () =>
+    answer([...matchdays.values()].map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId }))),
 
-  // cancel: a tournament cleared from its Matchday, only while the Matchday still has it and no results. A Matchday
+  // strand: a tournament cleared from its Matchday, only while the Matchday still has it and no results. A Matchday
   // with results or Games cannot go, as their foreign keys require.
   [`delete from "matchday" where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is null`]: (date, id) => {
     const row = matchdays.get(date);
@@ -693,7 +688,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], 1);
   },
 
-  // cancel: a tournament to cancel by hand, kept once however often it is recorded.
+  // strand: a tournament kept to cancel, once however often it is kept.
   [`insert into "tournamentCancellation" ("lichessTournamentId", "date", "problem") values ($1, $2, $3) on conflict ("lichessTournamentId") do update set "date" = excluded."date", "problem" = excluded."problem"`]:
     (lichessTournamentId, date, problem) => {
       tournamentCancellations.set(lichessTournamentId, { lichessTournamentId, date, problem: String(problem) });
@@ -709,11 +704,23 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           .map((row) => ({ ...row })),
       ),
 
-  // tournamentCancelled
+  // forgetTournamentCancellation
   [`delete from "tournamentCancellation" where "lichessTournamentId" = $1`]: (id) =>
     answer([], tournamentCancellations.delete(id) ? 1 : 0),
 
-  // cancelStranded: those kept for a Sunday that is a Matchday again. $1 is an array of dates.
+  // cancelOnLichess: why Lichess did not cancel it, for one still kept.
+  [`update "tournamentCancellation" set "problem" = $2 where "lichessTournamentId" = $1`]: (id, problem) => {
+    const row = tournamentCancellations.get(id);
+    if (!row) return answer([], 0);
+    row.problem = String(problem);
+    return answer([], 1);
+  },
+
+  // isMember
+  [`select 1 from "user" where id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    (id) => answer(isMember(people.get(id)) ? [{}] : []),
+
+  // strand: those kept for a Sunday that is a Matchday again. $1 is an array of dates.
   [`delete from "tournamentCancellation" where "date" = any($1::date[])`]: (...params) => {
     const [dates] = given<[string[]]>(params);
     const gone = [...tournamentCancellations.values()].filter((row) => dates.includes(row.date));

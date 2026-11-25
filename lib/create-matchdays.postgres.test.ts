@@ -29,7 +29,13 @@ vi.mock("@/lib/db", async () => {
     if (/^\s*(begin|start|commit|end|rollback|abort)\b/i.test(sql)) throw new Error(`refused inside the test's transaction: ${sql}`);
     return client.query(sql, params);
   };
-  return { db: { client, query } };
+  // The run's own transactions (lib/reschedule.ts, after each run) are savepoints within the test's.
+  const inner: Record<string, string> = { begin: "savepoint run", commit: "release savepoint run", rollback: "rollback to savepoint run" };
+  const connect = async () => ({
+    query: (sql: string, params?: unknown[]) => (Object.hasOwn(inner, sql) ? client.query(inner[sql]) : query(sql, params)),
+    release: () => {},
+  });
+  return { db: { client, query, connect } };
 });
 
 const TEAM = "offboard-team";

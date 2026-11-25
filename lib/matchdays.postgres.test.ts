@@ -121,8 +121,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { userId: "ingest-test-cora", rank: 3, points: 5, rating: 1584, companyDomain: null },
     ]);
     expect(await select(`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "winnerClockCentis" is not null as "clock" from "game" order by "finishedAt"`)).toEqual([
-      { lichessGameId: "pretend100", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true },
-      { lichessGameId: "pretend119", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true },
+      { lichessGameId: "Pretend100", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true },
+      { lichessGameId: "Pretend119", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true },
     ]);
     expect(await select(`select id, "lichessBlitzRating", "lichessMarked", "lichessClosed" from "user" where id like 'ingest-test-%' order by id`)).toEqual([
       { id: "ingest-test-ana", lichessBlitzRating: 1930, lichessMarked: false, lichessClosed: false },
@@ -144,8 +144,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       ],
       // ana, with Black, mated ben on her 74th move (148 half-moves) with 5.30 seconds on her clock.
       awards: [
-        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "pretend100", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
-        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "pretend100", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
       ],
     });
     expect(await getRecap("2026-11-23")).toBeNull();
@@ -168,7 +168,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { userId: "ingest-test-ben" },
       { userId: "ingest-test-gil" },
     ]);
-    expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'pretend119'`)).toEqual([
+    expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },
     ]);
   }, 60_000);

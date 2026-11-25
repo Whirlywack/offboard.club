@@ -4,8 +4,9 @@ import { awards, ingestMatchday, type Game, type MemberRef } from "./matchday";
 
 // A finished Lichess Swiss export, 12 rounds, 65 participants and 120 Games, recorded from a public tournament on
 // Lichess with its people invented: each username is a made-up "Pretend--" name, which Lichess refuses to register (two
-// hyphens in a row), and each Game id has ten characters where Lichess's have eight. The tournament id keeps Lichess's
-// eight-character shape, which ingestion checks. Ratings, scores, clocks, moves and results are the tournament's own.
+// hyphens in a row), and each Game id has ten characters where Lichess's have eight, in mixed case as theirs are, since
+// they are case-sensitive. The tournament id keeps Lichess's eight-character shape, which ingestion checks. Ratings,
+// scores, clocks, moves and results are the tournament's own.
 const resultsNdjson = readFileSync(new URL("./fixtures/results.ndjson", import.meta.url), "utf8");
 const gamesNdjson = readFileSync(new URL("./fixtures/games.ndjson", import.meta.url), "utf8");
 
@@ -46,7 +47,7 @@ describe("ingestMatchday: scores", () => {
     ];
     const { scores, games } = ingestMatchday(resultsNdjson, gamesNdjson, members);
     expect(scores.map((s) => s.memberId)).toEqual(["a", "b"]);
-    expect(games.map((g) => g.lichessGameId)).toEqual(["pretend100"]);
+    expect(games.map((g) => g.lichessGameId)).toEqual(["Pretend100"]);
   });
 });
 
@@ -65,16 +66,16 @@ describe("ingestMatchday: participants who are not Members", () => {
   });
 
   it("keeps only Games between two Members", () => {
-    expect(games.map((g) => g.lichessGameId).sort()).toEqual(["pretend066", "pretend100", "pretend119"]);
+    expect(games.map((g) => g.lichessGameId).sort()).toEqual(["Pretend066", "Pretend100", "Pretend119"]);
   });
 
   it("computes Awards from those Games only", () => {
     expect(awards).toEqual([
       // Pretend--Ines (1579) beat Pretend--Boris (1694) on time.
-      { kind: "biggestUpset", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 115 },
-      { kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 278 },
+      { kind: "biggestUpset", memberId: "m:Pretend--Ines", lichessGameId: "Pretend066", value: 115 },
+      { kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "Pretend066", value: 278 },
       // 79 half-moves: mate on White's 40th move.
-      { kind: "fastestCheckmate", memberId: "m:pretend--bruno", lichessGameId: "pretend119", value: 40 },
+      { kind: "fastestCheckmate", memberId: "m:pretend--bruno", lichessGameId: "Pretend119", value: 40 },
     ]);
   });
 });
@@ -85,31 +86,31 @@ describe("ingestMatchday: Awards from the recorded Games", () => {
 
   it("gives the biggest upset to the win furthest below the loser's rating", () => {
     // pretend--sven (1043) beat Pretend--Carla (1605), who made one move and then lost on time.
-    expect(award("biggestUpset")).toEqual({ kind: "biggestUpset", memberId: "m:pretend--sven", lichessGameId: "pretend088", value: 562 });
+    expect(award("biggestUpset")).toEqual({ kind: "biggestUpset", memberId: "m:pretend--sven", lichessGameId: "Pretend088", value: 562 });
   });
 
   it("does not count a win against an opponent who never moved", () => {
     // Pretend--Wim (761) "beat" Pretend--Milo (1808), who never moved: a 1047 gap that must not win.
-    expect(given.map((a) => a.lichessGameId)).not.toContain("pretend019");
+    expect(given.map((a) => a.lichessGameId)).not.toContain("Pretend019");
     const { awards: pair } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Pretend--Wim"), member("Pretend--Milo")]);
     expect(pair).toEqual([]);
   });
 
   it("gives least time left to the winner with the least on their own clock at the end", () => {
     // Pretend--Ines won on time with 2.78 seconds left.
-    expect(award("leastTimeLeft")).toEqual({ kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "pretend066", value: 278 });
+    expect(award("leastTimeLeft")).toEqual({ kind: "leastTimeLeft", memberId: "m:Pretend--Ines", lichessGameId: "Pretend066", value: 278 });
   });
 
   it("gives the fastest checkmate to the mate in fewest moves, the first to finish on a tie", () => {
-    // pretend001 and pretend007 both end in mate on White's 18th move, in the same round;
-    // pretend007 finished first. (pretend057 is mate on Black's 18th move, half a move later.)
-    expect(award("fastestCheckmate")).toEqual({ kind: "fastestCheckmate", memberId: "m:Pretend--Yara", lichessGameId: "pretend007", value: 18 });
+    // Pretend001 and Pretend007 both end in mate on White's 18th move, in the same round;
+    // Pretend007 finished first. (Pretend057 is mate on Black's 18th move, half a move later.)
+    expect(award("fastestCheckmate")).toEqual({ kind: "fastestCheckmate", memberId: "m:Pretend--Yara", lichessGameId: "Pretend007", value: 18 });
   });
 
   it("omits every Award when no Game qualifies", () => {
     // Pretend--Olaf and Pretend--Otto played each other once, a draw.
     const { games, awards: none } = ingestMatchday(resultsNdjson, gamesNdjson, [member("Pretend--Olaf"), member("Pretend--Otto")]);
-    expect(games.map((g) => g.lichessGameId)).toEqual(["pretend014"]);
+    expect(games.map((g) => g.lichessGameId)).toEqual(["Pretend014"]);
     expect(none).toEqual([]);
   });
 });

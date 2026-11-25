@@ -225,10 +225,10 @@ describe("a Recap's Awards", () => {
     expect(awardsIn(html)).toEqual([
       // Pretend--Ines (1579), with Black, beat Pretend--Boris (1694) on time with 2.78 seconds left: the clock
       // showed 2.7.
-      { title: "Biggest upset", winner: "Ines Tempo", feat: "Beat someone rated 115 points higher.", game: "https://lichess.org/pretend066/black" },
-      { title: "Closest call", winner: "Ines Tempo", feat: "Won with 2.7 seconds left on the clock.", game: "https://lichess.org/pretend066/black" },
+      { title: "Biggest upset", winner: "Ines Tempo", feat: "Beat someone rated 115 points higher.", game: "https://lichess.org/Pretend066/black" },
+      { title: "Closest call", winner: "Ines Tempo", feat: "Won with 2.7 seconds left on the clock.", game: "https://lichess.org/Pretend066/black" },
       // Mate on White's 40th move, the 79th half-move.
-      { title: "Fastest checkmate", winner: "Bruno Queenside", feat: "Checkmated their opponent in 40 moves.", game: "https://lichess.org/pretend119/white" },
+      { title: "Fastest checkmate", winner: "Bruno Queenside", feat: "Checkmated their opponent in 40 moves.", game: "https://lichess.org/Pretend119/white" },
     ]);
     // Each winner's name opens their Profile.
     const section = html.match(/<section aria-labelledby="awards".*?<\/section>/)![0];
@@ -236,8 +236,8 @@ describe("a Recap's Awards", () => {
 
     // Each board opens on the Game's last move, from the winner's side: 110 half-moves in, Black at the bottom.
     const [upset, , checkmate] = (await getRecap(date))!.awards;
-    expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/pretend066/black?theme=brown&amp;bg=system#110"');
-    expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/pretend119/white?theme=brown&amp;bg=system#79"');
+    expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/Pretend066/black?theme=brown&amp;bg=system#110"');
+    expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/Pretend119/white?theme=brown&amp;bg=system#79"');
   });
 
   it("gives each Award to the right Game, and counts seconds as the clock does", async () => {

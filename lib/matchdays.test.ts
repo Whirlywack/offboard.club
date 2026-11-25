@@ -31,8 +31,8 @@ const recorded = (more: Partial<FakeSwiss> = {}): FakeSwiss => ({
 // Six of the 65 participants are Members. The expected values below were read from the ndjson by a separate script.
 // Lichess's final ranks: ana 1 (9.5 points, a late-join half point included), ben 2 (8), cora 9 (5), eve 23 (2, a
 // one-point bye included), dan 28 (2), fay 42 (0.5, the late-join half point and no Game at all).
-// Their Games with each other: dan-cora pretend066 (cora won on time), ben-ana pretend100 (ana mated), ben-cora
-// pretend119 (ben mated).
+// Their Games with each other: dan-cora Pretend066 (cora won on time), ben-ana Pretend100 (ana mated), ben-cora
+// Pretend119 (ben mated).
 const MEMBERS = {
   ana: "pretend--ada",
   ben: "pretend--bruno",
@@ -99,8 +99,8 @@ describe("ingesting a finished tournament", () => {
       { matchdayDate: DATE, userId: "dan", rank: 5, points: 2, rating: 1687, companyDomain: null },
       { matchdayDate: DATE, userId: "fay", rank: 6, points: 0.5, rating: 2286, companyDomain: null },
     ]);
-    expect(games.get("pretend066")).toEqual({
-      lichessGameId: "pretend066",
+    expect(games.get("Pretend066")).toEqual({
+      lichessGameId: "Pretend066",
       matchdayDate: DATE,
       whiteId: "dan",
       blackId: "cora",
@@ -113,9 +113,9 @@ describe("ingesting a finished tournament", () => {
       finishedAt: new Date(1795529563281),
     });
     expect([...games.values()].map((g) => [g.lichessGameId, g.whiteId, g.blackId, g.winner, g.status, g.plies])).toEqual([
-      ["pretend066", "dan", "cora", "black", "outoftime", 110],
-      ["pretend100", "ben", "ana", "black", "mate", 148],
-      ["pretend119", "ben", "cora", "white", "mate", 79],
+      ["Pretend066", "dan", "cora", "black", "outoftime", 110],
+      ["Pretend100", "ben", "ana", "black", "mate", 148],
+      ["Pretend119", "ben", "cora", "white", "mate", 79],
     ]);
   });
 
@@ -130,8 +130,8 @@ describe("ingesting a finished tournament", () => {
   it("ignores participants who are not Members, including someone part-way through signing up", async () => {
     await ingestTournament(TOURNAMENT);
     expect([...results.values()].map((r) => r.userId).sort()).toEqual(["ana", "ben", "cora", "dan", "eve", "fay"]);
-    // ben's win over gil's account (pretend025) is not a Game between two Members.
-    expect(games.has("pretend025")).toBe(false);
+    // ben's win over gil's account (Pretend025) is not a Game between two Members.
+    expect(games.has("Pretend025")).toBe(false);
     for (const game of games.values()) expect([game.whiteId, game.blackId].every((id) => id && id in MEMBERS)).toBe(true);
   });
 
@@ -227,7 +227,7 @@ describe("a redo", () => {
     // Another Matchday, a week earlier, with a result and a Game of its own.
     matchdays.set("2026-11-15", { date: "2026-11-15", lichessTournamentId: "EARLIER1", ingestedAt: new Date() });
     results.set("2026-11-15 ana", { matchdayDate: "2026-11-15", userId: "ana", rank: 1, points: 3, rating: 1900, companyDomain: null });
-    games.set("Earlier1", { ...games.get("pretend066")!, lichessGameId: "Earlier1", matchdayDate: "2026-11-15" });
+    games.set("Earlier1", { ...games.get("Pretend066")!, lichessGameId: "Earlier1", matchdayDate: "2026-11-15" });
     people.delete("eve");
     expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 5, redone: true });
     expect(results.get("2026-11-15 ana")?.points).toBe(3);

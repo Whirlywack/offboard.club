@@ -21,7 +21,8 @@ Each stage is its own agent with a fresh context, on Opus at extra-high effort, 
 - Start every ticket whose blockers are closed, in parallel. Reserve a migration number for each before starting.
 - Cut every branch from `origin/main`. Stack one branch on another only when both rewrite the same page, and say so in both pull requests.
 - The owner merges by opening links in order. A stacked pull request moves onto `main` only because the repository deletes a merged branch automatically (`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge` must print `true`). Check it before handing over a stack; hand links over bottom of the stack first.
-- After each merge: fetch, bring every open branch up to date with `main`, and confirm the production deploy succeeded.
+- Before giving the owner a pull request's link: `scripts/pr-ci.sh <number>` (waits for CI on its latest commit; prints the tallies and whether it can merge).
+- After each merge: `scripts/after-merge.sh <number>` from the main checkout (fast-forwards it, installs if the lockfile changed, waits for CI on `main` and the production deploy, shows what the deploy did to the live database's migrations, checks the public pages). Then bring every open branch up to date with `main`.
 
 ## What only the owner decides
 

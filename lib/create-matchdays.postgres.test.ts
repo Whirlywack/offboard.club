@@ -9,7 +9,7 @@ import { lastFailure } from "./jobs";
 import { finishOrganiserConnection, organiserPermission, organiserToken, startOrganiserConnection } from "./organiser-lichess";
 import { addDays, matchdayStart } from "./schedule";
 
-// Point this at a separate development database, never the live one. It holds the "create-matchdays" job's row, and
+// Point this at a local database only, never a shared or live one. It holds the "create-matchdays" job's row, and
 // any Season 1 and Organiser permission it adds, locked until its transaction ends, so against the live database the
 // real scheduled job would wait on it.
 //
@@ -18,8 +18,9 @@ import { addDays, matchdayStart } from "./schedule";
 // the fake. migrations/007_organiser.sql is applied inside that transaction if the database does not have it yet. The
 // rows it adds are its own (a test person, Season 1 if none is stored, the permission, the job's rows) and it changes no
 // row it did not add. Skipped unless ALLOW_DB_TESTS=1 as well as DATABASE_URL, so a plain `pnpm test`, or one with
-// .env.local loaded, never runs it. To run it against a development database:
-// ALLOW_DB_TESTS=1 DATABASE_URL=<development database> node node_modules/vitest/vitest.mjs run lib/create-matchdays.postgres.test.ts
+// .env.local loaded, never runs it. Run it against a local database from `pnpm db:start`, before seeding (once that one
+// is seeded, a second from `pnpm db:start --dir .local-db-tests`), with that database's address:
+// ALLOW_DB_TESTS=1 DATABASE_URL=<that address> node node_modules/vitest/vitest.mjs run lib/create-matchdays.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });

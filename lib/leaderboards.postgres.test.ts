@@ -5,8 +5,10 @@ import { getAllTime, getSeason, readLeaderboards, seasonOfMatchday } from "./lea
 
 // The Leaderboards' real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
 // so nothing it does is kept. Every row it adds is its own, and it changes no existing row. Runs only when
-// ALLOW_DB_TESTS=1 is set as well, never in a plain `pnpm test`:
-// ALLOW_DB_TESTS=1 node --env-file=.env.local node_modules/vitest/vitest.mjs run lib/leaderboards.postgres.test.ts
+// ALLOW_DB_TESTS=1 is set as well, never in a plain `pnpm test`. Run it against a local database from `pnpm db:start`,
+// never a shared or live one, before seeding (once that one is seeded, a second from
+// `pnpm db:start --dir .local-db-tests`), with that database's address:
+// ALLOW_DB_TESTS=1 DATABASE_URL=<that address> node node_modules/vitest/vitest.mjs run lib/leaderboards.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });

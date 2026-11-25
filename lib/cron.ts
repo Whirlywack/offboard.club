@@ -9,9 +9,9 @@ export const CRON_SECRET_MIN = 16;
 // Why the scheduled jobs are refused every time, as a sentence that does not reveal the secret; null if they are not.
 export function cronSecretProblem(): string | null {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return "CRON_SECRET is not set, so every scheduled run is refused and no Matchday is created.";
-  if (secret.length < CRON_SECRET_MIN)
-    return `CRON_SECRET is shorter than ${CRON_SECRET_MIN} characters, so every scheduled run is refused and no Matchday is created.`;
+  const so = "so the site refuses every scheduled run.";
+  if (!secret) return `CRON_SECRET isn't set, ${so}`;
+  if (secret.length < CRON_SECRET_MIN) return `CRON_SECRET is shorter than ${CRON_SECRET_MIN} characters, ${so}`;
   return null;
 }
 

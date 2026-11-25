@@ -47,6 +47,13 @@ export function matchdayStart(date: string): Date {
   return new Date(wall - offsetAt(wall - offsetAt(wall)));
 }
 
+// The latest Sunday whose 20:00 has come by `instant`: that day itself from the start of its Matchday.
+export function latestSunday(instant: Date): string {
+  const today = vilniusDate(instant);
+  const sunday = addDays(today, -new Date(toMs(today)).getUTCDay());
+  return matchdayStart(sunday) <= instant ? sunday : addDays(sunday, -7);
+}
+
 // How many more sign-ups Season 1 is waiting for, or null once there are enough.
 export const signUpsNeeded = (signUps: number) => (signUps < MEMBERS_TO_START ? MEMBERS_TO_START - signUps : null);
 

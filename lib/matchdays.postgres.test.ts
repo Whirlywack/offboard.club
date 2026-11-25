@@ -3,6 +3,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
+import { uncollected } from "./collect-results";
 import { ingestTournament, registerTournament } from "./matchdays";
 import { getRecap, recapDates } from "./recaps";
 
@@ -200,6 +201,26 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select count(*)::int as n from "matchday"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "matchdayResult"`)).toEqual([{ n: 0 }]);
     expect(await select(`select count(*)::int as n from "game"`)).toEqual([{ n: 0 }]);
+  }, 60_000);
+
+  it("lists the Matchdays of the last eight Sundays that have started, have a tournament and have no results", async () => {
+    await client.query(`delete from "game"`);
+    await client.query(`delete from "matchdayResult"`);
+    await client.query(`delete from "matchday"`);
+    await client.query(
+      `insert into "matchday" ("date", "lichessTournamentId", "ingestedAt") values
+         ('2026-12-06', 'NextWeek', null), ('2026-11-29', 'Tonight1', null), ('2026-11-22', 'Recapped', now()),
+         ('2026-11-15', null, null), ('2026-11-08', 'LeftOut1', null), ('2026-10-11', 'EightWk1', null), ('2026-10-04', 'NineWks1', null)`,
+    );
+    // 21:30 on Sunday 29 November in Vilnius: that Matchday has started; the next has not; 4 October is the ninth Sunday.
+    expect(await uncollected(new Date("2026-11-29T19:30:00Z"))).toEqual([
+      { date: "2026-11-29", lichessTournamentId: "Tonight1" },
+      { date: "2026-11-08", lichessTournamentId: "LeftOut1" },
+      { date: "2026-10-11", lichessTournamentId: "EightWk1" },
+    ]);
+    // 19:59 that evening, the latest Sunday is the 22nd.
+    expect((await uncollected(new Date("2026-11-29T17:59:00Z"))).map((m) => m.date)).toEqual(["2026-11-08", "2026-10-11", "2026-10-04"]);
+    await client.query(`delete from "matchday"`);
   }, 60_000);
 
   it("refuses plainly when the tournament is registered for another day while it is being fetched", async () => {

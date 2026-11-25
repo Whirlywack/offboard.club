@@ -22,6 +22,15 @@ import { fileURLToPath } from "node:url";
 // with nobody in it yet, behind a port forwarded to this machine, is refused too.
 export const MARK = "offboard: a throwaway local database made by pnpm db:start";
 
+// Whether the database `db` (a pg pool or client) is connected to carries that mark. The seed and pnpm collect-results
+// ask it in their first statement, and touch nothing when it does not.
+export async function madeByDbStart(db) {
+  const { rows } = await db.query(
+    "select shobj_description(oid, 'pg_database') as mark from pg_database where datname = current_database()",
+  );
+  return rows[0]?.mark === MARK;
+}
+
 // Why the database at `url` must not be touched, or null when it is on this machine. The seed and the fake Lichess
 // ask this before anything else, as db:start does of a DATABASE_URL in its environment. pg prefers a `host` in the
 // query string to the address's, and the URL parser drops spaces and line breaks that pg would read otherwise, so both

@@ -89,11 +89,24 @@ describe("refusing before touching anything", () => {
     expect(existsSync(join(root, ".local-db"))).toBe(false);
   });
 
-  it("the seed and the fake Lichess on a real DATABASE_URL, or with any argument they do not take", () => {
-    for (const [script, usage] of [["scripts/seed.ts", /^Usage: pnpm seed/], ["scripts/fake-lichess.ts", /^Usage: pnpm fake-lichess/]] as const) {
+  it("the seed, the fake Lichess and collecting results on a real DATABASE_URL, or with any argument they do not take", () => {
+    const scripts = [
+      ["scripts/seed.ts", /^Usage: pnpm seed/],
+      ["scripts/fake-lichess.ts", /^Usage: pnpm fake-lichess/],
+      ["scripts/collect-results.ts", /^Usage: pnpm collect-results/],
+    ] as const;
+    for (const [script, usage] of scripts) {
       refuses(tsx, [script], /^Refusing.*ep-pretend-123.*not this machine/, { DATABASE_URL: REAL });
       for (const arg of ["--help", "constructor"]) refuses(tsx, [script, arg], usage, { DATABASE_URL: LOCAL });
     }
+  }, 30_000);
+
+  it("collecting results from anything but a fake Lichess on this machine, which the site follows", () => {
+    const refused = /^Refusing to collect results: the site does not follow LICHESS_URL to http:\/\/127\.0\.0\.1:<port>\./;
+    const script = "scripts/collect-results.ts";
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "https://fake.lichess.example" });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "http://127.0.0.1:8089", NODE_ENV: "production" });
   }, 30_000);
 
   it("the mark CI writes on the database it seeds is db:start's", () => {
@@ -124,6 +137,34 @@ describe.skipIf(!local)("a database db:start did not make", () => {
       expect(status).toBe(1);
       expect(stderr.trim()).toBe("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
     } finally {
+      await admin.query(`drop database if exists ${name}`);
+      await admin.end();
+    }
+  }, 30_000);
+
+  it("is refused by pnpm collect-results before it records a run, even when migrated", async () => {
+    const name = `offboard_unmarked_collect_${process.pid}`;
+    const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await admin.connect();
+    const url = new URL(process.env.DATABASE_URL!);
+    url.pathname = `/${name}`;
+    const unmarked = new pg.Client({ connectionString: url.toString() });
+    let connected = false;
+    try {
+      await admin.query(`create database ${name}`);
+      expect(run(process.execPath, ["scripts/migrate.mjs"], { DATABASE_URL: url.toString() }).status).toBe(0);
+      const { status, stderr } = run(tsx, ["scripts/collect-results.ts"], {
+        DATABASE_URL: url.toString(),
+        LICHESS_URL: "http://127.0.0.1:8089",
+        LICHESS_TEAM_ID: "pretend-team",
+      });
+      expect(stderr.trim()).toBe("Refusing: this database was not made by pnpm db:start, so collecting results leaves it alone.");
+      expect(status).toBe(1);
+      await unmarked.connect();
+      connected = true;
+      expect((await unmarked.query(`select count(*)::int as n from "scheduledJob"`)).rows).toEqual([{ n: 0 }]);
+    } finally {
+      if (connected) await unmarked.end();
       await admin.query(`drop database if exists ${name}`);
       await admin.end();
     }

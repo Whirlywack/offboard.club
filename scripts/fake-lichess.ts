@@ -1,7 +1,9 @@
 // The tests' fake Lichess (lib/fixtures/fake-lichess.ts) as a server at LICHESS_URL, so that connecting Lichess works in
 // a browser without lichess.org: a Member's Connect Lichess step and "Switch Lichess account", and the Organiser's
-// "Connect Lichess" on /organiser. `pnpm fake-lichess`, in the foreground beside `pnpm dev:local`, with the block from
-// `pnpm db:start` in .env.local; it listens on 127.0.0.1 alone and logs each request's method, path and status.
+// "Connect Lichess" on /organiser; and the tournaments the latest seed played on it (fake-lichess.json beside the
+// database, which `pnpm seed season-over` fills), for `pnpm collect-results` to collect. `pnpm fake-lichess`, in the
+// foreground beside `pnpm dev:local`, with the block from `pnpm db:start` in .env.local; it listens on 127.0.0.1 alone
+// and logs each request's method, path and status.
 //
 // Its approval page asks who you are on Lichess: a new account, which connects (and which /organiser refuses, as it
 // leads no team); a seeded Member's, as the database has it then, which is "taken", "marked" for the marked one, and
@@ -10,10 +12,11 @@
 // The Organiser's permission the seed stores was issued by a fake inside the seed, which this one does not know: until
 // the Organiser connects Lichess again on /organiser, removing someone who leaves (/profile/leave) from the team is
 // refused, and the Organiser page lists their account to remove by hand.
+import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { notLocal } from "./local-db.mjs";
 import { db } from "@/lib/db";
-import { createFakeLichess, type FakeAccount } from "@/lib/fixtures/fake-lichess";
+import { createFakeLichess, type FakeAccount, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 
 if (process.argv.length > 2) {
   console.error("Usage: pnpm fake-lichess, with no arguments.");
@@ -34,7 +37,10 @@ const lichess = createFakeLichess({
 });
 let newcomers = 0;
 
-// Every connected account as the database has it now, and the Organiser's as the team's leader.
+let played: string | undefined; // the seed's file
+
+// Every connected account as the database has it now, the Organiser's as the team's leader, and the tournaments the
+// latest seed played.
 async function refresh() {
   type Row = { userId: string; id: string; username: string; rating: number | null; marked: boolean; closed: boolean };
   const { rows } = await db.query<Row>(
@@ -45,6 +51,8 @@ async function refresh() {
     lichess.accounts.set(id, { id, username, perfs: rating === null ? {} : { blitz: blitz(rating) }, tosViolation: marked, disabled: closed });
   lichess.team.leaders.clear();
   for (const row of rows) if (row.userId === process.env.ORGANISER_USER_ID) lichess.team.leaders.add(row.id);
+  played ??= `${(await db.query<{ data_directory: string }>("show data_directory")).rows[0].data_directory}/fake-lichess.json`;
+  if (existsSync(played)) for (const swiss of JSON.parse(readFileSync(played, "utf8")) as FakeSwiss[]) lichess.tournaments.set(swiss.id, swiss);
 }
 
 // The page Lichess shows when asking the person to approve Offboard, with a choice of who they are.

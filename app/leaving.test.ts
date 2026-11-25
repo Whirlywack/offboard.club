@@ -1,8 +1,9 @@
 // Leaving the Club, through the site's own entry points: the Profile edit page and the confirmation page, the action
-// behind its button, and removeMember, the same removal for any Member the system names; then the pages someone who left
-// was on. Faked: the session, the clock, the database (lib/fake-db.ts) and Lichess (lib/fixtures/fake-lichess.ts,
-// standing in for fetch). The Organiser's permission is connected beforehand the way the Organiser connects it;
-// everything else is the app's own code.
+// behind its button, and removeMember, the same removal for any Member the system names; the same deletion for someone
+// part-way through signing up, from the welcome steps (#43); then the pages someone who left was on. Faked: the
+// session, the clock, the database (lib/fake-db.ts) and Lichess (lib/fixtures/fake-lichess.ts, standing in for fetch).
+// The Organiser's permission is connected beforehand the way the Organiser connects it; everything else is the app's
+// own code.
 import { randomBytes } from "node:crypto";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -12,7 +13,7 @@ import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { countSignUps } from "@/lib/signups";
-import { leaveClub } from "./actions";
+import { deleteSignUp, leaveClub } from "./actions";
 import AllTimePage from "./all-time/page";
 import LeftPage from "./left/page";
 import { teamRemovalDone } from "./organiser/actions";
@@ -22,6 +23,9 @@ import EditProfile from "./profile/page";
 import ProfilePage from "./profiles/[id]/page";
 import RecapPage from "./recaps/[date]/page";
 import SeasonPage from "./seasons/[number]/page";
+import DeleteAccountPage from "./welcome/leave/page";
+import ConnectStep from "./welcome/lichess/page";
+import Welcome from "./welcome/page";
 
 const { getSession, signOut, formStatus } = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn(), formStatus: { pending: false } }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession, signOut } }) }));
@@ -250,6 +254,85 @@ describe("deleting your own account", () => {
     expect(db.connect).not.toHaveBeenCalled();
     expect(people.size).toBe(5);
     expect(lichess.calls).toEqual([]);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleting your account part-way through signing up", () => {
+  // "half" has agreed but not connected Lichess; "new" has not agreed yet.
+  beforeEach(() => void addPerson("new", { name: "Not Agreed", publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null, lichessUsername: null }));
+
+  const welcomeStep = () => streamed(child(Welcome(), 1));
+  const connectStep = () => streamed(child(ConnectStep(none), 2));
+  const confirmPage = () => streamed(child(DeleteAccountPage(), 1));
+
+  it.each([
+    ["new", welcomeStep, "/welcome"],
+    ["half", connectStep, "/welcome/lichess"],
+  ] as const)("is offered to %s on the step they are on, which leads to a confirmation step and deletes nothing", async (who, step, back) => {
+    signedIn = who;
+    expect(await step()).toContain('<a href="/welcome/leave">Delete your account</a>');
+    const confirm = await confirmPage();
+    // The Member's choice, keeping first, which goes back to the step they are on.
+    expect(confirm).toMatch(new RegExp(`<form[^>]*>.*<a[^>]* href="${back}">Keep my account</a><button[^>]*>Delete my account</button></div></form>`));
+    expect(text(confirm)).toContain("When you delete your account, your name, photo, email address and anything you've agreed to are deleted.");
+    // Nothing a Member would lose, as they have none of it.
+    for (const untrue of ["Profile", "Leaderboard", "Recap", "Lichess", "Games", "Organiser"]) expect(text(confirm)).not.toContain(untrue);
+    // Its button deletes through the action for someone part-way, which a Member's page does not use.
+    const inner = (child(DeleteAccountPage(), 1).props as { children: ReactElement }).children;
+    const form = (await (inner.type as (props: unknown) => Promise<ReactElement>)(inner.props)) as ReactElement<{ action: unknown }>;
+    expect(form.props.action).toBe(deleteSignUp);
+    expect(people.has(who)).toBe(true);
+    expect(lichess.calls).toEqual([]);
+  });
+
+  it("is confirmed only by someone part-way: a signed-out visitor goes home, and a Member to their own confirmation step", async () => {
+    signedIn = null;
+    await expect(confirmPage()).rejects.toThrow(/^redirect \/$/);
+    signedIn = "ana";
+    await expect(confirmPage()).rejects.toThrow(/^redirect \/profile\/leave$/);
+    signedIn = "organiser";
+    await expect(confirmPage()).rejects.toThrow(/^redirect \/profile\/leave$/);
+  });
+
+  it.each(["new", "half"])("deletes %s at the press of the button, signs them out, and asks nothing of Lichess", async (who) => {
+    signedIn = who;
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/left");
+    expect(people.has(who)).toBe(false);
+    expect(signOut).toHaveBeenCalledWith({ headers: new Headers({ cookie: "the browser's session cookie" }) });
+    expect(lichess.calls).toEqual([]);
+    expect(teamRemovals.size).toBe(0);
+    // Everyone else is as they were.
+    expect([...people.keys()].sort()).toEqual(["ana", "ben", "cid", "half", "new", "organiser"].filter((id) => id !== who));
+  });
+
+  it("deletes the caller's own account whatever is posted with it", async () => {
+    signedIn = "half";
+    const form = new FormData();
+    for (const name of ["id", "userId", "memberId"]) form.set(name, "ana");
+    await redirectedTo(() => (deleteSignUp as (form: FormData) => Promise<void>)(form));
+    expect(people.has("half")).toBe(false);
+    expect(people.has("ana")).toBe(true);
+    expect(lichess.calls).toEqual([]);
+  });
+
+  it("refuses a signed-out caller, deleting nothing", async () => {
+    signedIn = null;
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/");
+    expect(db.query).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("deletes nothing of someone who has become a Member since the page was shown, and sends them to their own", async () => {
+    // "half" connects Lichess in another tab, then presses the button on the page shown before.
+    Object.assign(people.get("half")!, { lichessId: "lichess-half", lichessUsername: "Lichess-half" });
+    lichess.team.members.add("lichess-half");
+    signedIn = "half";
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/profile/leave");
+    expect(people.has("half")).toBe(true);
+    expect(lichess.calls).toEqual([]);
+    expect(lichess.team.members).toContain("lichess-half");
+    expect(teamRemovals.size).toBe(0);
     expect(signOut).not.toHaveBeenCalled();
   });
 });

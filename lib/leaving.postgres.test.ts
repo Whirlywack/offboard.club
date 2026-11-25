@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { finishConnection, startConnection } from "./connect-lichess";
 import { createFakeLichess } from "./fixtures/fake-lichess";
-import { forgetTeamRemoval, removeMember, removeSwitchedFrom, teamRemovals } from "./leaving";
+import { forgetTeamRemoval, isMember, membersToRemove, removeMember, removeSwitchedFrom, teamRemovals } from "./leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
 
 // Leaving the Club's real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
@@ -119,6 +119,29 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);
+
+  it("offers the Organiser every Member to remove but themselves, and nobody part-way through signing up", async () => {
+    const add = (id: string, name: string, member = true) =>
+      run(
+        `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt", "lichessId", "lichessUsername")
+         values ($1, $2, $1 || '@example.invalid', false, now(), now(), $3, $3)`,
+        [id, name, member ? `${id}-on-lichess` : null],
+      );
+    // The Organiser first, so that a query reading the wrong person reads them.
+    await add("removable-test-organiser", "Removable Organiser");
+    await add("removable-test-zita", "Removable Žilvinas");
+    await add("removable-test-ana", "Removable Ana");
+    await add("removable-test-half", "Removable Half", false);
+    const listed = (await membersToRemove("removable-test-organiser")).filter((m) => m.id.startsWith("removable-test-"));
+    expect(listed).toEqual([
+      { id: "removable-test-ana", name: "Removable Ana", lichessUsername: "removable-test-ana-on-lichess" },
+      { id: "removable-test-zita", name: "Removable Žilvinas", lichessUsername: "removable-test-zita-on-lichess" },
+    ]);
+    // Only a Member may be removed.
+    expect(await isMember("removable-test-ana")).toBe(true);
+    expect(await isMember("removable-test-half")).toBe(false);
+    expect(await isMember("removable-test-nobody")).toBe(false);
+  });
 
   it("switches a Member's account, forgetting the new one if it was kept for the Organiser, and then removes or keeps only an account nobody has", async () => {
     // A fake Lichess for the switch itself. Without LICHESS_TOKEN_KEY the Organiser's permission cannot be read, so the

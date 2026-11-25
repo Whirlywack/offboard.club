@@ -82,14 +82,15 @@ async function gamesOf(memberId: string, limit: number) {
     opponentName: string | null;
     total: number;
   };
-  // MEMBER_SQL names columns of "user" alone, joined here once, as the opponent; "game" has none of those names.
+  // MEMBER_SQL names columns of "user" alone, joined here once, as the opponent; "game" has none of those names. Ordered
+  // by Matchday first, as the page groups them, so each Matchday's Games stay together whenever they finished.
   const { rows } = await db.query<Row>(
     `select g."lichessGameId", to_char(g."matchdayDate", 'YYYY-MM-DD') as "date", g."whiteId", g."blackId", g."winner",
        o.id as "opponentId", o.name as "opponentName", (count(*) over ())::int as "total"
      from "game" g
        left join "user" o on o.id = case when g."whiteId" = $1 then g."blackId" else g."whiteId" end and ${MEMBER_SQL}
      where g."whiteId" = $1 or g."blackId" = $1
-     order by g."finishedAt" desc, g."lichessGameId" desc
+     order by g."matchdayDate" desc, g."finishedAt" desc, g."lichessGameId" desc
      limit $2`,
     [memberId, limit],
   );
@@ -106,35 +107,14 @@ async function gamesOf(memberId: string, limit: number) {
   return { games, total: rows[0]?.total ?? 0 };
 }
 
-// Every Game the two have played against each other, either way round.
-async function gamesBetween(one: string, other: string): Promise<Game[]> {
-  type Row = {
-    lichessGameId: string;
-    whiteId: string;
-    blackId: string;
-    winner: Colour | null;
-    status: string;
-    plies: number;
-    whiteRating: number;
-    blackRating: number;
-    winnerClockCentis: number | null;
-    finishedAt: Date;
-  };
-  const { rows } = await db.query<Row>(
-    `select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt"
+// Every Game the two have played against each other, either way round: who had which colour and who won, which is all
+// a head-to-head record counts.
+async function gamesBetween(one: string, other: string): Promise<Pick<Game, "white" | "black" | "winner">[]> {
+  const { rows } = await db.query<{ whiteId: string; blackId: string; winner: Colour | null }>(
+    `select "whiteId", "blackId", "winner"
      from "game"
      where ("whiteId" = $1 and "blackId" = $2) or ("whiteId" = $2 and "blackId" = $1)`,
     [one, other],
   );
-  return rows.map((g) => ({
-    lichessGameId: g.lichessGameId,
-    white: g.whiteId,
-    black: g.blackId,
-    winner: g.winner,
-    status: g.status,
-    plies: g.plies,
-    ratings: { white: g.whiteRating, black: g.blackRating },
-    winnerClockCentis: g.winnerClockCentis,
-    finishedAt: new Date(g.finishedAt).getTime(),
-  }));
+  return rows.map((g) => ({ white: g.whiteId, black: g.blackId, winner: g.winner }));
 }

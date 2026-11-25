@@ -178,6 +178,19 @@ describe("the Games", () => {
     expect(listed[0].opponent).toEqual({ id: "ben", name: "Member ben" });
   });
 
+  it("keeps each Matchday's Games together, newest Matchday first, whenever they finished", async () => {
+    game("g7", "2026-11-15", "ana", "ben", null); // recorded as finishing after every Game of 22 November
+    const listed = (await getHistory("ana", "ana")).games;
+    expect(listed.map((g) => [g.lichessGameId, g.date])).toEqual([
+      ["g5", "2026-11-22"],
+      ["g4", "2026-11-22"],
+      ["g3", "2026-11-22"],
+      ["g7", "2026-11-15"],
+      ["g2", "2026-11-15"],
+      ["g1", "2026-11-15"],
+    ]);
+  });
+
   it("shows the same Game from the other side on the opponent's Profile", async () => {
     const ben = (await getHistory("ben", "ana")).games;
     expect(ben.find((g) => g.lichessGameId === "g1")).toMatchObject({ colour: "black", result: "lost", opponent: { id: "ana" } });

@@ -179,13 +179,19 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           .map((m) => ({ points: results.get(`${m.date} ${memberId}`)?.points ?? null })),
       ),
 
-  // gamesOf: the Member's latest Games, $2 of them, each with the opponent if they are a Member, and how many there are
-  // in all. A side whose player has left is null, so it joins nobody.
-  [`select g."lichessGameId", to_char(g."matchdayDate", 'YYYY-MM-DD') as "date", g."whiteId", g."blackId", g."winner", o.id as "opponentId", o.name as "opponentName", (count(*) over ())::int as "total" from "game" g left join "user" o on o.id = case when g."whiteId" = $1 then g."blackId" else g."whiteId" end and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null where g."whiteId" = $1 or g."blackId" = $1 order by g."finishedAt" desc, g."lichessGameId" desc limit $2`]:
+  // gamesOf: the Member's latest Games, $2 of them, Matchday by Matchday, each with the opponent if they are a Member, and
+  // how many there are in all. A side whose player has left is null, so it joins nobody.
+  [`select g."lichessGameId", to_char(g."matchdayDate", 'YYYY-MM-DD') as "date", g."whiteId", g."blackId", g."winner", o.id as "opponentId", o.name as "opponentName", (count(*) over ())::int as "total" from "game" g left join "user" o on o.id = case when g."whiteId" = $1 then g."blackId" else g."whiteId" end and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null where g."whiteId" = $1 or g."blackId" = $1 order by g."matchdayDate" desc, g."finishedAt" desc, g."lichessGameId" desc limit $2`]:
     (memberId, limit) => {
+      const descending = (a: string | number, b: string | number) => (a < b ? 1 : a > b ? -1 : 0);
       const theirs = [...games.values()]
         .filter((g) => g.whiteId === memberId || g.blackId === memberId)
-        .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime() || (a.lichessGameId < b.lichessGameId ? 1 : -1));
+        .sort(
+          (a, b) =>
+            descending(a.matchdayDate, b.matchdayDate) ||
+            descending(a.finishedAt.getTime(), b.finishedAt.getTime()) ||
+            descending(a.lichessGameId, b.lichessGameId),
+        );
       return answer(
         theirs.slice(0, Number(limit)).map((g) => {
           const opponentId = g.whiteId === memberId ? g.blackId : g.whiteId;
@@ -204,24 +210,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       );
     },
 
-  // gamesBetween: every Game between two Members, either way round.
-  [`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt" from "game" where ("whiteId" = $1 and "blackId" = $2) or ("whiteId" = $2 and "blackId" = $1)`]:
+  // gamesBetween: every Game between two Members, either way round, with its sides and winner.
+  [`select "whiteId", "blackId", "winner" from "game" where ("whiteId" = $1 and "blackId" = $2) or ("whiteId" = $2 and "blackId" = $1)`]:
     (one, other) =>
       answer(
         [...games.values()]
           .filter((g) => (g.whiteId === one && g.blackId === other) || (g.whiteId === other && g.blackId === one))
-          .map((g) => ({
-            lichessGameId: g.lichessGameId,
-            whiteId: g.whiteId,
-            blackId: g.blackId,
-            winner: g.winner,
-            status: g.status,
-            plies: g.plies,
-            whiteRating: g.whiteRating,
-            blackRating: g.blackRating,
-            winnerClockCentis: g.winnerClockCentis,
-            finishedAt: new Date(g.finishedAt),
-          })),
+          .map(({ whiteId, blackId, winner }) => ({ whiteId, blackId, winner })),
       ),
 
   // countSignUps

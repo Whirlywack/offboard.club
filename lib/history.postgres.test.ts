@@ -10,10 +10,15 @@ import { getHistory } from "./history";
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  // One client runs one statement at a time, so statements the app sends at once (getHistory sends three) wait their
+  // turn here, as the pool's separate connections would let them run side by side.
+  let previous: Promise<unknown> = Promise.resolve();
   // Nothing the app sends may end the test's transaction.
   const query = (sql: string, params?: unknown[]) => {
     if (/^\s*(begin|start|commit|end|rollback|abort)\b/i.test(sql)) throw new Error(`refused inside the test's transaction: ${sql}`);
-    return client.query(sql, params);
+    const next = previous.then(() => client.query(sql, params));
+    previous = next.catch(() => {});
+    return next;
   };
   return { db: { client, query, connect: async () => ({ query, release: () => {} }) } };
 });
@@ -67,23 +72,27 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     await game("histtst2", dates[0], "history-test-gone", "history-test-ana", "white", 2);
     await game("histtst3", dates[2], "history-test-ben", "history-test-ana", null, 3);
     await game("histtst4", dates[2], "history-test-half", "history-test-ana", "black", 4);
+    // A Game of the first Matchday recorded as finishing after every Game of the last: it stays with its Matchday.
+    await game("histtst5", dates[0], "history-test-ana", "history-test-ben", null, 60 * 24 * 30);
     // The departed person's account is deleted: their side of the Game empties.
     await run(`delete from "user" where id = 'history-test-gone'`);
 
     const history = await getHistory("history-test-ana", "history-test-ben");
     expect(history.played).toBe(3);
     expect(history.streak).toBe(3);
-    expect(history.total).toBe(4);
+    expect(history.total).toBe(5);
+    const ben = { id: "history-test-ben", name: "history-test-ben" };
     expect(history.games).toEqual([
       { lichessGameId: "histtst4", date: dates[2], colour: "black", result: "won", opponent: null },
-      { lichessGameId: "histtst3", date: dates[2], colour: "black", result: "drew", opponent: { id: "history-test-ben", name: "history-test-ben" } },
+      { lichessGameId: "histtst3", date: dates[2], colour: "black", result: "drew", opponent: ben },
+      { lichessGameId: "histtst5", date: dates[0], colour: "white", result: "drew", opponent: ben },
       { lichessGameId: "histtst2", date: dates[0], colour: "black", result: "lost", opponent: null },
-      { lichessGameId: "histtst1", date: dates[0], colour: "white", result: "won", opponent: { id: "history-test-ben", name: "history-test-ben" } },
+      { lichessGameId: "histtst1", date: dates[0], colour: "white", result: "won", opponent: ben },
     ]);
-    expect(history.headToHead).toEqual({ wins: 0, draws: 1, losses: 1 });
+    expect(history.headToHead).toEqual({ wins: 0, draws: 2, losses: 1 });
 
     // ben missed the middle Matchday, so his Streak is the last one alone.
     expect(await getHistory("history-test-ben", "history-test-ben")).toMatchObject({ played: 2, streak: 1, headToHead: null });
-    expect((await getHistory("history-test-ana", "history-test-ana", { all: true })).games).toHaveLength(4);
+    expect((await getHistory("history-test-ana", "history-test-ana", { all: true })).games).toHaveLength(5);
   }, 60_000);
 });

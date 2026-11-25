@@ -20,7 +20,7 @@ afterAll(() => {
   silent.close();
 });
 
-it("is given up on in 10 s, and a scheduled job answers that its run failed and logs why", async () => {
+it("is given up on after two attempts of 10 s, and a scheduled job answers that its run failed and logs why", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   const { db } = await import("./db");
   const { GET } = await import("@/app/api/jobs/create-matchdays/route");
@@ -29,10 +29,13 @@ it("is given up on in 10 s, and a scheduled job answers that its run failed and 
     db.query("select 1").catch((error: Error) => error),
     GET(new Request("https://offboard.test/api/jobs/create-matchdays", { headers: { authorization: `Bearer ${SECRET}` } })),
   ]);
-  expect(Date.now() - started).toBeLessThan(11_000);
+  expect(Date.now() - started).toBeLessThan(21_000);
   expect(query).toEqual(new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }));
   expect(run.status).toBe(500);
   expect(await run.json()).toEqual({ outcome: "failed", detail: "The run could not be recorded." });
   expect(logged).toHaveBeenCalledWith("Creating Matchdays failed:", "Connection terminated due to connection timeout");
+  // The query and the job each tried once more after their first 10 s, and no more.
+  const retries = logged.mock.calls.filter(([said]) => String(said).startsWith("Connecting to the database failed"));
+  expect(retries).toHaveLength(2);
   await db.end();
-}, 20_000);
+}, 30_000);

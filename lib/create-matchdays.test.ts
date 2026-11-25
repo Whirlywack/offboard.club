@@ -236,7 +236,7 @@ describe("recovering from a run that created the tournament without recording it
       return response;
     });
     const first = await runAt(DUE);
-    expect(first).toEqual({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: fetch failed.`, matchdayDate: DATE });
+    expect(first).toEqual({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: Lichess couldn't be reached.`, matchdayDate: DATE });
     expect(created()).toHaveLength(1);
 
     vi.stubGlobal("fetch", lichess.fetch);

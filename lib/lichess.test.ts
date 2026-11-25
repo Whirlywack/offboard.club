@@ -81,8 +81,15 @@ describe("one request at a time", () => {
     vi.stubGlobal("fetch", fetch);
     const first = lichess.lichessRequest("/first", {}, () => "read");
     const second = lichess.lichessRequest("/second", {}, () => "read");
-    await expect(first).rejects.toThrow("fetch failed");
+    await expect(first).rejects.toThrow("Lichess couldn't be reached");
     await expect(second).resolves.toBe("read");
+  });
+
+  it("says plainly that Lichess couldn't be reached when no answer comes at all, which fetch calls only 'fetch failed'", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause: new Error("getaddrinfo ENOTFOUND lichess.org") })));
+    const error = await lichess.lichessRequest("/api/account", { token: "a-pretend-lichess-token" }, () => "read").catch((e: Error) => e);
+    expect(error).toEqual(new Error("Lichess couldn't be reached"));
+    expect(error).not.toBeInstanceOf(lichess.LichessError);
   });
 });
 

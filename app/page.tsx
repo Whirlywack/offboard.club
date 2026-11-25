@@ -68,7 +68,10 @@ export default function Home() {
           </li>
           <li>
             <h3>Read the Recap</h3>
-            <p>Afterwards the Matchday gets a Recap with that night&apos;s Leaderboard, open for anyone to read.</p>
+            <p>
+              Afterwards the Matchday gets a Recap that anyone can read. It has that night&apos;s Leaderboard and Awards
+              for things any Member can pull off at any rating, such as the biggest upset.
+            </p>
           </li>
           <li>
             <h3>Keep your best four</h3>
@@ -89,10 +92,7 @@ export default function Home() {
             or hearing about jobs. Only signed-in Members can see Profiles; Leaderboards and Recaps are public and show
             names and Companies.
           </p>
-          <p className={styles.plans}>
-            Still to come: Awards in each Recap for things any Member can pull off at any rating, such as the biggest
-            upset, and a Telegram group for Members.
-          </p>
+          <p className={styles.plans}>Still to come: a Telegram group for Members.</p>
         </div>
       </section>
 

@@ -81,10 +81,16 @@ export async function doneSince(job: string): Promise<Date | null> {
   return rows[0]?.lastDoneAt ?? null;
 }
 
-// The jobs whose last run failed, each with why.
-export async function failingJobs(): Promise<{ job: string; detail: string }[]> {
-  const { rows } = await db.query<{ job: string; detail: string }>(
-    `select "job", "lastDetail" as "detail" from "scheduledJob" where "lastOutcome" = 'failed'`,
+// Records that `job` has done its work now, though its run may yet fail at what comes after: the backup, once its dump
+// is stored.
+export async function workDone(job: string) {
+  await db.query(`update "scheduledJob" set "lastDoneAt" = now() where "job" = $1`, [job]);
+}
+
+// The jobs whose last run failed, each with why and when that run ended.
+export async function failingJobs(): Promise<{ job: string; detail: string; at: Date }[]> {
+  const { rows } = await db.query<{ job: string; detail: string; at: Date }>(
+    `select "job", "lastDetail" as "detail", "lastRunAt" as "at" from "scheduledJob" where "lastOutcome" = 'failed'`,
   );
   return rows;
 }
@@ -97,4 +103,14 @@ export async function lastFailure(): Promise<Failure | null> {
     `select "job", "at", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" order by "at" desc, "id" desc limit 1`,
   );
   return rows[0] ?? null;
+}
+
+// Records `problem` as a failure of `job` beginning now, unless the same one has begun since `since`: for a problem that
+// a run finds rather than meets, and that the runs after it find again (lib/post-to-telegram.ts).
+export async function recordFailure(job: string, problem: string, since: Date) {
+  await db.query(
+    `insert into "jobFailure" ("job", "problem") select $1, $2
+     where not exists (select from "jobFailure" where "job" = $1 and "problem" = $2 and "at" >= $3)`,
+    [job, problem, since],
+  );
 }

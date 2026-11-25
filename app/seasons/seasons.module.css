@@ -42,7 +42,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The six Matchdays, in two rows of three */
+/* The six Matchdays, in two rows of three, or three of two on the narrowest phones */
 .matchdaysSection {
   display: flex;
   flex-direction: column;
@@ -54,6 +54,12 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
+}
+
+@media (max-width: 22.49rem) {
+  .matchdays {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .played,
@@ -107,6 +113,12 @@
 
 .date {
   font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* A Matchday the Season went past without results */
+.missed {
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 

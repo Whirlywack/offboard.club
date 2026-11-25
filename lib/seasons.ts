@@ -142,8 +142,6 @@ export function placesIn(schedule: Schedule, dates: Iterable<string>): Map<strin
   return placed;
 }
 
-export const seasonsOf = async (dates: string[], now: Date, store = postgres) => placesIn(await load(store, now), dates);
-
 // The Matchdays that have started by `now`.
 function started(schedule: Schedule, now: Date): string[] {
   const dates: string[] = [];

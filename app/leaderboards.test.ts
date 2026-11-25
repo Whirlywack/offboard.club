@@ -133,12 +133,23 @@ describe("a Season's Leaderboard", () => {
   });
 
   it("names nobody before the sixth Matchday, and says how far the Season has gone", async () => {
+    vi.setSystemTime(new Date("2027-01-20T12:00:00Z")); // the week off, before Season 2 starts
     SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
     const html = await season("1");
     expect(html).not.toContain("Season champion");
     expect(text(html)).toContain("Matchday 5 of 6 is done. Results from Sunday, 17 January 2027 aren't in yet.");
     vi.setSystemTime(new Date("2027-01-12T12:00:00Z"));
     expect(text(await season("1"))).toContain("Matchday 5 of 6 is done. The next one is on Sunday, 17 January 2027.");
+  });
+
+  it("ends without its sixth Matchday once Season 2 has started, and says which one was not played", async () => {
+    // 10 February: Season 2's first Matchday was on 31 January, and Season 1's last was never ingested.
+    SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
+    const html = await season("1");
+    expect(text(html)).toContain("This Season is over, with five of its six Matchdays played.");
+    expect(text(html)).toContain("Season champion Ana Petraitė");
+    expect(text(html)).toContain("Matchday 6 17 Jan Not played");
+    expect(html.match(/Not played/g)).toHaveLength(1);
   });
 
   it("shares the title between Members still level at the top", async () => {
@@ -163,9 +174,10 @@ describe("a Season's Leaderboard", () => {
   });
 
   it("says plainly that a Season with no ingested Matchday is still to come", async () => {
+    vi.setSystemTime(new Date("2027-01-20T12:00:00Z")); // the week off, before Season 2 starts
     seasonOne();
-    const html = await season("3");
-    expect(text(html)).toContain("Season 3 starts on Sunday, 21 March 2027.");
+    const html = await season("2");
+    expect(text(html)).toContain("Season 2 starts on Sunday, 31 January 2027.");
     expect(text(html)).toContain("The Leaderboard fills in after the Season's first Matchday.");
     expect(html).not.toContain("<table");
   });
@@ -177,8 +189,11 @@ describe("a Season's Leaderboard", () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  it("goes as far as Season 200", async () => {
-    expect(await season("200")).toContain("<h1>Season 200</h1>");
+  it("is not found for a Season after the one after the current one, whose dates would still move", async () => {
+    seasonOne();
+    // 10 February: Season 1 is the latest with results and Season 2 is under way, so Season 2 is the last with a page.
+    expect(await season("2")).toContain("<h1>Season 2</h1>");
+    for (const number of ["3", "200"]) await expect(season(number)).rejects.toThrow("not found");
   });
 
   it("before Season 1 is scheduled, shows Season 1 waiting for its sixteenth Member and no other Season", async () => {
@@ -235,6 +250,7 @@ describe("the all-time Leaderboard", () => {
 
 describe("the Season champion on the home page", () => {
   it("is named from the sixth Matchday until the next Season's first is ingested", async () => {
+    vi.setSystemTime(new Date("2027-01-20T12:00:00Z")); // the week off, before Season 2 starts
     SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
     expect(await homeChampion()).toBe("");
     ingested(SEASON_1[5], [["ana", 3]]);

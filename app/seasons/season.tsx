@@ -8,7 +8,7 @@ import { longDate } from "../recaps/dates";
 import ui from "../ui.module.css";
 import styles from "./seasons.module.css";
 import { viewerIsMember } from "@/lib/auth";
-import { getSeason, seasonsSoFar, type Member, type Season } from "@/lib/leaderboards";
+import { getSeason, readLeaderboards, seasonsSoFar, type Member, type Season } from "@/lib/leaderboards";
 import { SEASON_LENGTH } from "@/lib/leaderboard";
 import { matchdayStart } from "@/lib/schedule";
 
@@ -18,13 +18,17 @@ const shortDate = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
 
 // The Season Leaderboard of a Season by number, or of the current one, for the two Season pages to put inside their
-// <Suspense>. A number with no Season is not found; a database that cannot be read is said plainly, and logged.
+// <Suspense>. A number with no Season, or one too far off to have a page, is not found; a database that cannot be read
+// is said plainly, and logged. The schedule and the ingested Matchdays are read once, then the Season's results.
 export async function seasonLeaderboard(which: number | "current"): Promise<ReactNode> {
   await connection();
   const now = new Date();
   const [read, member] = await Promise.all([
-    seasonsSoFar(now)
-      .then(async ({ played, current }) => ({ played, season: await getSeason(which === "current" ? current : which, now) }))
+    readLeaderboards(now)
+      .then(async (reading) => {
+        const { played, current } = seasonsSoFar(reading);
+        return { played, season: await getSeason(which === "current" ? current : which, reading) };
+      })
       .catch((error: Error) => {
         console.error("A Season Leaderboard could not be read:", error.message);
         return undefined;
@@ -96,7 +100,7 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
         <section aria-labelledby="matchdays" className={styles.matchdaysSection}>
           <h2 id="matchdays">The six Matchdays</h2>
           <ol className={styles.matchdays} role="list">
-            {matchdays.map(({ date, ingested }, i) => {
+            {matchdays.map(({ date, ingested, missed }, i) => {
               const inside = (
                 <>
                   <span className={styles.ordinal}>Matchday {i + 1}</span>
@@ -113,7 +117,10 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
                       <span className="visually-hidden">, Recap</span>
                     </Link>
                   ) : (
-                    <span className={styles.toCome}>{inside}</span>
+                    <span className={styles.toCome}>
+                      {inside}
+                      {missed && <span className={styles.missed}>Not played</span>}
+                    </span>
                   )}
                 </li>
               );
@@ -141,15 +148,24 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
 // A Sunday's date, kept on one line.
 const onSunday = (date: string) => longDate(date).replaceAll(" ", "\u00a0");
 
-// Where the Season stands, in a sentence.
+const inWords = ["no", "one", "two", "three", "four", "five", "six"];
+
+// Where the Season stands, in a sentence. A Season can end with fewer than six Matchdays played, when one was never
+// ingested (lib/leaderboards.ts).
 function progress({ number, matchdays, over }: Season, done: number, now: Date): string {
   if (!matchdays) return "Season 1 starts once sixteen Members have joined, on the first Sunday at least a week later.";
+  if (over) {
+    const played = matchdays.filter((m) => m.ingested).length;
+    if (played === SEASON_LENGTH) return "All six Matchdays are done, so this Season is over.";
+    return played === 0
+      ? "This Season is over. None of its Matchdays was played."
+      : `This Season is over, with ${inWords[played]} of its six Matchdays played.`;
+  }
   const first = matchdays[0].date;
   if (done === 0)
     return matchdayStart(first) > now
       ? `Season ${number} starts on ${onSunday(first)}.`
       : `Season ${number} started on ${onSunday(first)}. Its first results aren't in yet.`;
-  if (over) return "All six Matchdays are done, so this Season is over.";
   const next = matchdays[done].date;
   return `Matchday ${done} of ${SEASON_LENGTH} is done. ${
     matchdayStart(next) > now ? `The next one is on ${onSunday(next)}.` : `Results from ${onSunday(next)} aren't in yet.`

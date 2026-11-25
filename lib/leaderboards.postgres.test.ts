@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
-import { getAllTime, getSeason, seasonOfMatchday } from "./leaderboards";
+import { getAllTime, getSeason, readLeaderboards, seasonOfMatchday } from "./leaderboards";
 
 // The Leaderboards' real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
 // so nothing it does is kept. Every row it adds is its own, and it changes no existing row. Runs only when
@@ -40,7 +40,7 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     // the app reads is whichever is stored; the dates below are worked out from it.
     await run(`insert into "season" ("number", "start") values (1, '2026-01-04') on conflict ("number") do nothing`);
     const now = new Date("2026-03-04T12:00:00Z");
-    const one = (await getSeason(1, now))!.matchdays!.map((m) => m.date);
+    const one = (await getSeason(1, await readLeaderboards(now)))!.matchdays!.map((m) => m.date);
     const [first, second] = one;
 
     await run(`insert into "company" ("domain", "name") values ('leaderboards-test.example', 'Leaderboards Test')`);
@@ -78,10 +78,10 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     await result(outside, "leaderboards-test-ben", 1, 2);
 
     const mine = <R extends { memberId: string }>(rows: R[]) => rows.filter((r) => r.memberId.startsWith("leaderboards-test-"));
-    const season = (await getSeason(1, now))!;
+    const season = (await getSeason(1, await readLeaderboards(now)))!;
     expect(season.matchdays!.slice(0, 2)).toEqual([
-      { date: first, ingested: true },
-      { date: second, ingested: true },
+      { date: first, ingested: true, missed: false },
+      { date: second, ingested: true, missed: false },
     ]);
     expect(mine(season.leaderboard)).toEqual([
       { memberId: "leaderboards-test-ana", name: "leaderboards-test-ana", company: { domain: "leaderboards-test.example", name: "Leaderboards Test" }, rank: 1, score: 4, played: 2 },

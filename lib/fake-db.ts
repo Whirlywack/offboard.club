@@ -441,27 +441,29 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       );
     },
 
-  // getAllTime: every Member's results, each with the Company they are at now. Postgres gives no order without
-  // "order by", so neither does this: newest first, the reverse of how they were stored.
-  [`select to_char(r."matchdayDate", 'YYYY-MM-DD') as "date", r."userId" as "memberId", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = u."companyDomain" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
-    () =>
-      answer(
-        [...results.values()]
-          .filter((r) => isMember(people.get(r.userId)))
+  // getAllTime: how many Matchdays each Member has played, with the Company they are at now. Postgres gives no order
+  // without "order by", so neither does this: Members in the reverse of the order their first result was stored.
+  [`select u.id as "memberId", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded", count(*)::int as "played" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = u."companyDomain" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null group by u.id, c."domain"`]:
+    () => {
+      const played = new Map<string, number>();
+      for (const r of results.values()) if (isMember(people.get(r.userId))) played.set(r.userId, (played.get(r.userId) ?? 0) + 1);
+      return answer(
+        [...played]
           .reverse()
-          .map((r) => {
-            const person = people.get(r.userId)!;
+          .map(([memberId, count]) => {
+            const person = people.get(memberId)!;
             const company = person.companyDomain ? companies.get(person.companyDomain) : undefined;
             return {
-              date: r.matchdayDate,
-              memberId: r.userId,
+              memberId,
               name: person.name,
               companyDomain: company?.domain ?? null,
               companyName: company?.name ?? null,
               excluded: person.lichessMarked || person.lichessClosed,
+              played: count,
             };
           }),
-      ),
+      );
+    },
 };
 
 async function run(sql: string, params: unknown[] = []) {

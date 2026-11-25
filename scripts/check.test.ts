@@ -202,7 +202,7 @@ describe("a check", () => {
     const ran = runs(log);
     for (const run of ran.filter((run) => !["test", "seed"].includes(run.name))) {
       expect([run.name, run.env.DATABASE_URL, run.env.ALLOW_DB_TESTS]).toEqual([run.name, undefined, undefined]);
-      expect(run.env.TMPDIR.startsWith(join(root, "tmp", "offboard-check-"))).toBe(true);
+      expect(run.env.TMPDIR.startsWith(join(realpathSync(join(root, "tmp")), "offboard-check-"))).toBe(true);
     }
     const real = check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toMatch(/^Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123/);

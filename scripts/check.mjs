@@ -53,7 +53,8 @@ const list = () => running && writeFileSync(running, [...children].map((child) =
 // session: stopping this process and every process it started, as an agent's tool does, leaves it running, and it stops
 // the databases and removes the folder.
 export function scratch(name) {
-  const folder = mkdtempSync(join(tmpdir(), `offboard-${name}-`));
+  // Its real path, which pnpm's store links name, so that they can be found once the folder is gone.
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), `offboard-${name}-`)));
   running = join(folder, "running");
   temporary = join(folder, "tmp");
   mkdirSync(temporary);
@@ -78,24 +79,25 @@ const stopGroup = (child) => {
   }
 };
 
-// Stops what the run left running in `folder` and every database db:start made there, takes the copy out of pnpm's
-// store, which links each project it installed, then removes the folder. Run at the end of a run, and by the watcher,
-// which finds the run's processes running still when only the run itself was killed.
+// Stops what the run left running in `folder` and every database db:start made there, takes out of pnpm's store, which
+// links each project it installed, the copy and any project of a run inside it, then removes the folder. Run at the end
+// of a run, and by the watcher, which finds the run's processes running still when only the run itself was killed.
 export function cleanUp(folder) {
-  if (!existsSync(folder)) return;
-  const pids = existsSync(join(folder, "running")) ? readFileSync(join(folder, "running"), "utf8").split("\n").filter(Boolean) : [];
-  for (const pid of pids) stopGroup({ pid: Number(pid) });
   const checkout = join(folder, "checkout");
-  for (const name of readdirSync(folder))
-    if (name.startsWith("db-") && existsSync(join(folder, name, "postmaster.pid")))
-      spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: checkout, stdio: "ignore", env: outside() });
-  if (existsSync(join(checkout, "node_modules"))) forget(realpathSync(folder), checkout);
+  if (existsSync(folder)) {
+    const pids = existsSync(join(folder, "running")) ? readFileSync(join(folder, "running"), "utf8").split("\n").filter(Boolean) : [];
+    for (const pid of pids) stopGroup({ pid: Number(pid) });
+    for (const name of readdirSync(folder))
+      if (name.startsWith("db-") && existsSync(join(folder, name, "postmaster.pid")))
+        spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: checkout, stdio: "ignore", env: outside() });
+  }
+  forget(folder, existsSync(checkout) ? checkout : root);
   rmSync(folder, { recursive: true, force: true });
 }
 
-// Removes the links in pnpm's store (<store>/projects) to projects in `folder`.
-function forget(folder, checkout) {
-  const store = spawnSync("pnpm", ["store", "path"], { cwd: checkout, encoding: "utf8" }).stdout?.trim();
+// Removes the links in pnpm's store (<store>/projects) to projects in `folder`, gone or not.
+function forget(folder, cwd) {
+  const store = spawnSync("pnpm", ["store", "path"], { cwd, encoding: "utf8" }).stdout?.trim();
   const projects = store && join(store, "projects");
   for (const name of projects && existsSync(projects) ? readdirSync(projects) : []) {
     const link = join(projects, name);

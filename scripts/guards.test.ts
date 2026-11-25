@@ -2,7 +2,7 @@
 // judge, what it proposes, and how it reads a run of the tests. At the end the whole command runs in a small checkout of
 // its own, whose `pnpm test` stands in for vitest.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -424,7 +424,7 @@ describe("a run of pnpm guards", () => {
       [false, null],
       [false, null],
     ]);
-    expect(tests().every((run) => run.tmp.startsWith(join(root, "tmp", "offboard-guards-")))).toBe(true);
+    expect(tests().every((run) => run.tmp.startsWith(join(realpathSync(join(root, "tmp")), "offboard-guards-")))).toBe(true);
     const real = guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toBe(
       "Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123.eu-central-1.aws.neon.tech, not this machine (localhost, 127.0.0.1 or ::1). Unset it first.",

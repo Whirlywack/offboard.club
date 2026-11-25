@@ -42,6 +42,7 @@ describe("the next Matchday's tournament on the home page", () => {
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
     signedIn = "member";
     const html = await nextMatchday();
+    expect(html).toContain("Next Matchday");
     expect(html).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November at 20:00</time>');
     expect(html).toContain(
       '<a href="https://lichess.org/swiss/AbCd1234" target="_blank" rel="noopener noreferrer">Join this Matchday on Lichess<span class="visually-hidden"> (opens in a new tab)</span></a>',
@@ -95,6 +96,31 @@ describe("the Matchday under way on the home page", () => {
     expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
     expect(html).not.toContain("under way");
     expect(html).not.toContain("lichess.org/swiss");
+  });
+
+  it("gives way to the next Matchday once its results are in, before 21:30", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: new Date(`${DATE}T21:10:00+02:00`) });
+    signedIn = "member";
+    at("21:15");
+    const html = await nextMatchday();
+    expect(html).toContain("Next Matchday");
+    expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
+    expect(html).not.toContain("under way");
+    expect(html).not.toContain("lichess.org/swiss");
+  });
+
+  it("is not kept when the site never created its tournament: the next Matchday is shown instead", async () => {
+    signedIn = "member";
+    at("20:05");
+    for (const row of [null, { date: DATE, lichessTournamentId: null, ingestedAt: null }]) {
+      if (row) matchdays.set(DATE, row);
+      else matchdays.delete(DATE);
+      const html = await nextMatchday();
+      expect(html).toContain("Next Matchday");
+      expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
+      expect(html).not.toContain("under way");
+      expect(html).not.toContain("round 3");
+    }
   });
 
   it("is never shown or linked to a visitor or someone part-way through signing up, who see the next Matchday", async () => {

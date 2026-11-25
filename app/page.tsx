@@ -16,7 +16,7 @@ import { lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
-import { matchdayToJoin, upcomingMatchday } from "@/lib/seasons";
+import { nextMatchdayIn, readSchedule, type Schedule } from "@/lib/seasons";
 import { countSignUps } from "@/lib/signups";
 
 export default function Home() {
@@ -140,20 +140,27 @@ export default function Home() {
   );
 }
 
+// Lichess lets a Member join a Matchday late, until its third round starts. The site does not know the round, so a
+// Member is shown the Matchday under way for this long after its start.
+const LATE_JOIN_MS = 90 * 60_000;
+
 // The next Matchday once Season 1 is scheduled; until then, how many more sign-ups it is waiting for. A Member also gets
-// the link to its Lichess tournament once the site has created it, and keeps a Matchday for 90 minutes after its start,
-// while Lichess may still let them join late. Only the Club's team can join it, and each Member is in the team, so
-// anyone else gets the next Matchday's time alone. Left out, and logged, if the database cannot be read. Exported for
-// app/home.test.ts.
+// the link to its Lichess tournament once the site has created it, and the Matchday under way in its place while they
+// may still join that one. Only the Club's team can join it, and each Member is in the team, so anyone else gets the
+// next Matchday's time alone. Left out, and logged, if the database cannot be read. Exported for app/home.test.ts.
 export async function NextMatchday() {
   await connection();
   const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
   const now = new Date();
-  const member = await viewerIsMember();
-  const next = await (member ? matchdayToJoin(now) : upcomingMatchday(now)).catch(unreadable);
+  const schedule = await readSchedule(now).catch(unreadable);
+  const next = schedule && nextMatchdayIn(schedule, now);
   if (next) {
-    const started = next.start <= now;
-    const when = next.start.toLocaleString("en-GB", {
+    const member = await viewerIsMember();
+    const underWay = member ? await lateToJoin(schedule!, now).catch(unreadable) : null;
+    const shown = underWay ?? next;
+    const tournament =
+      underWay?.tournament ?? (member ? (await matchdayOn(next.date).catch(unreadable))?.lichessTournamentId : null);
+    const when = shown.start.toLocaleString("en-GB", {
       timeZone: ZONE,
       weekday: "long",
       day: "numeric",
@@ -161,17 +168,16 @@ export async function NextMatchday() {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const tournament = member ? (await matchdayOn(next.date).catch(unreadable))?.lichessTournamentId : null;
     return (
       <div className={`${styles.status} ${ui.arrive}`}>
         <p className={styles.statusLabel}>
-          <span className={ui.marker} aria-hidden="true" /> {started ? "Matchday under way" : "Next Matchday"}
+          <span className={ui.marker} aria-hidden="true" /> {underWay ? "Matchday under way" : "Next Matchday"}
         </p>
         <p className={styles.statusValue}>
-          <time dateTime={next.start.toISOString()}>{when}</time>
+          <time dateTime={shown.start.toISOString()}>{when}</time>
         </p>
         <p className={styles.statusNote}>
-          {started
+          {underWay
             ? "Lichess lets you join until round 3 starts."
             : "Vilnius time, on Lichess. Five Games, 5 minutes a side plus 3 seconds a move."}
         </p>
@@ -199,6 +205,16 @@ export async function NextMatchday() {
       </p>
     </div>
   );
+}
+
+// The Matchday under way that a Member is still shown, with its tournament: until 90 minutes after its start, while
+// Lichess may still let them join it late, as long as its tournament is recorded and its results are not in. Null at
+// any other time.
+async function lateToJoin(schedule: Schedule, now: Date) {
+  const late = nextMatchdayIn(schedule, new Date(now.getTime() - LATE_JOIN_MS));
+  if (!late || late.start > now) return null;
+  const row = await matchdayOn(late.date);
+  return row?.lichessTournamentId && !row.ingested ? { ...late, tournament: row.lichessTournamentId } : null;
 }
 
 // The champion of the Season that has just ended, from its sixth Matchday until the next Season's first. Left out, and

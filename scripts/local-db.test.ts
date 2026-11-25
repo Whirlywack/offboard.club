@@ -250,7 +250,9 @@ describe("a run on another major version of Node.js", () => {
 function pretendPostgres(dir: string, version: string, { initdb = true } = {}) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "pg_ctl"), `#!/bin/sh\n[ "$1" = --version ] && echo "pg_ctl (PostgreSQL) ${version}" && exit 0\nexit 1\n`, { mode: 0o755 });
-  if (initdb) writeFileSync(join(dir, "initdb"), "#!/bin/sh\necho 'pretend initdb' >&2\nexit 1\n", { mode: 0o755 });
+  // It writes down what it was given, and the zone it was given it in, in initdb.args.
+  const script = `#!/bin/sh\necho "$@" > "${dir}/initdb.args"\necho "TZ=$TZ" >> "${dir}/initdb.args"\necho 'pretend initdb' >&2\nexit 1\n`;
+  if (initdb) writeFileSync(join(dir, "initdb"), script, { mode: 0o755 });
   return dir;
 }
 
@@ -295,11 +297,18 @@ describe("the Postgres db:start runs", () => {
     expect(stdout.split("\n")[0]).toMatch(new RegExp(`^Postgres 97\\.0 from ${installed}, not CI's 98,`));
   });
 
-  it("is refused below Postgres 15, which cannot sort as CI's database does, even when it is CI's own version", () => {
-    const { root, script } = ciOn98({ image: "image: postgres:14" });
-    const PATH = `${pretendPostgres(join(root, "pg"), "14.22")}:/usr/bin:/bin`;
-    const refused = /^Postgres 14\.22 cannot sort as CI's database does, which needs Postgres 15 or later: brew install postgresql@18\.$/;
-    refuses(process.execPath, [script, "start"], refused, { PATH, HOMEBREW_PREFIX: join(root, "no-brew") });
+  it("makes a database that sorts by code point in UTC: the builtin C.UTF-8 from Postgres 17, C before, and says which", () => {
+    const cases = [
+      ["18.7", "--locale-provider=builtin --builtin-locale=C.UTF-8 --locale=C.UTF-8", "It sorts text by code point (the builtin C.UTF-8) and keeps time in UTC, as the live database does."],
+      ["16.4", "--no-locale", "It sorts text by code point (C, as Postgres 16 has no builtin C.UTF-8, so upper() and lower() change ASCII letters alone, where the live database's change every letter) and keeps time in UTC."],
+    ];
+    for (const [version, options, said] of cases) {
+      const { root, script } = ciOn98({ image: `image: postgres:${version.split(".")[0]}` });
+      const pretend = pretendPostgres(join(root, "pg"), version);
+      const { stdout } = run(process.execPath, [script, "start"], { PATH: `${pretend}:/usr/bin:/bin`, HOMEBREW_PREFIX: join(root, "no-brew") });
+      expect(stdout.split("\n")[1]).toBe(said);
+      expect(readFileSync(join(pretend, "initdb.args"), "utf8")).toMatch(new RegExp(` ${options.replaceAll(".", "\\.")}\nTZ=UTC\n$`));
+    }
   });
 
   it("is refused when CI's workflow names no Postgres image", () => {
@@ -425,6 +434,18 @@ describe("what these tools start is recorded", () => {
     expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([postgres]);
   }, 60_000);
 
+  it("from a copy that is no git checkout, where OFFBOARD_LOCAL_REGISTRY names the repository's, with the repository's", () => {
+    const repo = repository();
+    const copy = fill(scratch("checkout"));
+    const script = join(copy, "scripts/local-db.mjs");
+    const started = run(process.execPath, [script, "start"], { OFFBOARD_LOCAL_REGISTRY: join(repo, ".git/offboard-local") });
+    expect(started.status, started.stderr).toBe(0);
+    expect(tool(repo, "list").stdout).toContain(`${join(copy, ".local-db")}, from worktree ${copy}\n`);
+    const postgres = { kind: "Postgres", port: portIn(blockIn(join(copy, ".local-db")), "DATABASE_URL"), folder: join(copy, ".local-db"), gone: false };
+    expect(rows(tool(repo, "stop-all", "--all").stdout)).toEqual([postgres]);
+    refuses(process.execPath, [script, "start"], /^OFFBOARD_LOCAL_REGISTRY is "offboard-local", not an absolute path, so nothing was started\.$/, { OFFBOARD_LOCAL_REGISTRY: "offboard-local" });
+  }, 60_000);
+
   it("only while its process runs", () => {
     const root = repository();
     const gone = spawnSync(process.execPath, ["-e", ""]).pid;
@@ -451,7 +472,7 @@ async function query(url: string, sql: string) {
 // Holds `port` on 127.0.0.1 until released, as another worktree's Postgres or site would.
 async function squat(port: number) {
   const server = net.createServer();
-  await new Promise<void>((listening) => server.listen(port, "127.0.0.1", listening));
+  await new Promise<void>((listening, failed) => server.once("error", failed).listen(port, "127.0.0.1", listening));
   return () => new Promise<void>((closed) => server.close(() => closed()));
 }
 
@@ -534,18 +555,21 @@ describe("db:start in a folder it has used before", () => {
     expect([rows, marked]).toEqual([[{ table: null, migrations: readdirSync("migrations").length }], true]);
   }, 60_000);
 
-  it("makes a folder made to sort or keep time otherwise again, empty, sorting by ICU's en-US, punctuation shifted, in UTC", async () => {
+  it("makes a folder made to sort or keep time otherwise again, empty, sorting by code point in UTC as the live database does", async () => {
     const block = blockIn(dir);
     await query(databaseUrl(block), "create table left_behind ()");
     expect(tool(root, "stop").status).toBe(0);
     rmSync(join(dir, "offboard.initdb")); // as a folder made before it was written has none
     const again = tool(root, "start");
     expect(again.status, again.stderr).toBe(0);
-    expect(again.stdout).toContain(`${dir} was made to sort or keep time otherwise than CI's database does, so it was made again, empty.`);
-    const sql = `select d.datlocprovider as provider, to_jsonb(d) ->> (case when current_setting('server_version_num')::int >= 170000 then 'datlocale' else 'daticulocale' end) as locale,
+    expect(again.stdout).toContain(`${dir} was made to sort or keep time otherwise than the live database does, so it was made again, empty.`);
+    const sql = `select d.datlocprovider as provider, d.datcollate as collate, d.datctype as ctype, current_setting('server_version_num')::int >= 170000 as builtin,
       current_setting('TimeZone') as zone, to_regclass('left_behind') as table from pg_database d where d.datname = current_database()`;
-    expect((await query(databaseUrl(blockIn(dir)), sql)).rows).toEqual([{ provider: "i", locale: "en-US-u-ka-shifted", zone: "UTC", table: null }]);
-    expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/--locale-provider=icu --icu-locale=en-US-u-ka-shifted .* TZ=UTC\n$/);
+    const [made] = (await query(databaseUrl(blockIn(dir)), sql)).rows;
+    // As live, where the builtin provider is; C before Postgres 17 (as on CI's runner, whose Postgres is 16).
+    const sorts = made.builtin ? { provider: "b", collate: "C.UTF-8", ctype: "C.UTF-8" } : { provider: "c", collate: "C", ctype: "C" };
+    expect(made).toEqual({ ...sorts, builtin: made.builtin, zone: "UTC", table: null });
+    expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/ TZ=UTC\n$/);
   }, 60_000);
 
   it("dev:local runs the site, which is listed and stopped with the server it started", async () => {
@@ -632,6 +656,24 @@ describe("db:start beside others starting at the same time", () => {
     }
   }, 60_000);
 
+  it("carries on, on its own ports, when pg_ctl stops waiting but the server comes up all the same", async () => {
+    const root = repository();
+    const slow = join(root, "slow");
+    mkdirSync(slow);
+    // A pg_ctl that starts the server, then says it gave up waiting, as one does when a start takes longer than it waits.
+    const giveUp = `"${bin}/pg_ctl" "$@" > /dev/null; echo 'pg_ctl: server did not start in time' >&2; exit 1`;
+    writeFileSync(join(slow, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) ${giveUp} ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(slow, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
+    const started = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${slow}:${process.env.PATH}` });
+    expect(started.status, started.stderr).toBe(0);
+    expect(started.stdout).not.toContain("taken a moment ago");
+    const block = blockIn(join(root, ".local-db"));
+    expect(readFileSync(join(root, ".env.local"), "utf8")).toBe(block);
+    expect(rows(tool(root, "list").stdout)).toEqual([{ kind: "Postgres", port: portIn(block, "DATABASE_URL"), folder: join(root, ".local-db"), gone: false }]);
+    expect(await query(databaseUrl(block), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
+    expect(tool(root, "stop").status).toBe(0);
+  }, 60_000);
+
   it("does not move when its start fails for another reason", () => {
     const root = repository();
     const failing = join(root, "failing");
@@ -649,7 +691,7 @@ const rows = (stdout: string) =>
     .trim()
     .split("\n")
     .map((line) => {
-      const row = /^(?:Stopped: )?(Postgres|site|fake Lichess|fake Telegram) +(\d+) +\d+ (?:min|h \d+ min|d \d+ h) +(\/.*?)( \(folder gone\))?$/.exec(line);
+      const row = /^(?:Stopped: )?(Postgres|site|fake Lichess|fake Telegram) +(\d+) +\d+ (?:min|h \d+ min|d \d+ h) +(\/.*?)( \(folder gone\))?(?:, from worktree \/.*)?$/.exec(line);
       return row ? { kind: row[1], port: Number(row[2]), folder: row[3], gone: Boolean(row[4]) } : { line };
     });
 
@@ -690,6 +732,14 @@ describe("pnpm local:list and pnpm local:stop", () => {
       expect(rows(listed.stdout)).toHaveLength(3);
       expect(rows(listed.stdout)).toEqual(expect.arrayContaining(all));
       expect(rows(tool(other, "list").stdout)).toEqual([{ kind: "fake Telegram", port: fakes.other, folder: other, gone: false }]);
+      // A Postgres's line names its worktree, which is what --dir takes; its own folder is answered with how to stop it.
+      expect(listed.stdout).toMatch(new RegExp(`^Postgres .* ${join(worktree, ".local-db").replaceAll(".", "\\.")}, from worktree ${worktree.replaceAll(".", "\\.")}$`, "m"));
+      const notWorktree = tool(main, "stop-all", "--dir", join(worktree, ".local-db"));
+      expect([notWorktree.status, notWorktree.stdout]).toEqual([
+        0,
+        `Nothing these tools started is running from the worktree ${join(worktree, ".local-db")}. --dir takes a worktree: in pnpm local:list, the one after "from worktree", or the folder of a site or a fake.\n`,
+      ]);
+      expect(rows(tool(main, "list").stdout)).toHaveLength(3);
 
       // A record of another process, whose start or command line is not what it was recorded with, is not this tool's.
       const [, start, command] = /^(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/.exec(

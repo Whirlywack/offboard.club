@@ -19,6 +19,9 @@ jobs:
         image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
+          # Made as the live database is: text sorted by code point (the builtin C.UTF-8), not by the image's en_US.
+          # The container keeps UTC. scripts/local-db.postgres.test.ts checks both, here and against db:start's.
+          POSTGRES_INITDB_ARGS: --locale-provider=builtin --builtin-locale=C.UTF-8 --locale=C.UTF-8
         ports:
           - 5432:5432
         options: >-

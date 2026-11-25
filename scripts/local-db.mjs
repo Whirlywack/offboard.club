@@ -7,19 +7,18 @@
 //     .env.local is created. The ports come as a set, Postgres 55432 + n, the site 3100 + n, the fake Lichess 8089 + n
 //     and the fake Telegram 8189 + n, for the first n whose four are free (or the n of --port). When <dir>'s ports have
 //     been taken since, or another db:start takes them between this one's choice and its start, it moves to the first
-//     free set, and its block, and .env.local when that is <dir>'s block, are
-//     rewritten to match; any other .env.local is never changed. The Postgres is of CI's major version (the image in
-//     .github/workflows/ci.yml) when one is installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else
-//     the newest there, which it says, and 15 or later. It sorts text by ICU's en-US (punctuation and spaces weighed
-//     last) and keeps time in UTC, as near as
-//     this machine comes to CI's en_US.utf8 and UTC (INITDB below). A <dir> made by another major version, which cannot
-//     be opened, or made to sort or keep time otherwise, is made again.
+//     free set, and its block, and .env.local when that is <dir>'s block, are rewritten to match; any other .env.local
+//     is never changed. The Postgres is of CI's major version (the image in .github/workflows/ci.yml) when one is
+//     installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else the newest there, which it says. Its
+//     database sorts text by code point and keeps time in UTC, as the live database does (initdb() below). A <dir> made
+//     by another major version, which cannot be opened, or made to sort or keep time otherwise, is made again.
 //   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
 //   pnpm dev:local [--dir <dir>]  `next dev` on 127.0.0.1 at the block's site port, in the foreground, once .env.local is
 //     <dir>'s block; beside it `pnpm fake-lichess` and `pnpm fake-telegram`, also in the foreground; then `pnpm seed`
 //     and `pnpm seed:cookies`.
 //   pnpm local:list  Each Postgres, site and fake these tools started, from any worktree of this repository, that is
-//     still running: what it is, its port, its age and its folder, even once that folder is gone.
+//     still running: what it is, its port, its age, its folder, even once that folder is gone, and the worktree it was
+//     started from when that is another folder.
 //   pnpm local:stop --dir <worktree>  Stops those started from that worktree, and nothing else: not what was started
 //     from the worktrees inside it. pnpm local:stop --all stops every one of them; alone, it stops nothing.
 // A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
@@ -90,8 +89,9 @@ const variables = (block) => Object.fromEntries([...block.matchAll(/^([A-Z_]+)=(
 const portOf = (url) => Number(new URL(url).port);
 
 // pnpm runs every script on the Node.js of package.json's devEngines.runtime, which CI's setup-node reads too, and npm
-// and npx refuse to run on another major version (EBADDEVENGINES). A line saying so, when this runs on another major
-// version anyway, as `node` or a tool's own bin (node_modules/.bin/vitest) from a shell do; null otherwise.
+// and npx refuse to run on another major version (EBADDEVENGINES), and a bin in node_modules/.bin runs on the Node.js
+// pnpm put there. A line saying so, when this runs on another major version anyway, as `node` itself run from a shell
+// does; null otherwise.
 export function nodeNotice() {
   const file = `${root}/package.json`;
   const wanted = existsSync(file) && /^\D*(\d+)/.exec(JSON.parse(readFileSync(file, "utf8")).devEngines?.runtime?.version ?? "")?.[1];
@@ -219,14 +219,17 @@ function postgres() {
   return { ...chosen, which };
 }
 
-// initdb, for a database as CI's postgres:18 has it: that image sets LANG=en_US.utf8, so text sorts by glibc's en_US, and
-// sets no zone, so it runs in UTC. There is no glibc here, so text sorts by ICU's en-US instead, with punctuation and
-// spaces weighed last ("ka-shifted"), as glibc weighs them. On the words in scripts/local-db.postgres.test.ts, which CI
-// runs too, the two sort alike; they are two implementations, so other text may not. ICU locales need Postgres 15. The
-// folder records how it was made (offboard.initdb), and one made otherwise, such as with C's sort and this machine's
-// zone before, is made again.
-const INITDB = ["-U", "offboard", "--auth=trust", "-E", "UTF8", "--locale-provider=icu", "--icu-locale=en-US-u-ka-shifted", "--locale=C", "--no-instructions"];
-const MADE_AS = `${INITDB.join(" ")} TZ=UTC`;
+// initdb's options, for a database that sorts and keeps time as the live one does: Neon's Postgres 18 has the builtin
+// provider's C.UTF-8, which sorts text by code point, and CI's postgres:18 is made so too (POSTGRES_INITDB_ARGS in
+// .github/workflows/ci.yml); both keep UTC. Postgres 16 and before have no builtin provider, and their C sorts by code
+// point as well, but changes the case of ASCII letters alone. The folder records how it was made (offboard.initdb), and
+// one made otherwise, such as with another sort before, is made again.
+const builtin = (major) => Number(major) >= 17;
+const initdb = (major) => [
+  ...["-U", "offboard", "--auth=trust", "-E", "UTF8", "--no-instructions"],
+  ...(builtin(major) ? ["--locale-provider=builtin", "--builtin-locale=C.UTF-8", "--locale=C.UTF-8"] : ["--no-locale"]),
+];
+const madeAsNow = (major) => `${initdb(major).join(" ")} TZ=UTC`;
 
 const run = (file, args, env = process.env) => execFileSync(file, args, { stdio: ["ignore", 2, 2], env });
 const running = (pg, dir) => spawnSync(`${pg.dir}/pg_ctl`, ["-D", dir, "status"], { stdio: "ignore" }).status === 0;
@@ -237,7 +240,12 @@ const madeAs = (dir) => (existsSync(`${dir}/offboard.initdb`) ? readFileSync(`${
 // it shares and which outlives a worktree's folder, as <pid>.json: what it is, its port, its folder, the worktree it
 // was started from (this checkout), and the start time and command line ps gives it. A record counts only while a
 // process of that pid has both still, so that nothing else is ever listed or stopped, whatever has taken its pid since.
+// A tool that runs these in a copy of a worktree gives them the repository's folder instead, so that what the copy
+// starts is listed and stopped with the rest: OFFBOARD_LOCAL_REGISTRY=<git common dir>/offboard-local.
 function registry() {
+  const given = process.env.OFFBOARD_LOCAL_REGISTRY;
+  if (given !== undefined && !given.startsWith("/")) throw new Error(`OFFBOARD_LOCAL_REGISTRY is ${JSON.stringify(given)}, not an absolute path, so nothing was started.`);
+  if (given) return given;
   const git = spawnSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
   if (git.status !== 0) throw new Error(`${root} is not a git checkout, where these tools record what they start, so nothing was started.`);
   return `${git.stdout.trim()}/offboard-local`;
@@ -300,8 +308,8 @@ function age(start) {
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
   return `${Math.floor(minutes / (24 * 60))} d ${Math.floor(minutes / 60) % 24} h`;
 }
-const line = ({ kind, port, start, folder }) =>
-  `${kind.padEnd(13)} ${String(port).padEnd(6)} ${age(start).padEnd(13)} ${folder}${existsSync(folder) ? "" : " (folder gone)"}`;
+const line = ({ kind, port, start, folder, worktree }) =>
+  `${kind.padEnd(13)} ${String(port).padEnd(6)} ${age(start).padEnd(13)} ${folder}${existsSync(folder) ? "" : " (folder gone)"}${folder === worktree ? "" : `, from worktree ${worktree}`}`;
 
 // Creates the block's database in initdb's own "postgres", by the address alone, and marks it, unless it is there.
 async function ensureDatabase(url) {
@@ -328,18 +336,22 @@ async function start(dir, port) {
   if (saved && port !== undefined && Number(port) !== portOf(variables(saved).DATABASE_URL))
     throw new Error(`${dir} uses port ${portOf(variables(saved).DATABASE_URL)}: leave out --port, or give another --dir.`);
   const pg = postgres();
-  if (Number(pg.major) < 15) throw new Error(`Postgres ${pg.version} cannot sort as CI's database does, which needs Postgres 15 or later: brew install postgresql@18.`);
   const record = recorder();
   let text = saved ?? block(await freeSet(port));
   if (saved && running(pg, dir)) {
     const made = madeBy(dir);
     say(
-      made === pg.major && madeAs(dir) === MADE_AS
+      made === pg.major && madeAs(dir) === madeAsNow(pg.major)
         ? `Postgres ${made} was running already.`
-        : `Postgres ${made} was running already, made otherwise than db:start makes one now: pnpm db:stop, then pnpm db:start, makes it again on Postgres ${pg.major}, sorting and keeping time as CI's database does.`,
+        : `Postgres ${made} was running already, made otherwise than db:start makes one now: pnpm db:stop, then pnpm db:start, makes it again on Postgres ${pg.major}, sorting and keeping time as the live database does.`,
     );
   } else {
     say(pg.which);
+    say(
+      builtin(pg.major)
+        ? "It sorts text by code point (the builtin C.UTF-8) and keeps time in UTC, as the live database does."
+        : `It sorts text by code point (C, as Postgres ${pg.major} has no builtin C.UTF-8, so upper() and lower() change ASCII letters alone, where the live database's change every letter) and keeps time in UTC.`,
+    );
     // A port this worktree's own site or fakes hold is not taken by anyone else.
     const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
     if (saved && (await Promise.all(portsOf(saved).map((each) => !own.has(each) && taken(each)))).some(Boolean)) {
@@ -347,15 +359,15 @@ async function start(dir, port) {
       say(`The ports ${dir} had are taken now, so it has the first free set: ${portsOf(text).join(", ")}.`);
     }
     const made = saved && madeBy(dir);
-    const fresh = made !== pg.major || madeAs(dir) !== MADE_AS;
+    const fresh = made !== pg.major || madeAs(dir) !== madeAsNow(pg.major);
     if (fresh) {
       // A data folder opens only in the major version that made it, and keeps the sort it was made with. This one is
       // throwaway, so it is made again, empty.
       if (saved) rmSync(dir, { recursive: true, force: true });
       if (made && made !== pg.major) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
-      else if (made) say(`${dir} was made to sort or keep time otherwise than CI's database does, so it was made again, empty.`);
-      run(`${pg.dir}/initdb`, ["-D", dir, ...INITDB], { ...process.env, TZ: "UTC" });
-      writeFileSync(`${dir}/offboard.initdb`, `${MADE_AS}\n`);
+      else if (made) say(`${dir} was made to sort or keep time otherwise than the live database does, so it was made again, empty.`);
+      run(`${pg.dir}/initdb`, ["-D", dir, ...initdb(pg.major)], { ...process.env, TZ: "UTC" });
+      writeFileSync(`${dir}/offboard.initdb`, `${madeAsNow(pg.major)}\n`);
     }
     if (fresh || text !== saved) writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
     if (saved && text !== saved && envLocal() === saved) {
@@ -371,6 +383,7 @@ async function start(dir, port) {
         run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", `${dir}/postgres.log`, "-o", options, "-w", "start"]);
         break;
       } catch (error) {
+        if (running(pg, dir)) break; // pg_ctl stopped waiting, but the server came up all the same: it is this folder's
         if (tries === 5 || !(await taken(postgres))) throw error;
         const before = text;
         text = moved(text, await freeSet(port));
@@ -431,7 +444,12 @@ function list() {
 async function stopAll(dir) {
   const worktree = dir && existsSync(dir) ? realpathSync(dir) : dir; // the records' are real paths
   const chosen = recorded().filter((each) => dir === undefined || each.worktree === worktree);
-  if (!chosen.length) return say(`Nothing these tools started is running${dir === undefined ? "" : ` from ${dir}`}.`);
+  if (!chosen.length)
+    return say(
+      dir === undefined
+        ? "Nothing these tools started is running."
+        : `Nothing these tools started is running from the worktree ${dir}. --dir takes a worktree: in pnpm local:list, the one after "from worktree", or the folder of a site or a fake.`,
+    );
   for (const { pid, kind } of chosen)
     try {
       process.kill(pid, kind === "Postgres" ? "SIGINT" : "SIGTERM");

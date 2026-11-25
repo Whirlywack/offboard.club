@@ -1,7 +1,7 @@
 // pnpm guards (scripts/guards.mjs): what a named change does to a file, which changes only the real-Postgres suites can
 // judge, what it proposes, and how it reads a run of the tests. At the end the whole command runs in a small checkout of
 // its own, whose `pnpm test` stands in for vitest.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -283,10 +283,20 @@ const FAKE = [
   "",
 ].join("\n");
 
-// Removed when the test ends, passed or failed.
-function fakeCheckout() {
+// Runs `file` as a child process without holding up the tests running beside it, and gives how it ended.
+const exec = (file: string, args: string[], env: NodeJS.ProcessEnv) =>
+  new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+    const child = spawn(file, args, { env });
+    let [stdout, stderr] = ["", ""];
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
+
+// Removed when the test that made it ends (`finished`, its own onTestFinished), passed or failed.
+function fakeCheckout(finished: (end: () => void) => void) {
   const root = mkdtempSync(join(tmpdir(), "offboard-guards-test-"));
-  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  finished(() => rmSync(root, { recursive: true, force: true }));
   for (const dir of ["scripts", "lib", "app", "migrations", "tmp"]) mkdirSync(join(root, dir));
   for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
   const scripts = Object.fromEntries(["test", "typecheck", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
@@ -306,8 +316,7 @@ function fakeCheckout() {
   git("add", ".");
   git("commit", "--quiet", "--message", "first");
   const env = { ...process.env, DATABASE_URL: "", ALLOW_DB_TESTS: "", TMPDIR: join(root, "tmp"), FAKE_LOG: join(root, "fake.log") };
-  const guards = (args: string[], more: Record<string, string> = {}) =>
-    spawnSync(process.execPath, [join(root, "scripts/guards.mjs"), ...args], { encoding: "utf8", env: { ...env, ...more } });
+  const guards = (args: string[], more: Record<string, string> = {}) => exec(process.execPath, [join(root, "scripts/guards.mjs"), ...args], { ...env, ...more });
   const runs = () =>
     readFileSync(join(root, "fake.log"), "utf8")
       .trim()
@@ -327,11 +336,11 @@ function fakeCheckout() {
 const POSTGRES = "on the fast tests and the real-Postgres suites";
 const ALONE = "on the real-Postgres suites alone, as lib/fake-db.ts refuses a changed statement";
 
-describe("a run of pnpm guards", () => {
-  it("says which changes went red, naming the tests that pass without them, judges SQL by the real-Postgres suites alone, and leaves the checkout as it was", () => {
-    const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout();
+describe.concurrent("a run of pnpm guards", () => {
+  it("says which changes went red, naming the tests that pass without them, judges SQL by the real-Postgres suites alone, and leaves the checkout as it was", async ({ onTestFinished }) => {
+    const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const places = ["lib/a.ts:3", "lib/a.ts:4", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true", "lib/a.ts:1", "--replace", '"x" = $1', "true"];
-    const { status, stdout } = guards(places);
+    const { status, stdout } = await guards(places);
     expect(stdout).toContain("The tests pass as the code is (the whole suite with the real-Postgres suites: 5 passed).");
     const noticed = (test: string) => `1 failed with the change and pass without it, first: ${test}`;
     expect(stdout).toContain(`RED       lib/a.ts:3\n         - if (!ok) return "refused";\n         ${noticed("app/a.test.ts > refuses a stranger")}, ${POSTGRES}\n`);
@@ -358,9 +367,9 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("judges nothing by a test that fails without the change too", () => {
-    const { guards, filters, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stdout } = guards(["lib/b.ts:2"], { FAKE_FAIL: "again" });
+  it("judges nothing by a test that fails without the change too", async ({ onTestFinished }) => {
+    const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["lib/b.ts:2"], { FAKE_FAIL: "again" });
     expect(stdout).toContain(
       "UNJUDGED  lib/b.ts:2\n         - if (n > 9) return 9;\n         what failed with the change fails without it too, so it says nothing of the change: app/a.test.ts > refuses a stranger, on the fast tests only: no real-Postgres suite ran\n",
     );
@@ -370,9 +379,9 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("calls broken, and runs no test for, a change that does not parse or that TypeScript refuses", () => {
-    const { guards, filters, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stdout } = guards(["lib/a.ts:6", "lib/a.ts:4", "--replace", '"two"', "2"]);
+  it("calls broken, and runs no test for, a change that does not parse or that TypeScript refuses", async ({ onTestFinished }) => {
+    const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["lib/a.ts:6", "lib/a.ts:4", "--replace", '"two"', "2"]);
     expect(stdout).toContain("BROKEN    lib/a.ts:6\n         - }\n         lib/a.ts no longer parses: '}' expected.\n");
     expect(stdout).toContain(
       "BROKEN    lib/a.ts:4 --replace '\"two\"' 2\n         - if (ok === 2) return \"two\";\n         + if (ok === 2) return 2;\n         TypeScript refuses the change, as CI's typecheck would: lib/a.ts(4,25): error TS2322: Type 'number' is not assignable to type 'string'.\n",
@@ -383,9 +392,9 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("judges a change to a migration on a database migrated afresh with it, and one that does not apply as broken", () => {
-    const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stdout } = guards(["migrations/001_a.sql", "--replace", "check (x > 0)", "check (true)", "migrations/001_a.sql:1", "--replace", "int", "broken"]);
+  it("judges a change to a migration on a database migrated afresh with it, and one that does not apply as broken", async ({ onTestFinished }) => {
+    const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["migrations/001_a.sql", "--replace", "check (x > 0)", "check (true)", "migrations/001_a.sql:1", "--replace", "int", "broken"]);
     expect(stdout).toContain(
       "RED       migrations/001_a.sql --replace 'check (x > 0)' 'check (true)'\n         - create table t (x int check (x > 0));\n         + create table t (x int check (true));\n         1 failed with the change and pass without it, first: lib/a.postgres.test.ts > refuses a negative x, on the real-Postgres suites alone, on a database migrated afresh with the change\n",
     );
@@ -401,31 +410,31 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("runs the real-Postgres suites for every change with --pg, puts each file back before the next change, and exits 0 when every change went red", () => {
-    const { guards, tests, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stdout } = guards(["lib/b.ts:2", "--pg"]);
+  it("runs the real-Postgres suites for every change with --pg, puts each file back before the next change, and exits 0 when every change went red", async ({ onTestFinished }) => {
+    const { guards, tests, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["lib/b.ts:2", "--pg"]);
     expect(stdout).toContain(`GREEN     lib/b.ts:2\n         - if (n > 9) return 9;\n         no test noticed: 5 passed, ${POSTGRES}\n`);
     expect(status).toBe(1);
     expect(tests().every((run) => run.postgres)).toBe(true);
     // Had lib/a.ts not been put back, the change to lib/b.ts after it would not have been green.
-    const both = fakeCheckout().guards(["lib/a.ts:3", "lib/b.ts:2"]);
+    const both = await fakeCheckout(onTestFinished).guards(["lib/a.ts:3", "lib/b.ts:2"]);
     expect(both.stdout).toContain("GREEN     lib/b.ts:2\n");
-    const red = fakeCheckout().guards(["lib/a.ts:3"]);
+    const red = await fakeCheckout(onTestFinished).guards(["lib/a.ts:3"]);
     expect(red.stdout).toContain("1 of 1 changes went red.\n");
     expect(red.status).toBe(0);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("gives the tests neither the caller's DATABASE_URL nor ALLOW_DB_TESTS, but a TMPDIR in its own folder, and refuses a DATABASE_URL not on this machine", () => {
-    const { root, guards, tests, left, AS_IT_WAS } = fakeCheckout();
-    const local = guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://offboard@127.0.0.1:1/somebody_else", ALLOW_DB_TESTS: "1" });
+  it("gives the tests neither the caller's DATABASE_URL nor ALLOW_DB_TESTS, but a TMPDIR in its own folder, and refuses a DATABASE_URL not on this machine", async ({ onTestFinished }) => {
+    const { root, guards, tests, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const local = await guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://offboard@127.0.0.1:1/somebody_else", ALLOW_DB_TESTS: "1" });
     expect(local.stdout).toContain("on the fast tests only: no real-Postgres suite ran");
     expect(tests().map((run) => [run.postgres, run.url])).toEqual([
       [false, null],
       [false, null],
     ]);
     expect(tests().every((run) => run.tmp.startsWith(join(realpathSync(join(root, "tmp")), "offboard-guards-")))).toBe(true);
-    const real = guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
+    const real = await guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toBe(
       "Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123.eu-central-1.aws.neon.tech, not this machine (localhost, 127.0.0.1 or ::1). Unset it first.",
     );
@@ -434,20 +443,20 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("judges nothing when the tests fail before any change", () => {
-    const { guards, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stdout, stderr } = guards(["lib/a.ts:3"], { FAKE_FAIL: "all" });
+  it("judges nothing when the tests fail before any change", async ({ onTestFinished }) => {
+    const { guards, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout, stderr } = await guards(["lib/a.ts:3"], { FAKE_FAIL: "all" });
     expect(stderr.trim()).toBe("The tests do not pass before any change, so no change can be judged: 1 failed, first: app/a.test.ts > refuses a stranger");
     expect(stdout).not.toMatch(/^(RED|GREEN)/m);
     expect(status).toBe(1);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("makes no change that is not in the file once, overlaps or changes nothing, nor one to SQL that --tests leaves to the fast tests, and needs no database then", () => {
-    const { guards, runs, left, AS_IT_WAS } = fakeCheckout();
+  it("makes no change that is not in the file once, overlaps or changes nothing, nor one to SQL that --tests leaves to the fast tests, and needs no database then", async ({ onTestFinished }) => {
+    const { guards, runs, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const places = ["lib/a.ts:9", "lib/none.ts:1", "lib/a.ts:3", "--replace", "nothing", "x", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true"];
     const more = ["lib/a.ts:3", "+", "lib/a.ts:3-4", "lib/a.ts:4", "--replace", '"two"', '"two"'];
-    const { status, stdout } = guards([...places, ...more, "--tests", "app/a.test.ts"]);
+    const { status, stdout } = await guards([...places, ...more, "--tests", "app/a.test.ts"]);
     expect(stdout).toContain("NOT MADE  lib/a.ts:9\n         lib/a.ts: it has 6 lines\n");
     expect(stdout).toContain("NOT MADE  lib/none.ts:1\n         lib/none.ts: there is no such file\n");
     expect(stdout).toContain('NOT MADE  lib/a.ts:3 --replace nothing x\n         lib/a.ts: "nothing" is there 0 times, not once\n');
@@ -460,23 +469,23 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("refuses --tests that names no file", () => {
-    const { guards, left, AS_IT_WAS } = fakeCheckout();
-    const { status, stderr } = guards(["lib/a.ts:3", "--tests", "app/none.test.ts"]);
+  it("refuses --tests that names no file", async ({ onTestFinished }) => {
+    const { guards, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stderr } = await guards(["lib/a.ts:3", "--tests", "app/none.test.ts"]);
     expect(stderr.trim()).toBe("--tests app/none.test.ts: there is no such file.");
     expect(status).toBe(1);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("proposes changes for the lines changed since origin/main when no place is named, never exits 0 then, and ends saying it judged only those", () => {
-    const { root, git, guards, left } = fakeCheckout();
+  it("proposes changes for the lines changed since origin/main when no place is named, never exits 0 then, and ends saying it judged only those", async ({ onTestFinished }) => {
+    const { root, git, guards, left } = fakeCheckout(onTestFinished);
     git("update-ref", "refs/remotes/origin/main", "HEAD");
-    const none = guards([]);
+    const none = await guards([]);
     expect(none.stdout).toMatch(/^No places were named, so 0 changes are proposed for the lines changed since origin\/main\.\nThese were only proposals/);
     expect(none.status).toBe(1);
     const changed = A.replace("  if (ok === 2)", '  if (ok === 3) return "three";\n  if (ok === 2)').replace("  if (!ok)", "  if (!ok || ok < 0)");
     writeFileSync(join(root, "lib/a.ts"), changed);
-    const { status, stdout } = guards([]);
+    const { status, stdout } = await guards([]);
     expect(stdout).toMatch(/^No places were named, so 2 changes are proposed for the lines changed since origin\/main\.\n/);
     expect(stdout).toContain("RED       lib/a.ts:3 --replace 'if (!ok || ok < 0)' 'if (false)'\n");
     expect(stdout).toContain("GREEN     lib/a.ts:4 --replace 'if (ok === 3)' 'if (false)'\n");

@@ -9,23 +9,30 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { run, SCENARIOS, seedSettings, testTally } from "./check.mjs";
 
 // A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use,
-// removed when the test ends, passed or failed.
-function checkout() {
+// removed when the test that made it ends (`finished`, its onTestFinished), passed or failed.
+function checkout(finished: (end: () => void) => void = onTestFinished) {
   const root = mkdtempSync(join(tmpdir(), "offboard-check-test-"));
-  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  finished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
   mkdirSync(join(root, "tmp"));
   for (const script of ["check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
   return root;
 }
+// Runs check in `root` without holding up the tests running beside it, and gives how it ended.
 const check = (root: string, env: Record<string, string> = {}) =>
-  spawnSync(process.execPath, [join(root, "scripts/check.mjs")], { encoding: "utf8", env: { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), ...env } });
+  new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+    const child = spawn(process.execPath, [join(root, "scripts/check.mjs")], { env: { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), ...env } });
+    let [stdout, stderr] = ["", ""];
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
 
 describe("a checkout whose .env.local holds real settings", () => {
-  it("is refused before anything is copied or started", () => {
+  it("is refused before anything is copied or started", async () => {
     const root = checkout();
     writeFileSync(join(root, ".env.local"), "DATABASE_URL=postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb\n");
-    const { status, stdout, stderr } = check(root);
+    const { status, stdout, stderr } = await check(root);
     const left = readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"));
     expect(stderr.trim()).toMatch(/^This checkout's \.env\.local holds real settings/);
     expect(stdout).toBe("");
@@ -69,8 +76,8 @@ const SETUP_NODE = "      - uses: actions/setup-node@v7\n        with:\n        
 // As ticket #58 has CI read the Node.js version: from package.json's devEngines.
 const NODE_FROM_PACKAGE = "      - uses: actions/setup-node@v7\n        with:\n          node-version-file: package.json\n        image: postgres:18\n";
 
-function fakeCheckout(ci = SETUP_NODE) {
-  const root = checkout();
+function fakeCheckout(finished: (end: () => void) => void, ci = SETUP_NODE) {
+  const root = checkout(finished);
   const scripts = Object.fromEntries(["lint", "typecheck", "test", "build", "seed", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
   const devEngines = { runtime: { name: "node", version: "26.x" } };
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts, ...(ci === NODE_FROM_PACKAGE ? { devEngines } : {}) }));
@@ -119,10 +126,10 @@ function storeLinks(root: string) {
   });
 }
 
-describe("a check", () => {
-  it("passes when every step does, and reports each with the tallies, what it ran on and what it checked, leaving nothing behind", () => {
-    const { root, log, head } = fakeCheckout();
-    const { status, stdout } = check(root, { FAKE_LOG: log });
+describe.concurrent("a check", () => {
+  it("passes when every step does, and reports each with the tallies, what it ran on and what it checked, leaving nothing behind", async ({ onTestFinished }) => {
+    const { root, log, head } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await check(root, { FAKE_LOG: log });
     const summary = stdout.slice(stdout.indexOf("\npnpm check "));
     expect(summary).toMatch(/^\npnpm check passed, in \d+ s\./);
     expect(summary).toContain("✓ migrations: none that has merged was edited");
@@ -148,31 +155,31 @@ describe("a check", () => {
     expect(storeLinks(root)).toEqual([]);
   }, 60_000);
 
-  it("says so when the tree it checked holds what CI will not see", () => {
-    const { root, log, head } = fakeCheckout();
+  it("says so when the tree it checked holds what CI will not see", async ({ onTestFinished }) => {
+    const { root, log, head } = fakeCheckout(onTestFinished);
     writeFileSync(join(root, "migrations/002_second.sql"), "create table c (d int);\n");
     writeFileSync(join(root, "fake.mjs"), `${FAKE}\n`);
-    const { stdout } = check(root, { FAKE_LOG: log });
+    const { stdout } = await check(root, { FAKE_LOG: log });
     expect(stdout).toContain(`\nChecked ${head} first with 1 uncommitted and 1 untracked files, which CI will not see: it tests only what is committed.\n`);
   }, 60_000);
 
-  it("fails when any step does, runs the others, and says which failed, a skipped test among them", () => {
-    const { root, log } = fakeCheckout();
-    const { status, stdout } = check(root, { FAKE_LOG: log, FAKE_FAIL: "lint,build,seed" });
+  it("fails when any step does, runs the others, and says which failed, a skipped test among them", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "lint,build,seed" });
     expect(stdout).toContain("\npnpm check failed: lint, build, seeds, in ");
     expect(stdout).toContain("✓ typecheck\n");
     expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states");
     expect(status).toBe(1);
-    const skipped = check(root, { FAKE_LOG: log, FAKE_FAIL: "skip" });
+    const skipped = await check(root, { FAKE_LOG: log, FAKE_FAIL: "skip" });
     expect(skipped.stdout).toContain("\npnpm check failed: tests, in ");
     expect(skipped.stdout).toContain("skipped, which a check may not: lib/a.test.ts > it works");
     expect(skipped.status).toBe(1);
     expect(leftovers(root)).toEqual([]);
   }, 60_000);
 
-  it("fails the tests when vitest exits 1 though its report is clean, and when a test file is one vitest never runs", () => {
-    const { root, log } = fakeCheckout(NODE_FROM_PACKAGE);
-    const exit = check(root, { FAKE_LOG: log, FAKE_FAIL: "exit" });
+  it("fails the tests when vitest exits 1 though its report is clean, and when a test file is one vitest never runs", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished, NODE_FROM_PACKAGE);
+    const exit = await check(root, { FAKE_LOG: log, FAKE_FAIL: "exit" });
     expect(exit.stdout).toContain("; CI runs Node.js 26.x and Postgres 18.\n");
     expect(exit.stdout).toContain("\npnpm check failed: tests, in ");
     expect(exit.stdout).toContain("✗ tests (");
@@ -180,15 +187,15 @@ describe("a check", () => {
     expect(exit.status).toBe(1);
     mkdirSync(join(root, "app"));
     writeFileSync(join(root, "app/page.test.tsx"), "// never run\n");
-    const tsx = check(root, { FAKE_LOG: log });
+    const tsx = await check(root, { FAKE_LOG: log });
     expect(tsx.stdout).toContain("  never run, as vitest runs *.test.ts only: app/page.test.tsx\n");
     expect(tsx.status).toBe(1);
   }, 60_000);
 
-  it("fails when a merged migration was edited, and runs nothing that needs a database it could not start", () => {
-    const { root, log } = fakeCheckout();
+  it("fails when a merged migration was edited, and runs nothing that needs a database it could not start", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
     writeFileSync(join(root, "migrations/001_first.sql"), "create table a (b text);\n");
-    const { status, stdout } = check(root, { FAKE_LOG: log, FAKE_FAIL: "db:start" });
+    const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "db:start" });
     expect(stdout).toContain("a merged migration was edited, renamed or removed; add a new one instead:\n    M\tmigrations/001_first.sql");
     expect(stdout).toContain("\npnpm check failed: migrations, empty databases, tests, seeds, in ");
     expect(stdout).toContain("  ✗ tests: not run\n  ✗ seeds: not run");
@@ -196,25 +203,25 @@ describe("a check", () => {
     expect(leftovers(root)).toEqual([]);
   }, 60_000);
 
-  it("gives each step neither the caller's DATABASE_URL nor ALLOW_DB_TESTS but its own, and a TMPDIR in its own folder, and refuses a DATABASE_URL not on this machine", () => {
-    const { root, log } = fakeCheckout();
-    check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://offboard@127.0.0.1:1/somebody_else", ALLOW_DB_TESTS: "1" });
+  it("gives each step neither the caller's DATABASE_URL nor ALLOW_DB_TESTS but its own, and a TMPDIR in its own folder, and refuses a DATABASE_URL not on this machine", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
+    await check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://offboard@127.0.0.1:1/somebody_else", ALLOW_DB_TESTS: "1" });
     const ran = runs(log);
     for (const run of ran.filter((run) => !["test", "seed"].includes(run.name))) {
       expect([run.name, run.env.DATABASE_URL, run.env.ALLOW_DB_TESTS]).toEqual([run.name, undefined, undefined]);
       expect(run.env.TMPDIR.startsWith(join(realpathSync(join(root, "tmp")), "offboard-check-"))).toBe(true);
     }
-    const real = check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
+    const real = await check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toMatch(/^Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123/);
     expect(real.stdout).toBe("");
     expect(runs(log)).toHaveLength(ran.length);
   }, 60_000);
 
-  it.each([
+  it.for([
     ["SIGKILL", null],
     ["SIGTERM", 143],
-  ] as const)("killed with %s mid-step, stops that step and its databases and removes its copy, by the watcher it leaves behind", async (signal, code) => {
-    const { root, log } = fakeCheckout();
+  ] as const)("killed with %s mid-step, stops that step and its databases and removes its copy, by the watcher it leaves behind", { timeout: 60_000 }, async ([signal, code], { onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
     const env = { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), FAKE_LOG: log, FAKE_SLOW: "lint" };
     const child = spawn(process.execPath, [join(root, "scripts/check.mjs")], { env, stdio: "ignore" });
     const ended = new Promise<number | null>((done) => child.on("exit", (status) => done(status)));
@@ -226,7 +233,7 @@ describe("a check", () => {
     expect(await until(() => leftovers(root).length === 0)).toBe(true);
     expect(alive(step)).toBe(false);
     expect(runs(log).filter((entry) => entry.name === "db:stop")).toHaveLength(2);
-  }, 60_000);
+  });
 });
 
 describe("a step", () => {

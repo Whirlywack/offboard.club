@@ -54,7 +54,7 @@ async function Confirm() {
           team until someone else is made Organiser.
         </p>
       )}
-      <LeaveActions />
+      <LeaveActions keep="/profile" />
     </form>
   );
 }

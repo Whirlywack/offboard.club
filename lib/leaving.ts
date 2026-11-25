@@ -21,8 +21,10 @@ import { organiserToken, refusedPermission, tokenConnectedBy } from "./organiser
 import { inTransaction } from "./transaction";
 
 // Removing someone from the team, and revoking the Organiser's token, each give up on Lichess after this, so that
-// leaving never waits on Lichess for long: a rate-limited request alone would wait a minute. Both fit in the 60 s the
-// page whose action leaves allows (its maxDuration).
+// leaving never waits on Lichess for long: a rate-limited request alone would wait a minute. Both fit in the 60 s that
+// app/profile/leave allows its action (its maxDuration). The deletion from app/welcome/leave asks Lichess nothing and
+// has no such limit: it deletes only someone who has not connected Lichess (deleteSignUp in app/actions.ts), so has no
+// account in the team, and cannot have connected the Organiser's permission, which only a Member can.
 export const LICHESS_DEADLINE_MS = 25_000;
 
 // Deletes the person `memberId`, after removing their Lichess account from the Club's team. False if there was nobody

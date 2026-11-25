@@ -295,6 +295,13 @@ describe("the Postgres db:start runs", () => {
     expect(stdout.split("\n")[0]).toMatch(new RegExp(`^Postgres 97\\.0 from ${installed}, not CI's 98,`));
   });
 
+  it("is refused below Postgres 15, which cannot sort as CI's database does, even when it is CI's own version", () => {
+    const { root, script } = ciOn98({ image: "image: postgres:14" });
+    const PATH = `${pretendPostgres(join(root, "pg"), "14.22")}:/usr/bin:/bin`;
+    const refused = /^Postgres 14\.22 cannot sort as CI's database does, which needs Postgres 15 or later: brew install postgresql@18\.$/;
+    refuses(process.execPath, [script, "start"], refused, { PATH, HOMEBREW_PREFIX: join(root, "no-brew") });
+  });
+
   it("is refused when CI's workflow names no Postgres image", () => {
     const { root, script } = ciOn98({ image: "image: redis:7" });
     const PATH = `${pretendPostgres(join(root, "pg"), "98.1")}:/usr/bin:/bin`;
@@ -404,6 +411,20 @@ describe("what these tools start is recorded", () => {
     }
   }, 30_000);
 
+  it("in a checkout that is a fresh git repository, with no commit and no remote, as pnpm check makes its copy", () => {
+    const root = fill(scratch("checkout"));
+    git(root, "init", "-q");
+    repositories.push(root);
+    const started = tool(root, "start");
+    expect(started.status, started.stderr).toBe(0);
+    const postgres = { kind: "Postgres", port: portIn(blockIn(join(root, ".local-db")), "DATABASE_URL"), folder: join(root, ".local-db"), gone: false };
+    expect(rows(tool(root, "list").stdout)).toEqual([postgres]);
+    expect(tool(root, "stop").status).toBe(0);
+    expect(tool(root, "list").stdout).toBe("Nothing these tools started is running.\n");
+    expect(tool(root, "start").status).toBe(0);
+    expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([postgres]);
+  }, 60_000);
+
   it("only while its process runs", () => {
     const root = repository();
     const gone = spawnSync(process.execPath, ["-e", ""]).pid;
@@ -510,6 +531,20 @@ describe("db:start in a folder it has used before", () => {
     expect(blockIn(dir)).toBe(block);
     const { rows, marked } = await query(databaseUrl(block), "select to_regclass('left_behind') as table, (select count(*)::int from schema_migrations) as migrations");
     expect([rows, marked]).toEqual([[{ table: null, migrations: readdirSync("migrations").length }], true]);
+  }, 60_000);
+
+  it("makes a folder made to sort or keep time otherwise again, empty, sorting by ICU's en-US in UTC", async () => {
+    const block = blockIn(dir);
+    await query(databaseUrl(block), "create table left_behind ()");
+    expect(tool(root, "stop").status).toBe(0);
+    rmSync(join(dir, "offboard.initdb")); // as a folder made before it was written has none
+    const again = tool(root, "start");
+    expect(again.status, again.stderr).toBe(0);
+    expect(again.stdout).toContain(`${dir} was made to sort or keep time otherwise than CI's database does, so it was made again, empty.`);
+    const sql = `select d.datlocprovider as provider, to_jsonb(d) ->> (case when current_setting('server_version_num')::int >= 170000 then 'datlocale' else 'daticulocale' end) as locale,
+      current_setting('TimeZone') as zone, to_regclass('left_behind') as table from pg_database d where d.datname = current_database()`;
+    expect((await query(databaseUrl(block), sql)).rows).toEqual([{ provider: "i", locale: "en-US", zone: "UTC", table: null }]);
+    expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/--locale-provider=icu --icu-locale=en-US .* TZ=UTC\n$/);
   }, 60_000);
 
   it("dev:local runs the site, which is listed and stopped with the server it started", async () => {

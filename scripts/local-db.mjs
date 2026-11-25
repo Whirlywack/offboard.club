@@ -10,7 +10,9 @@
 //     free set, and its block, and .env.local when that is <dir>'s block, are
 //     rewritten to match; any other .env.local is never changed. The Postgres is of CI's major version (the image in
 //     .github/workflows/ci.yml) when one is installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else
-//     the newest there, which it says. A <dir> made by another major version, which cannot be opened, is made again.
+//     the newest there, which it says, and 15 or later. It sorts text by ICU's en-US and keeps time in UTC, as near as
+//     this machine comes to CI's en_US.utf8 and UTC (INITDB below). A <dir> made by another major version, which cannot
+//     be opened, or made to sort or keep time otherwise, is made again.
 //   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
 //   pnpm dev:local [--dir <dir>]  `next dev` on 127.0.0.1 at the block's site port, in the foreground, once .env.local is
 //     <dir>'s block; beside it `pnpm fake-lichess` and `pnpm fake-telegram`, also in the foreground; then `pnpm seed`
@@ -216,9 +218,18 @@ function postgres() {
   return { ...chosen, which };
 }
 
+// initdb, for a database as CI's postgres:18 has it: that image sets LANG=en_US.utf8, so text sorts by glibc's en_US, and
+// sets no zone, so it runs in UTC. There is no glibc here, so text sorts by ICU's en-US instead, which sorts letters,
+// case, accents and digits as glibc's en_US does; what remains different is in scripts/local-db.postgres.test.ts, which
+// CI runs too. ICU locales need Postgres 15. The folder records how it was made (offboard.initdb), and one made
+// otherwise, such as with C's sort and this machine's zone before, is made again.
+const INITDB = ["-U", "offboard", "--auth=trust", "-E", "UTF8", "--locale-provider=icu", "--icu-locale=en-US", "--locale=C", "--no-instructions"];
+const MADE_AS = `${INITDB.join(" ")} TZ=UTC`;
+
 const run = (file, args, env = process.env) => execFileSync(file, args, { stdio: ["ignore", 2, 2], env });
 const running = (pg, dir) => spawnSync(`${pg.dir}/pg_ctl`, ["-D", dir, "status"], { stdio: "ignore" }).status === 0;
 const madeBy = (dir) => (existsSync(`${dir}/PG_VERSION`) ? readFileSync(`${dir}/PG_VERSION`, "utf8").trim() : null);
+const madeAs = (dir) => (existsSync(`${dir}/offboard.initdb`) ? readFileSync(`${dir}/offboard.initdb`, "utf8").trim() : null);
 
 // Each Postgres, site and fake these tools start is recorded in the repository's git folder, which every worktree of
 // it shares and which outlives a worktree's folder, as <pid>.json: what it is, its port, its folder, the worktree it
@@ -315,11 +326,16 @@ async function start(dir, port) {
   if (saved && port !== undefined && Number(port) !== portOf(variables(saved).DATABASE_URL))
     throw new Error(`${dir} uses port ${portOf(variables(saved).DATABASE_URL)}: leave out --port, or give another --dir.`);
   const pg = postgres();
+  if (Number(pg.major) < 15) throw new Error(`Postgres ${pg.version} cannot sort as CI's database does, which needs Postgres 15 or later: brew install postgresql@18.`);
   const record = recorder();
   let text = saved ?? block(await freeSet(port));
   if (saved && running(pg, dir)) {
     const made = madeBy(dir);
-    say(made === pg.major ? `Postgres ${made} was running already.` : `Postgres ${made} was running already, not ${pg.major}: pnpm db:stop, then pnpm db:start, makes it again on ${pg.major}.`);
+    say(
+      made === pg.major && madeAs(dir) === MADE_AS
+        ? `Postgres ${made} was running already.`
+        : `Postgres ${made} was running already, made otherwise than db:start makes one now: pnpm db:stop, then pnpm db:start, makes it again on Postgres ${pg.major}, sorting and keeping time as CI's database does.`,
+    );
   } else {
     say(pg.which);
     // A port this worktree's own site or fakes hold is not taken by anyone else.
@@ -329,12 +345,15 @@ async function start(dir, port) {
       say(`The ports ${dir} had are taken now, so it has the first free set: ${portsOf(text).join(", ")}.`);
     }
     const made = saved && madeBy(dir);
-    const fresh = made !== pg.major;
+    const fresh = made !== pg.major || madeAs(dir) !== MADE_AS;
     if (fresh) {
-      // A data folder opens only in the major version that made it. This one is throwaway, so it is made again, empty.
+      // A data folder opens only in the major version that made it, and keeps the sort it was made with. This one is
+      // throwaway, so it is made again, empty.
       if (saved) rmSync(dir, { recursive: true, force: true });
-      if (made) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
-      run(`${pg.dir}/initdb`, ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8", "--no-instructions"]);
+      if (made && made !== pg.major) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
+      else if (made) say(`${dir} was made to sort or keep time otherwise than CI's database does, so it was made again, empty.`);
+      run(`${pg.dir}/initdb`, ["-D", dir, ...INITDB], { ...process.env, TZ: "UTC" });
+      writeFileSync(`${dir}/offboard.initdb`, `${MADE_AS}\n`);
     }
     if (fresh || text !== saved) writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
     if (saved && text !== saved && envLocal() === saved) {

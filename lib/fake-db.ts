@@ -1,5 +1,5 @@
 // For tests only: the database's "user", "company", "matchday", "matchdayResult", "game", "season", "skippedSunday",
-// "organiserLichess", "scheduledJob", "jobFailure" and "teamRemoval" tables in memory, standing
+// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval" and "tournamentCancellation" tables in memory, standing
 // in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement the app sends by its
 // full text, written out again below, and throws on any other: a condition dropped from a query in the app fails the
 // tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
@@ -79,6 +79,7 @@ export type ScheduledJobRow = {
 };
 export type JobFailureRow = { id: number; job: string; at: Date; matchdayDate: string | null; problem: string };
 export type TeamRemovalRow = { lichessId: string; at: Date; problem: string };
+export type TournamentCancellationRow = { lichessTournamentId: string; date: string; problem: string };
 
 export const people = new Map<string, Person>();
 export const companies = new Map<string, CompanyRow>();
@@ -91,6 +92,7 @@ export const organiserLichess = new Map<string, OrganiserLichessRow>(); // at mo
 export const scheduledJobs = new Map<string, ScheduledJobRow>(); // by job
 export const jobFailures = new Map<string, JobFailureRow>(); // by String(id)
 export const teamRemovals = new Map<string, TeamRemovalRow>(); // by lichessId
+export const tournamentCancellations = new Map<string, TournamentCancellationRow>(); // by lichessTournamentId
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -127,7 +129,7 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games, seasons, skippedSundays, organiserLichess, scheduledJobs, jobFailures, teamRemovals };
+const tables = { people, companies, matchdays, results, games, seasons, skippedSundays, organiserLichess, scheduledJobs, jobFailures, teamRemovals, tournamentCancellations };
 let lastFailureId = 0;
 
 export function resetDb() {
@@ -143,6 +145,11 @@ const answer = (rows: object[] = [], rowCount = rows.length) => ({ rows, rowCoun
 const isMember = (person?: Person): person is Person =>
   !!person && person.publicDisplayConsentAt !== null && person.houseRulesAcceptedAt !== null && person.lichessId !== null;
 const aMinuteAgo = () => new Date(Date.now() - 60_000);
+// A date checked to be a Sunday (extract(isodow from ...) = 7), as migrations/003_seasons.sql has it.
+const sundayOnly = (date: string, table: string) => {
+  if (new Date(`${date}T12:00:00Z`).getUTCDay() !== 0) throw new Error(`new row for relation "${table}" violates check constraint`);
+  return date;
+};
 
 // Postgres's errors for a duplicate key and a missing referenced row, by their SQLSTATE codes.
 const violation = (code: "23505" | "23503", constraint: string) =>
@@ -528,9 +535,24 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   // addSeason
   [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing`]: (number, start) => {
     if (seasons.has(Number(number))) return answer([], 0);
-    seasons.set(Number(number), { number: Number(number), start });
+    seasons.set(Number(number), { number: Number(number), start: sundayOnly(start, "season") });
     return answer([], 1);
   },
+
+  // setStart: the Organiser's start for a Season, in place of any stored before.
+  [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do update set "start" = excluded."start"`]:
+    (number, start) => {
+      seasons.set(Number(number), { number: Number(number), start: sundayOnly(start, "season") });
+      return answer([], 1);
+    },
+
+  // setSkipped
+  [`insert into "skippedSunday" ("date") values ($1) on conflict do nothing`]: (date) => {
+    if (skippedSundays.has(date)) return answer([], 0);
+    skippedSundays.set(date, { date: sundayOnly(date, "skippedSunday") });
+    return answer([], 1);
+  },
+  [`delete from "skippedSunday" where "date" = $1`]: (date) => answer([], skippedSundays.delete(date) ? 1 : 0),
 
   // --- The Organiser's Lichess permission (lib/organiser-lichess.ts) ---
 
@@ -637,6 +659,67 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // teamRemovalDone
   [`delete from "teamRemoval" where "lichessId" = $1`]: (lichessId) => answer([], teamRemovals.delete(lichessId) ? 1 : 0),
+
+  // membersToRemove: every Member but the one given, in no order, as Postgres gives them without "order by": here the
+  // reverse of the order they were added.
+  [`select id, name, "lichessUsername" from "user" where id <> $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    (organiserId) =>
+      answer(
+        [...people.values()]
+          .filter((p) => p.id !== organiserId && isMember(p))
+          .reverse()
+          .map(({ id, name, lichessUsername }) => ({ id, name, lichessUsername })),
+      ),
+
+  // --- Changes to the schedule (lib/reschedule.ts) ---
+
+  // cancelStranded: the Matchdays with a tournament and no results.
+  [`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday" where "ingestedAt" is null and "lichessTournamentId" is not null`]:
+    () =>
+      answer(
+        [...matchdays.values()]
+          .filter((m) => m.ingestedAt === null && m.lichessTournamentId !== null)
+          .map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId })),
+      ),
+
+  // cancel: a tournament cleared from its Matchday, only while the Matchday still has it and no results. A Matchday
+  // with results or Games cannot go, as their foreign keys require.
+  [`delete from "matchday" where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is null`]: (date, id) => {
+    const row = matchdays.get(date);
+    if (!row || row.lichessTournamentId !== id || row.ingestedAt !== null) return answer([], 0);
+    if ([...results.values()].some((r) => r.matchdayDate === date)) throw violation("23503", "matchdayResult_matchdayDate_fkey");
+    if ([...games.values()].some((g) => g.matchdayDate === date)) throw violation("23503", "game_matchdayDate_fkey");
+    matchdays.delete(date);
+    return answer([], 1);
+  },
+
+  // cancel: a tournament to cancel by hand, kept once however often it is recorded.
+  [`insert into "tournamentCancellation" ("lichessTournamentId", "date", "problem") values ($1, $2, $3) on conflict ("lichessTournamentId") do update set "date" = excluded."date", "problem" = excluded."problem"`]:
+    (lichessTournamentId, date, problem) => {
+      tournamentCancellations.set(lichessTournamentId, { lichessTournamentId, date, problem: String(problem) });
+      return answer([], 1);
+    },
+
+  // tournamentCancellations: by Sunday.
+  [`select "lichessTournamentId", to_char("date", 'YYYY-MM-DD') as "date", "problem" from "tournamentCancellation" order by "date", "lichessTournamentId"`]:
+    () =>
+      answer(
+        [...tournamentCancellations.values()]
+          .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.lichessTournamentId < b.lichessTournamentId ? -1 : 1))
+          .map((row) => ({ ...row })),
+      ),
+
+  // tournamentCancelled
+  [`delete from "tournamentCancellation" where "lichessTournamentId" = $1`]: (id) =>
+    answer([], tournamentCancellations.delete(id) ? 1 : 0),
+
+  // cancelStranded: those kept for a Sunday that is a Matchday again. $1 is an array of dates.
+  [`delete from "tournamentCancellation" where "date" = any($1::date[])`]: (...params) => {
+    const [dates] = given<[string[]]>(params);
+    const gone = [...tournamentCancellations.values()].filter((row) => dates.includes(row.date));
+    for (const row of gone) tournamentCancellations.delete(row.lichessTournamentId);
+    return answer([], gone.length);
+  },
 
   // --- Season and all-time Leaderboards (lib/leaderboards.ts) ---
 

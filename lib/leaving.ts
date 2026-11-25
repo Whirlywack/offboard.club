@@ -1,5 +1,5 @@
 // Leaving the Club (#15): a person's account deleted, by themselves from their settings or, through the same
-// removeMember, by the system for any Member (the Organiser's screen for it is #16).
+// removeMember, by the Organiser from the Organiser page (#16).
 //
 // Deleting the "user" row deletes everything that is theirs, as the foreign keys of migrations/ have it: their sign-in
 // (sessions and LinkedIn account row), their Profile, their Lichess connection, their results, so that they leave every
@@ -15,6 +15,7 @@
 import { revoke } from "./connect-lichess";
 import { db } from "./db";
 import { kickFromTeam, timeLimit } from "./lichess";
+import { MEMBER_SQL } from "./members";
 import { organiserToken, refusedPermission, tokenConnectedBy } from "./organiser-lichess";
 import { inTransaction } from "./transaction";
 
@@ -46,6 +47,20 @@ export async function removeMember(memberId: string): Promise<boolean> {
   });
   if (deleted && ownToken) await revoke(ownToken, LICHESS_DEADLINE_MS);
   return deleted;
+}
+
+// Better Auth's ids are 32 characters; anything much longer, sent to the Organiser page, names nobody.
+export const MEMBER_ID_MAX = 64;
+
+export type Removable = { id: string; name: string; lichessUsername: string };
+
+// Every Member but the Organiser, by name, for the Organiser to choose whom to remove; each with their Lichess username,
+// which tells two of the same name apart. Sorted here, as English sorts names, not as the database's collation would.
+export async function membersToRemove(organiserId: string): Promise<Removable[]> {
+  const { rows } = await db.query<Removable>(`select id, name, "lichessUsername" from "user" where id <> $1 and ${MEMBER_SQL}`, [
+    organiserId,
+  ]);
+  return rows.sort((a, b) => a.name.localeCompare(b.name, "en") || a.lichessUsername.localeCompare(b.lichessUsername, "en"));
 }
 
 const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);

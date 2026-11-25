@@ -23,6 +23,9 @@ export const lichessUrl = (path: string) => new URL(path, base());
 // requests.
 export const lichessProfileUrl = (username: string) => `https://lichess.org/@/${encodeURIComponent(username)}`;
 export const lichessSwissUrl = (id: string) => `https://lichess.org/swiss/${encodeURIComponent(id)}`;
+// The page where the account that created a Swiss tournament edits it, and cancels it with "Cancel the tournament"
+// (lila: GET /swiss/{id}/edit, whose button posts to /swiss/{id}/terminate).
+export const lichessSwissEditUrl = (id: string) => `${lichessSwissUrl(id)}/edit`;
 // The page where a team's leader removes members from it by name (lila: GET /team/{id}/kick).
 export const lichessTeamKickUrl = (teamId: string) => `https://lichess.org/team/${encodeURIComponent(teamId)}/kick`;
 // A Game's page, with the board turned to one player's side.
@@ -32,7 +35,7 @@ export class LichessError extends Error {
   constructor(
     readonly request: string,
     readonly status: number,
-    detail?: string,
+    readonly detail?: string,
   ) {
     super(`Lichess answered ${request} with ${status}${detail ? `: ${detail}` : ""}`);
     this.name = "LichessError";
@@ -415,6 +418,16 @@ export const createSwiss = (token: string, teamId: string, form: Record<string, 
       return swiss;
     },
   );
+
+// POST /api/swiss/{id}/terminate, needing the tournament:write scope and the account that created the tournament (lila's
+// Swiss.apiTerminate and WithEditableSwiss): another account, or a finished tournament, is refused with 401 "This user
+// cannot edit this swiss", unlike a token Lichess does not have, which is 401 "No such token". A tournament that has
+// not started is deleted, one under way is ended (SwissApi.kill). Lichess having no such tournament, which may have
+// been cancelled already, is a 404, taken here as done.
+export const cancelSwiss = (token: string, id: string, signal?: AbortSignal) =>
+  lichessRequest(`/api/swiss/${encodeURIComponent(id)}/terminate`, { method: "POST", token, signal }, async (response) => {
+    if (!response.ok && response.status !== 404) throw await refused("POST /api/swiss/{id}/terminate", response);
+  });
 
 // GET /api/swiss/{id}/results: every participant's final standing, best first, as the ndjson text ingestMatchday reads.
 export const swissResults = (id: string, signal?: AbortSignal) =>

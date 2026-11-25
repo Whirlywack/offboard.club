@@ -12,15 +12,17 @@ What `package.json` and the config files do not tell you. Script names and their
 
 In a fresh worktree, in this order:
 
-1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated, and a `.env.local` in which every value is pretend, created only when the worktree has none. Ports come as a set (Postgres 55432, site 3100, fake Lichess 8089, fake Telegram 8189, each plus the same n), so two worktrees never share one. It refuses to start in a checkout whose `.env.local` holds real settings.
+1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated, and a `.env.local` in which every value is pretend, created only when the worktree has none. Ports come as a set (Postgres 55432, site 3100, fake Lichess 8089, fake Telegram 8189, each plus the same n), so two worktrees never share one; when a folder's set has been taken since, it moves to a free one and rewrites its block, and `.env.local` if that is the block. It runs a Postgres of CI's major version (the image in `ci.yml`) when one is on PATH, in Homebrew's folders (`/opt/homebrew/opt/postgresql@18/bin`) or in `/usr/lib/postgresql`, and says which; otherwise the newest it finds, and says that it is not CI's. A folder made by another major version is made again, empty. It refuses to start in a checkout whose `.env.local` holds real settings.
 2. The real-Postgres suites, if you need them, now: `ALLOW_DB_TESTS=1 DATABASE_URL=<the address it printed> pnpm test`. They expect empty tables, so they come before the seed. Once the first database is seeded, `pnpm db:start --dir .local-db-tests` starts a second, empty one.
 3. `pnpm dev:local`, `pnpm fake-lichess` and `pnpm fake-telegram`, each as a background task of your own: the site and the two fakes, all on 127.0.0.1 only, on the ports `db:start` named. The fake Telegram prints each message the bot posts. You stop them when you are done.
 4. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises through the site's own code.
 5. `pnpm seed:cookies` writes `.local-db/cookies.json`, a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`. The Organiser is `org`.
 6. `pnpm collect-results` runs the job that collects a Matchday's results once, against the fake Lichess, as Vercel's scheduled request would in production; the site's own endpoint refuses while it follows a fake Lichess. `pnpm seed season-over` leaves a finished Matchday on the fake Lichess for it to collect, and collecting it posts its Recap to the fake Telegram. `pnpm post-to-telegram <time>` runs the job that posts to the Telegram group as of that time; `pnpm seed` prints the two that post the next Matchday's reminders.
-7. `pnpm db:stop` stops that Postgres and nothing else.
+7. `pnpm db:stop` stops that Postgres and nothing else. `pnpm local:stop --dir .` stops everything you started in this worktree: each Postgres, the site and the fakes.
 
 Each script's header has the options. Each refuses a database that is not on this machine, and the seed, `pnpm collect-results` and `pnpm post-to-telegram` refuse one `db:start` did not make.
+
+`pnpm local:list` lists each Postgres, site and fake these tools started, from any worktree of this repository, that is still running: what it is, its port, its age and its folder, marked when the folder is gone. `pnpm local:stop` stops them all, which is for when no agent is working; `--dir <folder>` stops only those started there. Both know only what `db:start`, `dev:local` and the fakes recorded in the repository's git folder (`.git/offboard-local/`), each checked against its process's start time and command line, so neither can touch a Postgres `db:start` did not start, the owner's site, or another project's process. The fake Blob has no process of its own: it runs inside the tests that use it.
 
 The local site can still reach the real internet when something is clicked. "Sign in with LinkedIn" sends the browser to linkedin.com: use a seeded cookie. A seeded Profile's LinkedIn and Lichess links, and an Award's Replay, lead to the real sites, where the pretend names do not exist. Saving a new Company website makes the server fetch that website: use the seeded Companies.
 
@@ -32,7 +34,6 @@ The local site can still reach the real internet when something is clicked. "Sig
 - **Sign in with a seeded cookie**, read from `.local-db/cookies.json` in your shell and passed into the page: Playwright's code runner cannot read files.
 - **The scratchpad is shared too.** Start every scratch file's name with the ticket, `t<n>-`.
 - **A worktree's shell refuses long multi-line commands.** Put the lines in a helper script in the scratchpad and run that.
-- **If the ports `db:start` chose earlier are now taken** by another worktree, start a second folder with `--dir`.
 
 ## The owner's running site
 
@@ -43,7 +44,8 @@ A worktree starts with no `.env.local`, and the local environment above makes on
 ## Tests
 
 - `pnpm test` runs everything except the `*.postgres.test.ts` suites. Those run when `ALLOW_DB_TESTS=1` and `DATABASE_URL` are both set, each inside a transaction that is rolled back.
-- CI (`.github/workflows/ci.yml`) runs lint, typecheck, every migration on an empty Postgres 18 and all the tests on each pull request. A pull request merges when its `checks` job is green.
+- **Node.js is CI's without setting anything up.** pnpm runs every script and test on the Node.js of `package.json`'s `devEngines.runtime` (26), which `pnpm install` puts in `node_modules`; CI's setup-node reads the same field, and the Vercel project runs 26.x. The shell's own `node` (nvm's default here is 24) runs only what is started without pnpm, and the tests and the local tools then say in one line that it is not CI's.
+- CI (`.github/workflows/ci.yml`) runs lint, typecheck, every migration on an empty Postgres 18 and all the tests on each pull request, and on each push to a `ticket-*` branch that has no pull request open yet (`ticket-push.yml`, reported as `ci / checks`). A pull request merges when its own `checks` job is green.
 - **`lib/fake-db.ts`** stands in for the database in the other tests. It knows each statement the app sends by its full text and throws on any other, so a query you add or change is written out there too, with the keys and constraints the migration gives it.
 - **`lib/fixtures/fake-lichess.ts`** stands in for Lichess, behaving as lichess.org does where that differs from its published spec. `LICHESS_URL` points the site at it; it is ignored in production, and `pnpm ingest` and the endpoint that collects results refuse to run while it is set (`pnpm collect-results` is the local way in).
 - **`lib/fixtures/fake-blob.ts`** stands in for the Vercel Blob store the nightly backup writes to and deletes old dumps from, served on a local port that `VERCEL_BLOB_API_URL` points `@vercel/blob` at. No local block has `BLOB_READ_WRITE_TOKEN`, so nothing local backs up, and the seed refuses to run while it is set. `lib/backup.postgres.test.ts` makes databases of its own on the server in `DATABASE_URL`, and drops them.

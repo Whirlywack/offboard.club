@@ -4,18 +4,24 @@
 //
 //   pnpm db:start [--dir <dir>] [--port <port>]  Postgres in <dir> (default .local-db/, git-ignored) on 127.0.0.1, with a
 //     database named for <dir> alone, marked and migrated, and the env block in <dir>/offboard.env, from which a missing
-//     .env.local is created; an existing one is never changed. The ports come as a set, Postgres 55432 + n, the site
-//     3100 + n, the fake Lichess 8089 + n and the fake Telegram 8189 + n, for the first n whose four are free (or the n
-//     of --port).
+//     .env.local is created. The ports come as a set, Postgres 55432 + n, the site 3100 + n, the fake Lichess 8089 + n
+//     and the fake Telegram 8189 + n, for the first n whose four are free (or the n of --port). When <dir>'s ports have
+//     been taken since, it moves to the first free set, and its block, and .env.local when that is <dir>'s block, are
+//     rewritten to match; any other .env.local is never changed. The Postgres is of CI's major version (the image in
+//     .github/workflows/ci.yml) when one is installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else
+//     the newest there, which it says. A <dir> made by another major version, which cannot be opened, is made again.
 //   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
 //   pnpm dev:local [--dir <dir>]  `next dev` on 127.0.0.1 at the block's site port, in the foreground, once .env.local is
 //     <dir>'s block; beside it `pnpm fake-lichess` and `pnpm fake-telegram`, also in the foreground; then `pnpm seed`
 //     and `pnpm seed:cookies`.
+//   pnpm local:list  Each Postgres, site and fake these tools started, from any worktree of this repository, that is
+//     still running: what it is, its port, its age and its folder, even once that folder is gone.
+//   pnpm local:stop [--dir <dir>]  Stops each of them, or each started in <dir> or below it, and nothing else.
 // A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
-// `pnpm db:start --dir .local-db-tests`, which prints its address. Uses initdb and pg_ctl from PATH or /opt/homebrew/bin.
+// `pnpm db:start --dir .local-db-tests`, which prints its address.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,14 +78,22 @@ export function createOnce(path, text) {
 const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const ENV_LOCAL = `${root}/.env.local`;
 const HEADER = "# From `pnpm db:start`: a throwaway database on this machine, and every other value pretend.";
-const USAGE = "Usage: pnpm db:start [--dir <dir>] [--port <port>], pnpm db:stop [--dir <dir>] or pnpm dev:local [--dir <dir>].";
+const USAGE =
+  "Usage: pnpm db:start [--dir <dir>] [--port <port>], pnpm db:stop [--dir <dir>], pnpm dev:local [--dir <dir>], pnpm local:list or pnpm local:stop [--dir <dir>].";
 const say = (line) => console.log(line);
-const bin = (name) =>
-  [...(process.env.PATH ?? "").split(":"), "/opt/homebrew/bin"].map((dir) => `${dir}/${name}`).find(existsSync) ?? name;
-const run = (name, args, env = process.env) => execFileSync(bin(name), args, { stdio: ["ignore", 2, 2], env });
-const running = (dir) => spawnSync(bin("pg_ctl"), ["-D", dir, "status"], { stdio: "ignore" }).status === 0;
 const variables = (block) => Object.fromEntries([...block.matchAll(/^([A-Z_]+)=(.*)$/gm)].map(([, name, value]) => [name, value]));
 const portOf = (url) => Number(new URL(url).port);
+
+// pnpm runs every script on the Node.js of package.json's devEngines.runtime, which CI's setup-node reads too. A line
+// saying so, when this runs on another major version, such as by `node` or `npx` from a shell; null otherwise.
+export function nodeNotice() {
+  const file = `${root}/package.json`;
+  const wanted = existsSync(file) && /^\D*(\d+)/.exec(JSON.parse(readFileSync(file, "utf8")).devEngines?.runtime?.version ?? "")?.[1];
+  const major = process.versions.node.split(".")[0];
+  return wanted && major !== wanted
+    ? `This is Node.js ${process.versions.node}, and CI runs Node.js ${wanted}: run it through pnpm, which uses the Node.js of package.json's devEngines.runtime.`
+    : null;
+}
 
 // Taken when anything listens on it at any local address: macOS lets a server take 127.0.0.1:3100 while another holds
 // *:3100, so each is tried.
@@ -138,6 +152,20 @@ const block = ({ postgres, site, lichess, telegram }) =>
     "",
   ].join("\n");
 
+// The block's ports, as a set; a block made before the fake Telegram has none of its own.
+const portsOf = (text) => {
+  const env = variables(text);
+  return [env.DATABASE_URL, env.BETTER_AUTH_URL, env.LICHESS_URL, env.TELEGRAM_URL].filter(Boolean).map(portOf);
+};
+
+// The block with its ports moved to `set`, its database and secrets kept.
+const moved = (text, { postgres, site, lichess, telegram }) =>
+  text
+    .replace(/^(DATABASE_URL=postgres:\/\/offboard@127\.0\.0\.1:)\d+/m, `$1${postgres}`)
+    .replace(/^(BETTER_AUTH_URL=http:\/\/localhost:)\d+/m, `$1${site}`)
+    .replace(/^(LICHESS_URL=http:\/\/127\.0\.0\.1:)\d+/m, `$1${lichess}`)
+    .replace(/^(TELEGRAM_URL=http:\/\/127\.0\.0\.1:)\d+/m, `$1${telegram}`);
+
 // The checkout's .env.local; "" if it is there but cannot be read, such as a link to nothing; null if there is none.
 function envLocal() {
   if (!lstatSync(ENV_LOCAL, { throwIfNoEntry: false })) return null;
@@ -157,6 +185,87 @@ function blockOf(dir) {
     throw new Error(`${dir} holds a Postgres that db:start did not make, so it is left alone.`);
   return text;
 }
+
+// The Postgres that db:start runs: a folder holding initdb and pg_ctl, of CI's major version if one is installed, else
+// the newest installed, with its version and a line saying which it is.
+function postgres() {
+  const ci = /^\s*image: postgres:(\d+)\s*$/m.exec(readFileSync(`${root}/.github/workflows/ci.yml`, "utf8"))?.[1];
+  if (!ci) throw new Error("No `image: postgres:<major>` was found in .github/workflows/ci.yml.");
+  const brew = process.env.HOMEBREW_PREFIX ? [process.env.HOMEBREW_PREFIX] : ["/opt/homebrew", "/usr/local"];
+  const within = (dir, name) => (existsSync(dir) ? readdirSync(dir).filter((each) => name.test(each)).map((each) => `${dir}/${each}/bin`) : []);
+  const folders = [
+    ...(process.env.PATH ?? "").split(":"),
+    ...brew.flatMap((prefix) => [`${prefix}/bin`, ...within(`${prefix}/opt`, /^postgresql(@\d+)?$/)]),
+    ...within("/usr/lib/postgresql", /^\d+$/),
+  ];
+  const installed = [...new Set(folders)].flatMap((dir) => {
+    if (!dir.startsWith("/") || !existsSync(`${dir}/initdb`) || !existsSync(`${dir}/pg_ctl`)) return [];
+    const version = /\(PostgreSQL\) ((\d+)[.\d]*)/.exec(spawnSync(`${dir}/pg_ctl`, ["--version"], { encoding: "utf8" }).stdout ?? "");
+    return version ? [{ dir, version: version[1], major: version[2] }] : [];
+  });
+  const same = installed.find(({ major }) => major === ci);
+  const chosen = same ?? installed.sort((a, b) => b.major - a.major)[0];
+  const where = "on PATH, in Homebrew or in /usr/lib/postgresql";
+  if (!chosen) throw new Error(`No Postgres was found ${where}. CI runs Postgres ${ci}: brew install postgresql@${ci}.`);
+  const which = same
+    ? `Postgres ${chosen.version}, CI's major version, from ${chosen.dir}.`
+    : `Postgres ${chosen.version} from ${chosen.dir}, not CI's ${ci}, as no Postgres ${ci} was found ${where} (brew install postgresql@${ci}).`;
+  return { ...chosen, which };
+}
+
+const run = (file, args, env = process.env) => execFileSync(file, args, { stdio: ["ignore", 2, 2], env });
+const running = (pg, dir) => spawnSync(`${pg.dir}/pg_ctl`, ["-D", dir, "status"], { stdio: "ignore" }).status === 0;
+const madeBy = (dir) => (existsSync(`${dir}/PG_VERSION`) ? readFileSync(`${dir}/PG_VERSION`, "utf8").trim() : null);
+
+// Each Postgres, site and fake these tools start is recorded in the repository's git folder, which every worktree of
+// it shares and which outlives a worktree's folder, as <pid>.json: what it is, its port, its folder, and the start time
+// and command line ps gives it. A record counts only while a process of that pid has both still, so that nothing else
+// is ever listed or stopped, whatever has taken its pid since.
+function registry() {
+  const git = spawnSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
+  if (git.status !== 0) throw new Error(`${root} is not a git checkout, and these tools record what they start in its git folder.`);
+  return `${git.stdout.trim()}/offboard-local`;
+}
+
+// pid → when it started and its command line, for each of `pids` that is running.
+function processes(pids) {
+  const { stdout } = spawnSync("ps", ["-ww", "-o", "pid=,lstart=,command=", "-p", pids.join(",")], {
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  return new Map([...stdout.matchAll(/^ *(\d+) +(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/gm)].map(([, pid, start, command]) => [Number(pid), { start, command }]));
+}
+
+// Records the process `pid` as `kind`, on `port`, started in `folder`. The fakes record themselves once listening.
+export function record(kind, port, { folder = root, pid = process.pid } = {}) {
+  const found = processes([pid]).get(pid);
+  if (!found) throw new Error(`${kind} (process ${pid}) is not running, so it was not recorded.`);
+  const dir = registry();
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(`${dir}/${pid}.tmp`, JSON.stringify({ kind, port, folder, pid, ...found }));
+  renameSync(`${dir}/${pid}.tmp`, `${dir}/${pid}.json`);
+}
+
+// Each record whose process is still running, oldest first; the others' files are removed.
+function recorded() {
+  const dir = registry();
+  const records = existsSync(dir)
+    ? readdirSync(dir).flatMap((name) => (name.endsWith(".json") ? [{ file: `${dir}/${name}`, ...JSON.parse(readFileSync(`${dir}/${name}`, "utf8")) }] : []))
+    : [];
+  const live = records.length ? processes(records.map(({ pid }) => pid)) : new Map();
+  const still = records.filter(({ pid, start, command }) => live.get(pid)?.start === start && live.get(pid)?.command === command);
+  for (const { file } of records) if (!still.some((each) => each.file === file)) rmSync(file, { force: true });
+  return still.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+}
+
+function age(start) {
+  const minutes = Math.floor((Date.now() - Date.parse(start)) / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  return `${Math.floor(minutes / (24 * 60))} d ${Math.floor(minutes / 60) % 24} h`;
+}
+const line = ({ kind, port, start, folder }) =>
+  `${kind.padEnd(13)} ${String(port).padEnd(6)} ${age(start).padEnd(13)} ${folder}${existsSync(folder) ? "" : " (folder gone)"}`;
 
 // Creates the block's database in initdb's own "postgres", by the address alone, and marks it, unless it is there.
 async function ensureDatabase(url) {
@@ -180,19 +289,39 @@ async function start(dir, port) {
     (process.env.DATABASE_URL && notLocal(process.env.DATABASE_URL) && `Refusing to start beside a real DATABASE_URL in the environment: ${notLocal(process.env.DATABASE_URL)}. Unset it first.`);
   if (problem) throw new Error(problem);
   const saved = blockOf(dir);
-  const text = saved ?? block(await freeSet(port));
-  const env = variables(text);
-  const postgres = portOf(env.DATABASE_URL);
-  if (port !== undefined && Number(port) !== postgres) throw new Error(`${dir} uses port ${postgres}: leave out --port, or give another --dir.`);
-  if (!saved) {
-    run("initdb", ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8", "--no-instructions"]);
-    writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
-  }
-  if (!running(dir)) {
-    if (await taken(postgres)) throw new Error(`Port ${postgres}, which ${dir} uses, is taken.`);
+  if (saved && port !== undefined && Number(port) !== portOf(variables(saved).DATABASE_URL))
+    throw new Error(`${dir} uses port ${portOf(variables(saved).DATABASE_URL)}: leave out --port, or give another --dir.`);
+  const pg = postgres();
+  let text = saved ?? block(await freeSet(port));
+  if (saved && running(pg, dir)) {
+    const made = madeBy(dir);
+    say(made === pg.major ? `Postgres ${made} was running already.` : `Postgres ${made} was running already, not ${pg.major}: pnpm db:stop, then pnpm db:start, makes it again on ${pg.major}.`);
+  } else {
+    say(pg.which);
+    if (saved && (await Promise.all(portsOf(saved).map(taken))).some(Boolean)) {
+      text = moved(saved, await freeSet(port));
+      say(`The ports ${dir} had are taken now, so it has the first free set: ${portsOf(text).join(", ")}.`);
+    }
+    const made = saved && madeBy(dir);
+    const fresh = made !== pg.major;
+    if (fresh) {
+      // A data folder opens only in the major version that made it. This one is throwaway, so it is made again, empty.
+      if (saved) rmSync(dir, { recursive: true, force: true });
+      if (made) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
+      run(`${pg.dir}/initdb`, ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8", "--no-instructions"]);
+    }
+    if (fresh || text !== saved) writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
+    if (saved && text !== saved && envLocal() === saved) {
+      writeFileSync(ENV_LOCAL, text, { mode: 0o600 });
+      say(".env.local, which was its block, has the new ports.");
+    }
     // Scratch paths are too long for a Unix socket, so TCP on 127.0.0.1 only.
-    run("pg_ctl", ["-D", dir, "-l", `${dir}/postgres.log`, "-o", `-c listen_addresses=127.0.0.1 -p ${postgres} -c unix_socket_directories=''`, "-w", "start"]);
+    const options = `-c listen_addresses=127.0.0.1 -p ${portOf(variables(text).DATABASE_URL)} -c unix_socket_directories=''`;
+    run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", `${dir}/postgres.log`, "-o", options, "-w", "start"]);
   }
+  const env = variables(text);
+  const pid = Number(readFileSync(`${dir}/postmaster.pid`, "utf8").split("\n")[0]);
+  record("Postgres", portOf(env.DATABASE_URL), { folder: realpathSync(dir), pid });
   await ensureDatabase(env.DATABASE_URL);
   run(process.execPath, [`${root}/scripts/migrate.mjs`], { ...process.env, DATABASE_URL: env.DATABASE_URL });
   const created = createOnce(ENV_LOCAL, text);
@@ -204,43 +333,78 @@ async function start(dir, port) {
   say(created ? `.env.local was created from ${dir}/offboard.env.` : ".env.local is this block already.");
   const telegram = env.TELEGRAM_URL ? ` and pnpm fake-telegram (${env.TELEGRAM_URL})` : "";
   say(`Next, each in the foreground, as a background task of your own: pnpm dev:local (${env.BETTER_AUTH_URL}), pnpm fake-lichess (${env.LICHESS_URL})${telegram}.`);
-  say("Then pnpm seed, and pnpm seed:cookies to sign in as a seeded person. pnpm db:stop stops Postgres; stop the others yourself.");
+  say("Then pnpm seed, and pnpm seed:cookies to sign in as a seeded person. pnpm local:stop --dir . stops all of them.");
 }
 
 function stop(dir) {
   blockOf(dir);
-  if (!running(dir)) return say(`No Postgres is running in ${dir}.`);
-  run("pg_ctl", ["-D", dir, "-m", "fast", "-w", "stop"]);
+  const pg = postgres();
+  if (!running(pg, dir)) return say(`No Postgres is running in ${dir}.`);
+  run(`${pg.dir}/pg_ctl`, ["-D", dir, "-m", "fast", "-w", "stop"]);
 }
 
-// `next dev` in the foreground, bound to this machine alone, with the signals that stop this process passed on to it.
+// `next dev` in the foreground, bound to this machine alone, on this Node.js, with the signals that stop this process
+// passed on to it.
 async function dev(dir) {
   const text = blockOf(dir);
   if (!text || envLocal() !== text) throw new Error(`.env.local is not ${dir}/offboard.env, so the site was not started: run pnpm db:start first.`);
   const site = portOf(variables(text).BETTER_AUTH_URL);
   if (await taken(site)) throw new Error(`Port ${site}, the site's, is taken.`);
-  const child = spawn(`${root}/node_modules/.bin/next`, ["dev", "--hostname", "127.0.0.1", "--port", String(site)], { cwd: root, stdio: "inherit" });
+  const next = `${root}/node_modules/next/dist/bin/next`;
+  const child = spawn(process.execPath, [next, "dev", "--hostname", "127.0.0.1", "--port", String(site)], { cwd: root, stdio: "inherit" });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => child.kill(signal));
+  record("site", site, { pid: child.pid });
   return new Promise((done) => child.on("exit", (code) => done(code ?? 1)));
+}
+
+function list() {
+  const all = recorded();
+  if (!all.length) return say("Nothing these tools started is running.");
+  for (const each of all) say(line(each));
+}
+
+// Postgres is sent SIGINT, its fast shutdown, as pg_ctl stop -m fast sends; the site and the fakes SIGTERM.
+async function stopAll(dir) {
+  const within = dir && existsSync(dir) ? realpathSync(dir) : dir; // the records' folders are real paths
+  const chosen = recorded().filter(({ folder }) => within === undefined || folder === within || folder.startsWith(`${within}/`));
+  if (!chosen.length) return say(`Nothing these tools started is running${dir === undefined ? "" : ` in ${dir}`}.`);
+  for (const { pid, kind } of chosen)
+    try {
+      process.kill(pid, kind === "Postgres" ? "SIGINT" : "SIGTERM");
+    } catch {
+      // it has stopped since
+    }
+  let left = chosen;
+  for (let waited = 0; left.length && waited < 20_000; waited += 100) {
+    await new Promise((done) => setTimeout(done, 100));
+    const live = processes(left.map(({ pid }) => pid));
+    left = left.filter(({ pid, start }) => live.get(pid)?.start === start);
+  }
+  for (const each of chosen) say(`${left.includes(each) ? "Still running after 20 s:" : "Stopped:"} ${line(each)}`);
+  return left.length ? 1 : 0;
 }
 
 // Run, not imported: the seed and the tests import what is exported above.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   // No PG* variable may send a child process anywhere but the address it is given.
   for (const name of Object.keys(process.env)) if (name.startsWith("PG")) delete process.env[name];
+  const notice = nodeNotice();
+  if (notice) console.error(notice);
+  const commands = { start, stop, dev, list, "stop-all": stopAll };
+  const takes = { start: ["--dir", "--port"], stop: ["--dir"], dev: ["--dir"], list: [], "stop-all": ["--dir"] };
   const [command, ...rest] = process.argv.slice(2);
   const options = {};
-  let valid = Object.hasOwn({ start, stop, dev }, command ?? "");
+  let valid = Object.hasOwn(commands, command ?? "");
   for (let i = 0; i < rest.length && valid; i += 2)
-    if (["--dir", ...(command === "start" ? ["--port"] : [])].includes(rest[i]) && rest[i + 1] !== undefined) options[rest[i]] = rest[i + 1];
+    if (takes[command].includes(rest[i]) && rest[i + 1] !== undefined) options[rest[i]] = rest[i + 1];
     else valid = false;
   if (!valid) {
     console.error(USAGE);
     process.exit(1);
   }
-  const dir = resolve(options["--dir"] ?? `${root}/.local-db`);
+  const dir = options["--dir"] === undefined ? (command === "stop-all" ? undefined : `${root}/.local-db`) : resolve(options["--dir"]);
   Promise.resolve()
-    .then(() => ({ start, stop, dev })[command](dir, options["--port"]))
+    .then(() => commands[command](dir, options["--port"]))
     .then(
       (code) => process.exit(code ?? 0),
       (error) => {

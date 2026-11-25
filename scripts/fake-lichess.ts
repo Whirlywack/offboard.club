@@ -14,7 +14,7 @@
 // Member switched from, from the team is refused, and the Organiser page lists that account to remove by hand.
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { notLocal } from "./local-db.mjs";
+import { notLocal, record } from "./local-db.mjs";
 import { db } from "@/lib/db";
 import { createFakeLichess, type FakeAccount, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 
@@ -103,4 +103,7 @@ createServer(async (request, reply) => {
     console.error(`The fake Lichess could not listen at ${address.origin}: ${error.message}`);
     process.exit(1);
   })
-  .listen(Number(address.port), "127.0.0.1", () => console.log(`The fake Lichess is at ${address.origin}.`));
+  .listen(Number(address.port), "127.0.0.1", () => {
+    record("fake Lichess", Number(address.port)); // for pnpm local:list and pnpm local:stop
+    console.log(`The fake Lichess is at ${address.origin}.`);
+  });

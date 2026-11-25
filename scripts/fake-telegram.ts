@@ -6,6 +6,7 @@
 // alone. Then `pnpm post-to-telegram <time>` posts what is due at that time, and `pnpm collect-results` the Recap of
 // the Matchday it collects.
 import { createServer } from "node:http";
+import { record } from "./local-db.mjs";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 
 if (process.argv.length > 2) {
@@ -43,4 +44,7 @@ createServer(async (request, reply) => {
     console.error(`The fake Telegram could not listen at ${address.origin}: ${error.message}`);
     process.exit(1);
   })
-  .listen(Number(address.port), "127.0.0.1", () => console.log(`The fake Telegram is at ${address.origin}.`));
+  .listen(Number(address.port), "127.0.0.1", () => {
+    record("fake Telegram", Number(address.port)); // for pnpm local:list and pnpm local:stop
+    console.log(`The fake Telegram is at ${address.origin}.`);
+  });

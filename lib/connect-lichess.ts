@@ -203,13 +203,21 @@ async function connectedToSomeoneElse(lichessId: string, personId: string): Prom
 // the meantime.
 async function saveConnection(personId: string, account: LichessAccount): Promise<boolean> {
   try {
-    await db.query(
+    const { rowCount } = await db.query(
       `update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
          "lichessMarked" = false, "lichessClosed" = false,
          "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now()
        where id = $1`,
       [personId, account.id, account.username, account.blitzRating],
     );
+    // They deleted their account, in another tab, while the account joined the team: nobody is left whose leaving
+    // would remove it, so it is kept for the Organiser to remove by hand, as removeMember keeps one (lib/leaving.ts).
+    if (!rowCount)
+      await db.query(
+        `insert into "teamRemoval" ("lichessId", "problem") values ($1, $2)
+         on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`,
+        [account.id, "Its owner deleted their account on Offboard while it was joining the Club's team, so it was never connected."],
+      );
     return true;
   } catch (error) {
     if ((error as { code?: string }).code === "23505") return false; // unique_violation on "lichessId"

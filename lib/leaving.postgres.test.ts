@@ -114,4 +114,30 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);
+
+  it("deletes everything of someone part-way through signing up, and asks nothing of Lichess (#43)", async () => {
+    // With the Club's team configured, so that only the missing Lichess account keeps the site from asking. Some calls
+    // swallow a failed request (revoke), so the requests are counted.
+    vi.stubEnv("LICHESS_TEAM_ID", "pretend-team");
+    const fetch = vi.fn(() => Promise.reject(new Error("nothing may reach Lichess")));
+    vi.stubGlobal("fetch", fetch);
+    const removalsBefore = await teamRemovals();
+    // One has not agreed yet; the other has agreed and not connected Lichess. Each signed in once with LinkedIn.
+    for (const [id, agreed] of [["leaving-test-new", false], ["leaving-test-half", true]] as const) {
+      await run(
+        `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt")
+         values ($1, $1, $2, true, $3, $3)`,
+        [id, `${id}@example.invalid`, agreed ? new Date() : null],
+      );
+      await run(`insert into "session" (id, "expiresAt", token, "updatedAt", "userId") values ($1, now() + interval '1 day', $1, now(), $2)`, [`${id}-session`, id]);
+      await run(`insert into "account" (id, "accountId", "providerId", "userId", "updatedAt") values ($1, $1, 'linkedin', $2, now())`, [`${id}-account`, id]);
+      expect(await removeMember(id)).toBe(true);
+      expect(await count(`select 1 from "user" where id = $1`, [id])).toBe(0);
+      for (const table of ["session", "account"]) expect(await count(`select 1 from "${table}" where "userId" = $1`, [id])).toBe(0);
+    }
+    expect(await teamRemovals()).toEqual(removalsBefore);
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  }, 60_000);
 });

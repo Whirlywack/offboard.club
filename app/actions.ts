@@ -5,9 +5,10 @@ import { redirect } from "next/navigation";
 import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed } from "@/lib/auth";
 import { companyForWebsite } from "@/lib/companies";
 import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect-lichess";
-import { consentProblem } from "@/lib/consent";
+import { consentProblem, mustWelcome } from "@/lib/consent";
 import { db } from "@/lib/db";
 import { removeMember } from "@/lib/leaving";
+import { mustConnectLichess } from "@/lib/members";
 import { readProfileForm } from "@/lib/profile";
 
 // Returns a message to show when sign-in cannot start; otherwise goes to LinkedIn.
@@ -94,6 +95,18 @@ export async function saveProfile(_previous: ProfileFormState, form: FormData): 
 export async function leaveClub(): Promise<void> {
   const { id } = await requireSignedUp();
   await removeMember(id);
+  await auth.api.signOut({ headers: await headers() });
+  redirect("/left");
+}
+
+// The same for someone part-way through signing up, from the page that confirms it for them (app/welcome/leave). That
+// page says nothing of what a Member loses, so anyone who has become a Member since it was shown, in another tab say,
+// is sent to their own confirmation instead, with nothing deleted.
+export async function deleteSignUp(): Promise<void> {
+  const session = await getSession();
+  if (!session) redirect("/");
+  if (!mustWelcome(session.user) && !mustConnectLichess(session.user)) redirect("/profile/leave");
+  await removeMember(session.user.id);
   await auth.api.signOut({ headers: await headers() });
   redirect("/left");
 }

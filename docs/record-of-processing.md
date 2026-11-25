@@ -48,7 +48,7 @@ USA, through Vercel (EU-U.S. Data Privacy Framework and 2021 SCCs, Module Two) a
 | Data | Kept |
 |---|---|
 | Account, Profile, Lichess connection, results, acceptances | While a Member. Leaving deletes the `user` row at once, and with it the sessions, the LinkedIn `account` row and the results; the site then asks Lichess to remove the connected account from the Club's team (`lib/leaving.ts`, #15) |
-| People who signed in but did not finish joining | Their LinkedIn data, sessions and any acceptances, until they ask the Organiser to delete them. No inactive-account purge (#34 decision) |
+| People who signed in but did not finish joining | Their LinkedIn data, sessions and any acceptances, until they delete their account from the sign-up step they stopped at, which deletes the `user` row as leaving does, and with it the sessions and the LinkedIn `account` row; nothing is asked of Lichess, as no account was connected (`app/welcome/leave`, #43). No inactive-account purge (#34 decision) |
 | Games of someone who has left | Kept, side nulled, including through a redo of the Matchday |
 | Sessions with IP and user agent | Cookie 7 days from sign-in. The row's expiry moves on as the site is used, and the row stays until signed out or the account is deleted (expired rows are not purged) |
 | OAuth state, pending-Lichess cookie | 5 to 10 minutes |

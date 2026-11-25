@@ -97,6 +97,11 @@ describe("the privacy and terms page", () => {
     const howLong = section(html, "how-long");
     expect(howLong).toContain(markup("Your account, Profile, Lichess connection, results and acceptances: while you're a Member."));
     expect(howLong).toContain("until the Organiser has removed it by hand");
+    // Someone who did not finish joining deletes what is kept about them themselves (#43).
+    expect(howLong).toContain(
+      markup("If you signed in but didn't finish joining: what came from LinkedIn, your sign-in records and any acceptances, until you choose “Delete your account” on the sign-up step you stopped at."),
+    );
+    expect(howLong).not.toContain("ask the Organiser");
     const leaving = section(html, "leaving");
     expect(leaving).toContain('To leave, choose “Delete your account” on <a href="/profile">Edit your Profile</a>');
     expect(leaving).toContain("results and acceptances are deleted at once");

@@ -1,36 +1,23 @@
 // The standard local Club: invented people and history, dated from today, so that every state of every page can be seen
-// in a browser. Only for a database `pnpm db:start` made on this machine: it refuses any other DATABASE_URL, a database
-// without db:start's mark, and one holding people it did not make. It reads the block db:start wrote to .env.local.
+// in a browser. Only on a database `pnpm db:start` made: it refuses any other DATABASE_URL, a database without its mark,
+// and one holding people it did not make. It reads the block db:start wrote to .env.local.
 //
-//   pnpm seed [club|season-over|empty]
-//     Empties the database, fills it with one scenario (default club) and lists who is in it, then checks through the
-//     site's own code that every state the scenario promises is there, and exits with 1 if one is not.
-//   pnpm seed:cookies
-//     Writes each seeded person's session cookie, signed with BETTER_AUTH_SECRET and keyed by their id, to cookies.json
-//     in the database's directory, and says where, for Playwright: context.addCookies([cookies.ana]).
-//   pnpm seed --help
-//     Prints this.
+//   pnpm seed [club|season-over|empty]  empties the database, seeds one scenario (default club), lists who is in it, then
+//                                       checks through the site's own code that every state it promises is there
+//   pnpm seed:cookies                   writes each seeded person's session cookie, keyed by id, to cookies.json beside
+//                                       the database, for Playwright: context.addCookies([cookies.ana])
 //
-// The scenarios, which one database cannot hold at once:
-//   club         Season 1 over with one champion; Season 2 over with a Sunday not played and a shared title; Season 3
-//                under way with a skipped Sunday; a warm-up Matchday before Season 1, all draws, and one in the week
-//                off after it that only people now off the Leaderboards played. The Organiser has connected Lichess
-//                and the hourly job last ran without failing.
-//   season-over  Season 1 just over, so the home page names its champion; Season 2's first Matchday played but its
-//                results not in yet. The Organiser's Lichess permission has expired, and the job's failure is recorded.
-//   empty        Two sign-ups short of the sixteen Season 1 waits for: no Matchday, Recap or Leaderboard yet, and
-//                nothing connected on the Organiser page.
-// Each also has someone part-way through signing up at each of the first two welcome steps, step1 and step2, who can
-// finish through the fake Lichess; in empty, the two of them make the sixteen that schedule Season 1. The Organiser is
-// org, whose permission and job runs are written by the site's own code against an in-process fake Lichess.
+// club: Season 1 over with one champion, Season 2 over with a Sunday not played and a shared title, Season 3 under way
+// with a skipped Sunday, a warm-up before Season 1 (all draws) and a Matchday in the week off that nobody now on the
+// Leaderboards played; the Organiser (org) connected and the hourly job run. season-over: Season 1 just over, its champion
+// on the home page, Season 2's first results not in, the Organiser's permission expired and the job's failure recorded.
+// empty: two sign-ups short of sixteen, nothing played or connected. Each has step1 and step2 part-way through signing up.
 //
-// Names are chess puns and faces are drawings, so that nobody could take them for real people. Seeded links still lead
-// to real sites if clicked: a Profile's LinkedIn link to linkedin.com, at an address LinkedIn does not allow (it has
-// underscores and the word "linkedin" in it); Lichess names, Games and tournaments to lichess.org, under names Lichess
-// does not allow (a double hyphen) and ids of the wrong length, except the next Matchday's tournament id, which is
-// random; and "Replay the Game" loads lichess.org's own board, which finds no such Game.
+// Names are chess puns and faces drawings. Seeded links still reach real sites if clicked, under names they do not allow:
+// LinkedIn (underscores and "linkedin" in the handle), Lichess names (a double hyphen), Games and tournaments (ids of the
+// wrong length, but for the next Matchday's, which is random); and "Replay the Game" loads lichess.org's board.
 import { createHmac } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { MARK, notLocal } from "./local-db.mjs";
 import { auth, getProfile } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
@@ -55,19 +42,12 @@ type Person = {
   about?: string;
   rating?: number | null; // blitz when connected; null for an account that had none
   step?: 1 | 2; // part-way through signing up: 1 has not agreed yet, 2 has agreed but not connected Lichess
-  plays?: RegExp; // the Matchdays they play, by tag
-  sometimes?: true; // and then only about three in four of them
-  noGames?: true; // their opponents were not Members
+  plays?: RegExp; // the Matchdays they play, by tag; `sometimes`, only three in four; `noGames`, against non-Members only
   joins?: string; // the tag of the Matchday they joined just before, or "lately"; anyone else joined before Season 1
-  company?: string;
   formerly?: string; // their Company until Season 1 ended
-  position?: string;
-  openTo?: string;
-  linkedIn?: true;
   photo?: string; // the background of a drawn face, or "broken"
-  marked?: true;
-  closed?: true;
-  leaves?: true;
+  company?: string; position?: string; openTo?: string; linkedIn?: true;
+  sometimes?: true; noGames?: true; marked?: true; closed?: true; leaves?: true;
 };
 
 const ORGANISER = "org";
@@ -119,9 +99,9 @@ const PEOPLE: Person[] = [
 // Each scenario's Matchdays by tag, "s2m4" being Season 2's fourth, and how many weeks before the latest Sunday
 // Season 1 starts. Season 2's fourth is missing from club: it was never played. Sundays not listed have no Matchday.
 const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[] }> = {
+  // skip: weeks after Season 1's start, between Season 3's first two Matchdays
   club: {
-    weeks: 17,
-    skip: 15, // weeks after Season 1's start: between Season 3's first two Matchdays
+    weeks: 17, skip: 15,
     tags: ["warmup", "s1m1", "s1m2", "s1m3", "s1m4", "s1m5", "s1m6", "off", "s2m1", "s2m2", "s2m3", "s2m5", "s2m6", "s3m1", "s3m2", "s3m3"],
   },
   "season-over": { weeks: 7, tags: ["warmup", "s1m1", "s1m2", "s1m3", "s1m4", "s1m5", "s1m6"] },
@@ -342,7 +322,6 @@ async function organiser(name: string) {
   const lichess = createFakeLichess({ teamId: process.env.LICHESS_TEAM_ID!, teamPassword: "", accounts: [{ id: lichessId(org), username: lichessName(org) }] });
   lichess.team.leaders.add(lichessId(org));
   lichess.signedInAs = lichessId(org);
-  process.env.LICHESS_URL ||= "http://127.0.0.1:9"; // never lichess.org, even if fetch were not the fake's
   const realFetch = globalThis.fetch;
   globalThis.fetch = lichess.fetch as typeof fetch;
   try {
@@ -363,22 +342,17 @@ async function organiser(name: string) {
 // What each scenario promises, asked of the database through the same code the pages use.
 async function check(name: string) {
   const people = peopleOf(name).filter((p) => !p.leaves);
-  const sessions = new Map(
-    await Promise.all(
-      people.map(async (p) => {
-        const { name: cookieName, value } = cookie(p);
-        const session = await auth.api.getSession({ headers: new Headers({ cookie: `${cookieName}=${value}` }) });
-        return [p.id, session?.user] as const;
-      }),
-    ),
-  );
+  const signIn = async (p: Person) => {
+    const { name: cookieName, value } = cookie(p);
+    return [p.id, (await auth.api.getSession({ headers: new Headers({ cookie: `${cookieName}=${value}` }) }))?.user] as const;
+  };
+  const sessions = new Map(await Promise.all(people.map(signIn)));
   const user = (id: string) => sessions.get(id)!;
   const reading = await readLeaderboards(now);
   const season = (n: number) => getSeason(n, reading);
   const played = (s: Awaited<ReturnType<typeof season>>) => s?.matchdays?.filter((m) => m.ingested).length ?? 0;
   const recaps = (await Promise.all((await recapDates()).map(getRecap))).filter((r) => r !== null);
   const allTime = await getAllTime();
-  const members = await countSignUps();
   const [permission, run, failure] = await Promise.all([organiserPermission(), lastRun(JOB), lastFailure()]);
   const promises: [string, boolean][] = [
     ["every seeded person signs in with their cookie, as Better Auth reads it",
@@ -389,7 +363,7 @@ async function check(name: string) {
   ];
   if (name === "empty") {
     promises.push(
-      ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(members) === 2],
+      ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(await countSignUps()) === 2],
       ["no Season scheduled, so no next Matchday", (await upcomingMatchday(now)) === null && (await season(1))?.matchdays === null],
       ["no Recaps and an empty all-time Leaderboard", recaps.length === 0 && allTime.length === 0],
       ["nothing on the Organiser page: no permission, no run, no failure", permission === null && run === null && failure === null],
@@ -409,7 +383,6 @@ async function check(name: string) {
     const company = (id: string, rows: { memberId: string; company: { domain: string } | null }[]) =>
       rows.find((row) => row.memberId === id)?.company?.domain;
     promises.push(
-      ["at least sixteen Members", members >= MEMBERS_TO_START],
       ["Season 1 starts when its sixteenth sign-up scheduled it",
         firstSeasonStart(await signUpTimes()) === (await readSchedule(now)).seasons.find((s) => s.number === 1)?.start],
       ["Season 1 over, all six Matchdays played, one champion", !!s1?.over && played(s1) === 6 && s1.champions.length === 1],
@@ -479,9 +452,8 @@ async function cookies() {
 
 // Why the seed must not run as asked, before it reads anything; null if it may.
 function problem(args: string[]) {
-  const unknown = args.find((arg) => !Object.hasOwn(SCENARIOS, arg) && arg !== "--cookies");
-  if (unknown) return `Unknown argument ${unknown}: give one of ${Object.keys(SCENARIOS).join(", ")}, or --cookies. Run with --help.`;
-  if (args.length > 1) return "Give one scenario, or --cookies.";
+  if (args.length > 1 || args.some((arg) => !Object.hasOwn(SCENARIOS, arg) && arg !== "--cookies"))
+    return "Usage: pnpm seed [club|season-over|empty], or pnpm seed:cookies.";
   const local = notLocal(process.env.DATABASE_URL);
   if (local) return `Refusing: ${local}. The seed only uses a database pnpm db:start made on this machine.`;
   const missing = ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "LICHESS_TEAM_ID"].find((name) => !process.env[name]);
@@ -505,10 +477,6 @@ async function main(args: string[]) {
   return check(name);
 }
 
-if (process.argv.includes("--help")) {
-  console.log(readFileSync(process.argv[1], "utf8").match(/^(\/\/.*\n)+/)![0].replace(/^\/\/ ?/gm, ""));
-  process.exit(0);
-}
 main(process.argv.slice(2))
   .catch((error: Error) => {
     console.error(error.message);

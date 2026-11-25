@@ -1,7 +1,9 @@
 // The local tools (scripts/local-db.mjs, seed.ts, fake-lichess.ts) refuse anything real before they touch it: a
-// database not on this machine, a checkout whose .env.local holds real settings, and a database db:start did not make.
+// database not on this machine, a checkout whose .env.local holds real settings, a Postgres db:start did not make, and
+// a database without db:start's mark. Each run of db:start here is in a temporary checkout, so that this checkout's own
+// .env.local, the owner's real one included, is never read or changed.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -17,22 +19,10 @@ describe("which databases count as on this machine", () => {
   });
 
   it("refuses any other host, a host in the query string, which pg prefers, spaces and anything not postgres://", () => {
-    for (const url of [
-      REAL,
-      "postgres://u@localhost.example.com/db",
-      "postgres://u@127.0.0.2/db",
-      "postgres://u@localhost/db?host=ep-pretend-123.neon.tech",
-      ` ${LOCAL}`,
-      `${LOCAL} `,
-      "postgres://u@local\thost/db",
-      "postgres:///db",
-      "postgres://u@%2Ftmp/db",
-      "//localhost/db",
-      "mysql://localhost/db",
-      "",
-      undefined,
-    ])
-      expect(notLocal(url)).toMatch(/^DATABASE_URL/);
+    const refused = [REAL, "postgres://u@localhost.example.com/db", "postgres://u@127.0.0.2/db", "postgres://u@%2Ftmp/db"];
+    refused.push("postgres://u@localhost/db?host=ep-pretend-123.neon.tech", ` ${LOCAL}`, `${LOCAL} `, "postgres://u@local\thost/db");
+    refused.push("postgres:///db", "//localhost/db", "mysql://localhost/db", "");
+    for (const url of [...refused, undefined]) expect(notLocal(url)).toMatch(/^DATABASE_URL/);
   });
 });
 
@@ -41,13 +31,12 @@ describe("a checkout's .env.local", () => {
     expect(checkoutProblem(null)).toBeNull();
     expect(checkoutProblem(`BETTER_AUTH_URL=http://localhost:3100\nDATABASE_URL=${LOCAL}\n`)).toBeNull();
     expect(checkoutProblem(`DATABASE_URL="${LOCAL}"\n`)).toBeNull();
-    for (const text of [`DATABASE_URL=${REAL}\n`, `DATABASE_URL="${REAL}"\n`, 'LINKEDIN_CLIENT_ID="a-pretend-id"\n'])
+    for (const text of [`DATABASE_URL=${REAL}\n`, `DATABASE_URL="${REAL}"\n`, 'LINKEDIN_CLIENT_ID="a-pretend-id"\n', ""])
       expect(checkoutProblem(text)).toMatch(/^This checkout's \.env\.local holds real settings/);
   });
 
   it("is created when there is none, and an existing one is never changed", () => {
-    const dir = mkdtempSync(join(tmpdir(), "offboard-env-"));
-    const file = join(dir, ".env.local");
+    const file = join(mkdtempSync(join(tmpdir(), "offboard-env-")), ".env.local");
     expect(createOnce(file, "DATABASE_URL=one\n")).toBe(true);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(createOnce(file, "DATABASE_URL=two\n")).toBe(false);
@@ -56,69 +45,66 @@ describe("a checkout's .env.local", () => {
 });
 
 const run = (command: string, args: string[], env: Record<string, string | undefined> = {}) =>
-  spawnSync(command, args, { env: { ...process.env, ...env }, encoding: "utf8" });
-const oneLine = (stderr: string, pattern: RegExp) => expect(stderr.trim().split("\n")).toEqual([expect.stringMatching(pattern)]);
+  spawnSync(command, args, { env: { ...process.env, DATABASE_URL: undefined, ...env }, encoding: "utf8" });
 const tsx = "node_modules/.bin/tsx";
 
+// A temporary checkout holding only scripts/local-db.mjs, which refuses before it needs anything else.
+function checkout(envLocal?: string) {
+  const root = mkdtempSync(join(tmpdir(), "offboard-checkout-"));
+  mkdirSync(join(root, "scripts"));
+  copyFileSync("scripts/local-db.mjs", join(root, "scripts/local-db.mjs"));
+  if (envLocal !== undefined) writeFileSync(join(root, ".env.local"), envLocal);
+  return { root, script: join(root, "scripts/local-db.mjs") };
+}
+
+// Exits with 1, one line on stderr and nothing on stdout.
+function refuses(command: string, args: string[], pattern: RegExp, env: Record<string, string> = {}) {
+  const { status, stdout, stderr } = run(command, args, env);
+  expect([status, stdout, stderr.trim().split("\n")]).toEqual([1, "", [expect.stringMatching(pattern)]]);
+}
+
 describe("refusing before touching anything", () => {
-  it("db:start in a checkout whose .env.local holds real settings: nothing started or written", () => {
-    const checkout = mkdtempSync(join(tmpdir(), "offboard-checkout-"));
-    mkdirSync(join(checkout, "scripts"));
-    copyFileSync("scripts/local-db.mjs", join(checkout, "scripts/local-db.mjs"));
+  it("db:start in a checkout whose .env.local holds real settings, or is a link to nothing", () => {
     const real = `DATABASE_URL=${REAL}\nLINKEDIN_CLIENT_SECRET=the-owners\n`;
-    writeFileSync(join(checkout, ".env.local"), real);
-    const { status, stdout, stderr } = run(process.execPath, [join(checkout, "scripts/local-db.mjs"), "start"], { DATABASE_URL: undefined });
-    expect(status).toBe(1);
-    expect(stdout).toBe("");
-    oneLine(stderr, /^This checkout's \.env\.local holds real settings.*belongs in a worktree/);
-    expect(readFileSync(join(checkout, ".env.local"), "utf8")).toBe(real);
-    expect(existsSync(join(checkout, ".local-db"))).toBe(false);
-  });
-
-  it("db:start beside a real DATABASE_URL in the environment", () => {
-    const dir = join(tmpdir(), `offboard-never-made-${process.pid}`);
-    const { status, stdout, stderr } = run(process.execPath, ["scripts/local-db.mjs", "start", "--dir", dir], { DATABASE_URL: REAL });
-    expect(status).toBe(1);
-    expect(stdout).toBe("");
-    oneLine(stderr, /^Refusing.*ep-pretend-123.*not this machine/);
-    expect(existsSync(dir)).toBe(false);
-  });
-
-  it("an unknown argument to db:start, the seed or the fake Lichess, while --help prints what they do", () => {
-    const dir = join(tmpdir(), `offboard-never-made-${process.pid}`);
-    expect(run(process.execPath, ["scripts/local-db.mjs", "start", "--site-port", "3000", "--dir", dir]).status).toBe(1);
-    expect(existsSync(dir)).toBe(false);
-    for (const [command, args] of [[tsx, ["scripts/seed.ts", "--bogus"]], [tsx, ["scripts/seed.ts", "constructor"]], [tsx, ["scripts/fake-lichess.ts", "--bogus"]]] as const) {
-      const { status, stderr } = run(command, [...args], { DATABASE_URL: LOCAL });
-      expect(status).toBe(1);
-      expect(stderr).toMatch(/[Uu]nknown argument/);
+    const owners = checkout(real);
+    const dangling = checkout();
+    symlinkSync(join(dangling.root, "nowhere"), join(dangling.root, ".env.local"));
+    for (const { root, script } of [owners, dangling]) {
+      refuses(process.execPath, [script, "start"], /^This checkout's \.env\.local holds real settings.*belongs in a worktree/);
+      expect(existsSync(join(root, ".local-db"))).toBe(false);
     }
-    for (const [command, args] of [[process.execPath, ["scripts/local-db.mjs", "--help"]], [tsx, ["scripts/seed.ts", "--help"]]] as const) {
-      const { status, stdout } = run(command, [...args], { DATABASE_URL: REAL });
-      expect(status).toBe(0);
-      expect(stdout).toMatch(/pnpm (db:start|seed)/);
+    expect(readFileSync(join(owners.root, ".env.local"), "utf8")).toBe(real);
+  });
+
+  it("db:start beside a real DATABASE_URL, a Postgres it did not make, dev:local without its block, unknown arguments", () => {
+    const { root, script } = checkout();
+    refuses(process.execPath, [script, "start"], /^Refusing.*ep-pretend-123.*not this machine/, { DATABASE_URL: REAL });
+    const theirs = mkdtempSync(join(tmpdir(), "offboard-theirs-"));
+    writeFileSync(join(theirs, "PG_VERSION"), "14\n");
+    for (const command of ["start", "stop", "dev"])
+      refuses(process.execPath, [script, command, "--dir", theirs], /holds a Postgres that db:start did not make/);
+    refuses(process.execPath, [script, "dev"], /^\.env\.local is not .*offboard\.env, so the site was not started/);
+    for (const args of [["start", "--site-port", "3000"], ["stop", "--port", "55432"], ["--help"], []])
+      refuses(process.execPath, [script, ...args], /^Usage: pnpm db:start/);
+    expect(existsSync(join(root, ".local-db"))).toBe(false);
+  });
+
+  it("the seed and the fake Lichess on a real DATABASE_URL, or with any argument they do not take", () => {
+    for (const [script, usage] of [["scripts/seed.ts", /^Usage: pnpm seed/], ["scripts/fake-lichess.ts", /^Usage: pnpm fake-lichess/]] as const) {
+      refuses(tsx, [script], /^Refusing.*ep-pretend-123.*not this machine/, { DATABASE_URL: REAL });
+      for (const arg of ["--help", "constructor"]) refuses(tsx, [script, arg], usage, { DATABASE_URL: LOCAL });
     }
   }, 30_000);
 
-  it("the seed and the fake Lichess on a real DATABASE_URL, with a one-line reason", () => {
-    for (const script of ["scripts/seed.ts", "scripts/fake-lichess.ts"]) {
-      const { status, stdout, stderr } = run(tsx, [script], { DATABASE_URL: REAL });
-      expect(status).toBe(1);
-      expect(stdout).toBe("");
-      oneLine(stderr, /^Refusing.*ep-pretend-123.*not this machine/);
-    }
-  }, 30_000);
-});
-
-describe("the mark", () => {
-  it("is the one CI writes on the database it seeds", () => {
+  it("the mark CI writes on the database it seeds is db:start's", () => {
     expect(readFileSync(".github/workflows/ci.yml", "utf8")).toContain(`comment on database seeded is '${MARK}'`);
   });
 });
 
-// On a database of its own, made and dropped here, which db:start did not make and so has no mark, as a real database
-// with nobody in it yet behind a forwarded port would not. Opt-in, as the other real-Postgres tests are.
-describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)("a database db:start did not make", () => {
+// On a database of its own, made and dropped here on a local server, which db:start did not make and so has no mark, as
+// a real database with nobody in it yet behind a forwarded port would not. Opt-in, as the other real-Postgres tests are.
+const local = process.env.ALLOW_DB_TESTS === "1" && notLocal(process.env.DATABASE_URL) === null;
+describe.skipIf(!local)("a database db:start did not make", () => {
   it("is refused by the seed before its first statement changes anything", async () => {
     const name = `offboard_unmarked_${process.pid}`;
     const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -127,15 +113,14 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
       await admin.query(`create database ${name}`);
       const url = new URL(process.env.DATABASE_URL!);
       url.pathname = `/${name}`;
-      const block = {
+      const { status, stderr } = run(tsx, ["scripts/seed.ts"], {
         DATABASE_URL: url.toString(),
         BETTER_AUTH_SECRET: "a-pretend-secret",
         BETTER_AUTH_URL: "http://localhost:3100",
         LICHESS_TEAM_ID: "pretend-team",
         ORGANISER_USER_ID: "org",
         LICHESS_TOKEN_KEY: Buffer.alloc(32, 7).toString("base64"),
-      };
-      const { status, stderr } = run(tsx, ["scripts/seed.ts"], block);
+      });
       expect(status).toBe(1);
       expect(stderr.trim()).toBe("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
     } finally {

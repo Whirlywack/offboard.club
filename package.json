@@ -13,6 +13,8 @@
     "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts",
     "db:start": "node scripts/local-db.mjs start",
     "db:stop": "node scripts/local-db.mjs stop",
+    "dev:local": "node scripts/local-db.mjs dev",
+    "fake-lichess": "tsx --env-file-if-exists=.env.local scripts/fake-lichess.ts",
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "seed:cookies": "tsx --env-file-if-exists=.env.local scripts/seed.ts --cookies"
   },

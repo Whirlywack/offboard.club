@@ -1,26 +1,19 @@
-// The local environment of a checkout: a throwaway Postgres on this machine, an env block in which every other value
-// is pretend, the site and the fake Lichess, so that pages can be looked at in a browser with nothing real behind them.
-// It belongs in a worktree: it refuses a checkout whose .env.local holds a database that is not on this machine.
+// A throwaway Postgres for a checkout, and an env block in which every other value is pretend, so that pages can be
+// looked at in a browser with nothing real behind them. It belongs in a worktree: it refuses a checkout whose
+// .env.local holds a database that is not on this machine, and a directory holding a Postgres it did not make.
 //
-//   pnpm db:start [--dir <dir>] [--port <port>]
-//     Starts Postgres in <dir> (default .local-db/, git-ignored) on 127.0.0.1, creating and marking database "offboard"
-//     the first time and applying the migrations, and writes the env block to <dir>/offboard.env. The ports come as a
-//     set, Postgres 55432 + n, the site 3100 + n and the fake Lichess 8089 + n, for the first n whose three are all free
-//     (or the n of --port), and stay with <dir>. If the checkout has no .env.local, it is created from the block; an
-//     existing one is never changed. When .env.local is this block, db:start also starts the site (`next dev`) and the
-//     fake Lichess (scripts/fake-lichess.ts) in the background, logging to <dir>, and records them there. Run again, it
-//     starts whatever is not running and changes nothing else.
-//   pnpm db:stop [--dir <dir>]
-//     Stops what db:start started in <dir>, and only that: the site, the fake Lichess and Postgres.
-//
-// A second, empty database while the first keeps running, such as for the opt-in Postgres suites once the first is
-// seeded: `pnpm db:start --dir .local-db-tests` starts Postgres alone (.env.local is the first one's) and prints its
-// address for `ALLOW_DB_TESTS=1 DATABASE_URL=<address> pnpm test`; `pnpm db:stop --dir .local-db-tests` stops it.
-//
-// Uses initdb and pg_ctl from PATH, or else /opt/homebrew/bin. Then `pnpm seed` and `pnpm seed:cookies`.
+//   pnpm db:start [--dir <dir>] [--port <port>]  Postgres in <dir> (default .local-db/, git-ignored) on 127.0.0.1, with a
+//     database named for <dir> alone, marked and migrated, and the env block in <dir>/offboard.env, from which a missing
+//     .env.local is created; an existing one is never changed. The ports come as a set, Postgres 55432 + n, the site
+//     3100 + n and the fake Lichess 8089 + n, for the first n whose three are free (or the n of --port).
+//   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
+//   pnpm dev:local [--dir <dir>]  `next dev` on 127.0.0.1 at the block's site port, in the foreground, once .env.local is
+//     <dir>'s block; beside it `pnpm fake-lichess`, also in the foreground; then `pnpm seed` and `pnpm seed:cookies`.
+// A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
+// `pnpm db:start --dir .local-db-tests`, which prints its address. Uses initdb and pg_ctl from PATH or /opt/homebrew/bin.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +38,7 @@ export function notLocal(url) {
 }
 
 // Why this checkout must not get a local environment, or null. A .env.local whose DATABASE_URL is not on this machine,
-// or that has none, holds real settings, as the owner's checkout does.
+// or that has none or cannot be read, holds real settings, as the owner's checkout does.
 export function checkoutProblem(envLocal) {
   if (envLocal === null) return null;
   const url = /^[ \t]*DATABASE_URL[ \t]*=[ \t]*(.*?)[ \t]*$/m.exec(envLocal)?.[1].replace(/^(["'])(.*)\1$/, "$2");
@@ -66,8 +59,10 @@ export function createOnce(path, text) {
 }
 
 const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+const ENV_LOCAL = `${root}/.env.local`;
+const HEADER = "# From `pnpm db:start`: a throwaway database on this machine, and every other value pretend.";
+const USAGE = "Usage: pnpm db:start [--dir <dir>] [--port <port>], pnpm db:stop [--dir <dir>] or pnpm dev:local [--dir <dir>].";
 const say = (line) => console.log(line);
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const bin = (name) =>
   [...(process.env.PATH ?? "").split(":"), "/opt/homebrew/bin"].map((dir) => `${dir}/${name}`).find(existsSync) ?? name;
 const run = (name, args, env = process.env) => execFileSync(bin(name), args, { stdio: ["ignore", 2, 2], env });
@@ -99,10 +94,11 @@ async function freeSet(port) {
   throw new Error(port === undefined ? "No set of free ports was found." : `Port ${port}, ${BASE.site + first} or ${BASE.lichess + first} is taken.`);
 }
 
+// A database name of the directory's own, so that another checkout's stale .env.local on the same ports finds nothing.
 const block = ({ postgres, site, lichess }) =>
   [
-    "# From `pnpm db:start`: a throwaway database on this machine, and every other value pretend.",
-    `DATABASE_URL=postgres://offboard@127.0.0.1:${postgres}/offboard`,
+    HEADER,
+    `DATABASE_URL=postgres://offboard@127.0.0.1:${postgres}/offboard_${randomBytes(6).toString("hex")}`,
     `BETTER_AUTH_SECRET=${randomBytes(32).toString("base64")}`,
     `BETTER_AUTH_URL=http://localhost:${site}`,
     "# Pretend: Sign in with LinkedIn leaves for linkedin.com, which refuses it. Sign in as a seeded person (pnpm seed:cookies).",
@@ -110,7 +106,7 @@ const block = ({ postgres, site, lichess }) =>
     "LINKEDIN_CLIENT_SECRET=pretend-linkedin-client-secret",
     "LICHESS_TEAM_ID=pretend-team",
     "LICHESS_TEAM_PASSWORD=pretend-team-password",
-    "# The fake Lichess, which db:start runs.",
+    "# The fake Lichess: pnpm fake-lichess.",
     `LICHESS_URL=http://127.0.0.1:${lichess}`,
     "# The Organiser is the seeded Member org (scripts/seed.ts).",
     "ORGANISER_USER_ID=org",
@@ -121,99 +117,89 @@ const block = ({ postgres, site, lichess }) =>
     "",
   ].join("\n");
 
-// Creates database "offboard" in initdb's own "postgres", by the address alone, and marks it.
-async function createDatabase(port) {
+// The checkout's .env.local; "" if it is there but cannot be read, such as a link to nothing; null if there is none.
+function envLocal() {
+  if (!lstatSync(ENV_LOCAL, { throwIfNoEntry: false })) return null;
+  try {
+    return readFileSync(ENV_LOCAL, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+// <dir>'s block, or null if db:start has not used <dir>. A directory holding a Postgres that db:start did not make,
+// such as the owner's own, is refused.
+function blockOf(dir) {
+  const file = `${dir}/offboard.env`;
+  const text = existsSync(file) ? readFileSync(file, "utf8") : null;
+  if (text === null ? existsSync(`${dir}/PG_VERSION`) : !text.startsWith(HEADER))
+    throw new Error(`${dir} holds a Postgres that db:start did not make, so it is left alone.`);
+  return text;
+}
+
+// Creates the block's database in initdb's own "postgres", by the address alone, and marks it, unless it is there.
+async function ensureDatabase(url) {
+  const name = new URL(url).pathname.slice(1);
+  if (!/^offboard(_[0-9a-f]+)?$/.test(name)) throw new Error(`${name} is not a database name db:start gives.`);
   const { default: pg } = await import("pg");
-  const client = new pg.Client({ connectionString: `postgres://offboard@127.0.0.1:${port}/postgres` });
+  const client = new pg.Client({ connectionString: url.replace(/[^/]+$/, "postgres") });
   await client.connect();
   try {
-    await client.query("create database offboard");
-    await client.query(`comment on database offboard is '${MARK}'`);
+    if ((await client.query("select 1 from pg_database where datname = $1", [name])).rowCount) return;
+    await client.query(`create database ${name}`);
+    await client.query(`comment on database ${name} is '${MARK}'`);
   } finally {
     await client.end();
   }
 }
 
-// The process db:start recorded as `name` in `dir`, if it is still that process: one started from this checkout.
-function recorded(dir, name) {
-  const file = `${dir}/${name}.pid`;
-  const pid = existsSync(file) ? Number(readFileSync(file, "utf8")) : 0;
-  const command = pid > 0 ? (spawnSync("ps", ["-o", "command=", "-p", String(pid)]).stdout?.toString() ?? "") : "";
-  return command.includes(`${root}/`) ? pid : null;
-}
-
-// Starts `command` in a process group of its own, logging to <dir>/<name>.log, and records it, unless it is running.
-async function background(dir, name, port, [command, ...args], env) {
-  if (recorded(dir, name)) return;
-  if (await taken(port)) throw new Error(`Port ${port}, for the ${name}, is taken by something db:start did not start.`);
-  const log = openSync(`${dir}/${name}.log`, "a");
-  const child = spawn(command, args, { cwd: root, detached: true, stdio: ["ignore", log, log], env: { ...process.env, ...env } });
-  let ended = false;
-  child.on("exit", () => (ended = true)).unref();
-  writeFileSync(`${dir}/${name}.pid`, String(child.pid));
-  for (let i = 0; i < 120 && !ended && !(await taken(port)); i++) await sleep(500);
-  if (ended) throw new Error(`The ${name} stopped as soon as it started: see ${dir}/${name}.log.`);
-}
-
 async function start(dir, port) {
-  const envLocalFile = `${root}/.env.local`;
   const problem =
-    checkoutProblem(existsSync(envLocalFile) ? readFileSync(envLocalFile, "utf8") : null) ??
+    checkoutProblem(envLocal()) ??
     (process.env.DATABASE_URL && notLocal(process.env.DATABASE_URL) && `Refusing to start beside a real DATABASE_URL in the environment: ${notLocal(process.env.DATABASE_URL)}. Unset it first.`);
   if (problem) throw new Error(problem);
-  const envFile = `${dir}/offboard.env`;
-  const saved = existsSync(envFile) ? readFileSync(envFile, "utf8") : null;
-  if (running(dir) && !saved) throw new Error(`Postgres is running in ${dir}, but db:start did not start it.`);
+  const saved = blockOf(dir);
   const text = saved ?? block(await freeSet(port));
   const env = variables(text);
-  const ports = { postgres: portOf(env.DATABASE_URL), site: portOf(env.BETTER_AUTH_URL), lichess: portOf(env.LICHESS_URL) };
-  if (port !== undefined && Number(port) !== ports.postgres) throw new Error(`${dir} uses port ${ports.postgres}: leave out --port, or give another --dir.`);
-
-  const fresh = !existsSync(`${dir}/PG_VERSION`);
-  if (fresh) run("initdb", ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8", "--no-instructions"]);
+  const postgres = portOf(env.DATABASE_URL);
+  if (port !== undefined && Number(port) !== postgres) throw new Error(`${dir} uses port ${postgres}: leave out --port, or give another --dir.`);
+  if (!saved) {
+    run("initdb", ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8", "--no-instructions"]);
+    writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
+  }
   if (!running(dir)) {
-    if (await taken(ports.postgres)) throw new Error(`Port ${ports.postgres}, which ${dir} uses, is taken.`);
+    if (await taken(postgres)) throw new Error(`Port ${postgres}, which ${dir} uses, is taken.`);
     // Scratch paths are too long for a Unix socket, so TCP on 127.0.0.1 only.
-    const settings = `-c listen_addresses=127.0.0.1 -p ${ports.postgres} -c unix_socket_directories=''`;
-    run("pg_ctl", ["-D", dir, "-l", `${dir}/postgres.log`, "-o", settings, "-w", "start"]);
+    run("pg_ctl", ["-D", dir, "-l", `${dir}/postgres.log`, "-o", `-c listen_addresses=127.0.0.1 -p ${postgres} -c unix_socket_directories=''`, "-w", "start"]);
   }
-  if (fresh) await createDatabase(ports.postgres);
+  await ensureDatabase(env.DATABASE_URL);
   run(process.execPath, [`${root}/scripts/migrate.mjs`], { ...process.env, DATABASE_URL: env.DATABASE_URL });
-  if (!saved) writeFileSync(envFile, text, { mode: 0o600 });
-  const created = createOnce(envLocalFile, text);
+  const created = createOnce(ENV_LOCAL, text);
   say(`Postgres is running in ${dir}: ${env.DATABASE_URL}`);
-  if (!created && readFileSync(envLocalFile, "utf8") !== text) {
-    say(`.env.local was left as it was. It is not this database's block (${envFile}), so only Postgres was started.`);
-    say(`For the opt-in suites: ALLOW_DB_TESTS=1 DATABASE_URL=${env.DATABASE_URL} pnpm test`);
-    return;
+  if (!created && envLocal() !== text) {
+    say(`.env.local was left as it was: it is not this database's block (${dir}/offboard.env).`);
+    return say(`For the opt-in suites: ALLOW_DB_TESTS=1 DATABASE_URL=${env.DATABASE_URL} pnpm test`);
   }
-  say(created ? `.env.local was created from ${envFile}.` : ".env.local is this block already.");
-  await background(dir, "fake-lichess", ports.lichess, [`${root}/node_modules/.bin/tsx`, `${root}/scripts/fake-lichess.ts`], env);
-  await background(dir, "site", ports.site, [`${root}/node_modules/.bin/next`, "dev", "--port", String(ports.site)], env);
-  say(`The site is at ${env.BETTER_AUTH_URL} and the fake Lichess at ${env.LICHESS_URL}; their logs are in ${dir}.`);
-  say("Next: pnpm seed, then pnpm seed:cookies to sign in as a seeded person. pnpm db:stop stops all three.");
+  say(created ? `.env.local was created from ${dir}/offboard.env.` : ".env.local is this block already.");
+  say(`Next, each in the foreground, as a background task of your own: pnpm dev:local (${env.BETTER_AUTH_URL}) and pnpm fake-lichess (${env.LICHESS_URL}).`);
+  say("Then pnpm seed, and pnpm seed:cookies to sign in as a seeded person. pnpm db:stop stops Postgres; stop the other two yourself.");
 }
 
-async function stop(dir) {
-  for (const name of ["site", "fake-lichess"]) {
-    const pid = recorded(dir, name);
-    rmSync(`${dir}/${name}.pid`, { force: true });
-    if (!pid) continue;
-    // The whole group: `next dev` and the server it starts, tsx and the node it runs.
-    const alive = () => {
-      try {
-        return process.kill(-pid, 0);
-      } catch {
-        return false;
-      }
-    };
-    process.kill(-pid, "SIGTERM");
-    for (let i = 0; i < 50 && alive(); i++) await sleep(200);
-    if (alive()) process.kill(-pid, "SIGKILL");
-    say(`Stopped the ${name} (process ${pid}).`);
-  }
+function stop(dir) {
+  blockOf(dir);
   if (!running(dir)) return say(`No Postgres is running in ${dir}.`);
   run("pg_ctl", ["-D", dir, "-m", "fast", "-w", "stop"]);
+}
+
+// `next dev` in the foreground, bound to this machine alone, with the signals that stop this process passed on to it.
+async function dev(dir) {
+  const text = blockOf(dir);
+  if (!text || envLocal() !== text) throw new Error(`.env.local is not ${dir}/offboard.env, so the site was not started: run pnpm db:start first.`);
+  const site = portOf(variables(text).BETTER_AUTH_URL);
+  if (await taken(site)) throw new Error(`Port ${site}, the site's, is taken.`);
+  const child = spawn(`${root}/node_modules/.bin/next`, ["dev", "--hostname", "127.0.0.1", "--port", String(site)], { cwd: root, stdio: "inherit" });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => child.kill(signal));
+  return new Promise((done) => child.on("exit", (code) => done(code ?? 1)));
 }
 
 // Run, not imported: the seed and the tests import what is exported above.
@@ -222,25 +208,22 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   for (const name of Object.keys(process.env)) if (name.startsWith("PG")) delete process.env[name];
   const [command, ...rest] = process.argv.slice(2);
   const options = {};
-  let problem = { start, stop }[command] ? null : "Give start or stop.";
-  for (let i = 0; i < rest.length && !problem; i += 2) {
+  let valid = Object.hasOwn({ start, stop, dev }, command ?? "");
+  for (let i = 0; i < rest.length && valid; i += 2)
     if (["--dir", ...(command === "start" ? ["--port"] : [])].includes(rest[i]) && rest[i + 1] !== undefined) options[rest[i]] = rest[i + 1];
-    else problem = `Unknown argument ${rest[i]}.`;
-  }
-  if (process.argv.includes("--help")) {
-    console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").match(/^(\/\/.*\n)+/)[0].replace(/^\/\/ ?/gm, ""));
-    process.exit(0);
-  }
-  if (problem) {
-    console.error(`${problem} Run with --help.`);
+    else valid = false;
+  if (!valid) {
+    console.error(USAGE);
     process.exit(1);
   }
   const dir = resolve(options["--dir"] ?? `${root}/.local-db`);
-  (command === "start" ? start(dir, options["--port"]) : stop(dir)).then(
-    () => process.exit(0),
-    (error) => {
-      console.error(error.message);
-      process.exit(1);
-    },
-  );
+  Promise.resolve()
+    .then(() => ({ start, stop, dev })[command](dir, options["--port"]))
+    .then(
+      (code) => process.exit(code ?? 0),
+      (error) => {
+        console.error(error.message);
+        process.exit(1);
+      },
+    );
 }

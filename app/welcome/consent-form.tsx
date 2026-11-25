@@ -24,13 +24,12 @@ export function ConsentForm({ name }: { name: string }) {
       <fieldset className={styles.agreement}>
         <legend>Your name in public</legend>
         <p>
-          Being listed in public is part of being a Member. Leaderboards, Recaps, their Awards and each Season champion are
-          public: anyone can see them, signed in or not. They show you as {name}, with your Company if you add one. Your
-          email is never shown, and your Profile is for signed-in Members only.
+          You&apos;ll appear as {name}, with your Company if you add one. Only signed-in Members see your photo and Profile,
+          and your email is never shown.
         </p>
         <p>
-          If you&apos;d rather not be listed, please don&apos;t join. If you change your mind later, you can leave the Club
-          at any time from Edit your Profile, which deletes your account and takes you off every Leaderboard and Recap.
+          Being listed is part of being a Member, so if you&apos;d rather not be, please don&apos;t join. To leave later,
+          delete your account on Edit your Profile. That takes you off every Leaderboard, Recap and Award.
         </p>
         <label className={styles.check}>
           <input

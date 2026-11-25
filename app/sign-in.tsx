@@ -20,8 +20,8 @@ export function SignIn() {
       )}
       {/* LinkedIn's API terms: next to the button, that the site stores the profile, how often, and the policy. */}
       <p id="linkedin-notice" className={styles.notice}>
-        By signing in with LinkedIn you let Offboard store your LinkedIn name, photo and email, updated each time you sign
-        in. <Link href="/privacy">Privacy and terms</Link>
+        Signing in lets Offboard store your LinkedIn name, photo and email, updated each time you sign in.{" "}
+        <Link href="/privacy">Privacy and terms</Link>
       </p>
     </form>
   );

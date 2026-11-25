@@ -71,15 +71,17 @@ describe("the privacy and terms page", () => {
 
   it("says what is kept, from LinkedIn, Lichess, Matchdays and the Profile", () => {
     const kept = section(privacyPage(), "kept");
-    for (const fact of ["your name, the address of your photo, your email address", "id and username", "blitz rating", "Company", "position", "LinkedIn profile", "open to", "Games", "IP address"])
+    for (const fact of ["your name, the address of your photo, your email address", "your account's id, username and blitz rating", "marked or closed", "Company", "position", "LinkedIn profile", "open to", "Games", "IP address"])
       expect(kept).toContain(markup(fact));
   });
 
   it("says what is public and what only signed-in Members see", () => {
     const shown = section(privacyPage(), "public");
-    expect(shown).toContain("<strong>Anyone on the internet</strong> sees your name and Company on Leaderboards, in Recaps and Awards, and as Season champion");
-    expect(shown).toContain("<strong>Signed-in Members</strong> also see your photo and Profile, your Lichess username and blitz rating, your Games");
-    expect(shown).toContain("<strong>Nobody</strong> is shown your email address");
+    expect(shown).toContain(
+      "<strong>Anyone:</strong> your name and Company, with your place, points, Season score, Matchdays played and Awards, on Leaderboards, in Recaps and as Season champion.",
+    );
+    expect(shown).toContain("<strong>Signed-in Members:</strong> also your photo, Profile, Lichess username, blitz rating and Games");
+    expect(shown).toContain("<strong>Only the Organiser,</strong> who can read everything the site keeps: your email address");
   });
 
   it("names who else handles the data, and where", () => {
@@ -90,10 +92,12 @@ describe("the privacy and terms page", () => {
 
   it("says how long things are kept, and how to change, see or delete them, leaving included", () => {
     const html = privacyPage();
-    expect(section(html, "how-long")).toContain("while you are a Member. When you leave, they are deleted at once.");
-    const rights = section(html, "rights");
-    expect(rights).toContain('<a href="/profile">Edit your Profile</a>, choose “Delete your account”');
-    expect(rights).toContain("a copy of your data");
+    expect(section(html, "how-long")).toContain(markup("Your account, Profile, Lichess connection, results and acceptances: while you're a Member."));
+    const leaving = section(html, "leaving");
+    expect(leaving).toContain('To leave, choose “Delete your account” on <a href="/profile">Edit your Profile</a>');
+    expect(leaving).toContain("results and acceptances are deleted at once");
+    expect(leaving).toContain(markup("Your Games stay in your opponents' histories"));
+    expect(section(html, "rights")).toContain("a copy of your data");
     expect(section(html, "complaints")).toContain("ada@ada.lt");
   });
 
@@ -104,7 +108,7 @@ describe("the privacy and terms page", () => {
   it("states the terms of membership: 18 or over, public listing, and the house rules accepted on the welcome step", async () => {
     const terms = section(privacyPage(), "terms");
     expect(terms).toContain("anyone 18 or over");
-    expect(terms).toContain("for as long as you are a Member");
+    expect(terms).toContain(markup("for as long as you're a Member"));
     const welcome = await welcomeStep();
     for (const rule of HOUSE_RULES) {
       expect(terms).toContain(`<li>${markup(rule)}</li>`);
@@ -123,7 +127,7 @@ describe("the link to the page", () => {
     const html = renderToStaticMarkup(createElement(SignIn));
     expect(html).toContain('<button aria-describedby="linkedin-notice">Sign in with LinkedIn</button>');
     expect(html).toMatch(
-      /<p id="linkedin-notice"[^>]*>By signing in with LinkedIn you let Offboard store your LinkedIn name, photo and email, updated each time you sign in\. <a href="\/privacy">Privacy and terms<\/a><\/p>/,
+      /<p id="linkedin-notice"[^>]*>Signing in lets Offboard store your LinkedIn name, photo and email, updated each time you sign in\. <a href="\/privacy">Privacy and terms<\/a><\/p>/,
     );
   });
 });
@@ -158,9 +162,8 @@ describe("the welcome step", () => {
 
   it("says names and Companies are public everywhere they are, as a condition of membership, and how to leave", async () => {
     const html = await welcomeStep();
-    expect(html).toContain("Being listed in public is part of being a Member. Leaderboards, Recaps, their Awards and each Season champion are");
-    expect(html).toContain("leave the Club");
-    expect(html).toContain("deletes your account and takes you off every Leaderboard and Recap");
+    expect(html).toContain("Being listed is part of being a Member");
+    expect(html).toContain("To leave later, delete your account on Edit your Profile. That takes you off every Leaderboard, Recap and Award.");
     expect(html).toContain(
       "I accept that my name, and my Company if I add one, appear publicly on Leaderboards, in Recaps and Awards, and as Season champion, for as long as I&#x27;m a Member.",
     );

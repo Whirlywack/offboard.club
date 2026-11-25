@@ -12,11 +12,12 @@ What `package.json` and the config files do not tell you. Script names and their
 
 In a fresh worktree, in this order:
 
-1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated; a `.env.local` in which every value is pretend, created only when the worktree has none; then the site and the fake Lichess, running in the background. It prints the three addresses. Ports come as a set (Postgres 55432, site 3100, fake Lichess 8089, each plus the same n), so two worktrees never share one. It refuses to start in a checkout whose `.env.local` holds real settings.
+1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated, and a `.env.local` in which every value is pretend, created only when the worktree has none. Ports come as a set (Postgres 55432, site 3100, fake Lichess 8089, each plus the same n), so two worktrees never share one. It refuses to start in a checkout whose `.env.local` holds real settings.
 2. The real-Postgres suites, if you need them, now: `ALLOW_DB_TESTS=1 DATABASE_URL=<the address it printed> pnpm test`. They expect empty tables, so they come before the seed. Once the first database is seeded, `pnpm db:start --dir .local-db-tests` starts a second, empty one.
-3. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises through the site's own code.
-4. `pnpm seed:cookies` writes `.local-db/cookies.json`, a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`. The Organiser is `org`.
-5. `pnpm db:stop` when you are done. It stops exactly what `db:start` started.
+3. `pnpm dev:local` and `pnpm fake-lichess`, each as a background task of your own: the site and the fake Lichess, both on 127.0.0.1 only, on the ports `db:start` named. You stop them when you are done.
+4. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises through the site's own code.
+5. `pnpm seed:cookies` writes `.local-db/cookies.json`, a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`. The Organiser is `org`.
+6. `pnpm db:stop` stops that Postgres and nothing else.
 
 Each script's header has the options. Each refuses a database that is not on this machine, and the seed refuses one `db:start` did not make.
 

@@ -13,7 +13,7 @@ import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { countSignUps } from "@/lib/signups";
-import { leaveClub } from "./actions";
+import { deleteSignUp, leaveClub } from "./actions";
 import AllTimePage from "./all-time/page";
 import LeftPage from "./left/page";
 import { teamRemovalDone } from "./organiser/actions";
@@ -245,9 +245,11 @@ describe("deleting your own account", () => {
     expect(text(left)).toContain("If you've just deleted your account, it's gone and you're signed out.");
   });
 
-  it("refuses a signed-out caller, deleting nothing", async () => {
+  it("refuses a signed-out caller and one part-way through signing up, deleting nothing", async () => {
     signedIn = null;
     expect(await redirectedTo(() => leaveClub())).toBe("/");
+    signedIn = "half";
+    expect(await redirectedTo(() => leaveClub())).toBe("/welcome/lichess");
     expect(db.query).not.toHaveBeenCalled();
     expect(db.connect).not.toHaveBeenCalled();
     expect(people.size).toBe(5);
@@ -276,6 +278,10 @@ describe("deleting your account part-way through signing up", () => {
     expect(text(confirm)).toContain("When you delete your account, your name, photo, email address and anything you've agreed to are deleted.");
     // Nothing a Member would lose, as they have none of it.
     for (const untrue of ["Profile", "Leaderboard", "Recap", "Lichess", "Games", "Organiser"]) expect(text(confirm)).not.toContain(untrue);
+    // Its button deletes through the action for someone part-way, which a Member's page does not use.
+    const inner = (child(DeleteAccountPage(), 1).props as { children: ReactElement }).children;
+    const form = (await (inner.type as (props: unknown) => Promise<ReactElement>)(inner.props)) as ReactElement<{ action: unknown }>;
+    expect(form.props.action).toBe(deleteSignUp);
     expect(people.has(who)).toBe(true);
     expect(lichess.calls).toEqual([]);
   });
@@ -291,7 +297,7 @@ describe("deleting your account part-way through signing up", () => {
 
   it.each(["new", "half"])("deletes %s at the press of the button, signs them out, and asks nothing of Lichess", async (who) => {
     signedIn = who;
-    expect(await redirectedTo(() => leaveClub())).toBe("/left");
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/left");
     expect(people.has(who)).toBe(false);
     expect(signOut).toHaveBeenCalledWith({ headers: new Headers({ cookie: "the browser's session cookie" }) });
     expect(lichess.calls).toEqual([]);
@@ -304,10 +310,30 @@ describe("deleting your account part-way through signing up", () => {
     signedIn = "half";
     const form = new FormData();
     for (const name of ["id", "userId", "memberId"]) form.set(name, "ana");
-    await redirectedTo(() => (leaveClub as (form: FormData) => Promise<void>)(form));
+    await redirectedTo(() => (deleteSignUp as (form: FormData) => Promise<void>)(form));
     expect(people.has("half")).toBe(false);
     expect(people.has("ana")).toBe(true);
     expect(lichess.calls).toEqual([]);
+  });
+
+  it("refuses a signed-out caller, deleting nothing", async () => {
+    signedIn = null;
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/");
+    expect(db.query).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("deletes nothing of someone who has become a Member since the page was shown, and sends them to their own", async () => {
+    // "half" connects Lichess in another tab, then presses the button on the page shown before.
+    Object.assign(people.get("half")!, { lichessId: "lichess-half", lichessUsername: "Lichess-half" });
+    lichess.team.members.add("lichess-half");
+    signedIn = "half";
+    expect(await redirectedTo(() => deleteSignUp())).toBe("/profile/leave");
+    expect(people.has("half")).toBe(true);
+    expect(lichess.calls).toEqual([]);
+    expect(lichess.team.members).toContain("lichess-half");
+    expect(teamRemovals.size).toBe(0);
+    expect(signOut).not.toHaveBeenCalled();
   });
 });
 

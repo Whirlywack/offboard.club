@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { leaveClub } from "../../actions";
+import { deleteSignUp } from "../../actions";
 import { LeaveActions } from "../../profile/leave/leave-actions";
 import styles from "../../profile/profile.module.css";
 import ui from "../../ui.module.css";
@@ -36,7 +36,7 @@ async function Confirm() {
   const agreed = !mustWelcome(session.user);
   if (agreed && !mustConnectLichess(session.user)) redirect("/profile/leave");
   return (
-    <form action={leaveClub} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
+    <form action={deleteSignUp} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
       <p>When you delete your account, your name, photo, email address and anything you&apos;ve agreed to are deleted.</p>
       <LeaveActions keep={agreed ? "/welcome/lichess" : "/welcome"} />
     </form>

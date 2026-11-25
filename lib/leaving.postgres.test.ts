@@ -116,9 +116,11 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
   }, 60_000);
 
   it("deletes everything of someone part-way through signing up, and asks nothing of Lichess (#43)", async () => {
-    // With the Club's team configured, asking Lichess anything would fail the test.
+    // With the Club's team configured, so that only the missing Lichess account keeps the site from asking. Some calls
+    // swallow a failed request (revoke), so the requests are counted.
     vi.stubEnv("LICHESS_TEAM_ID", "pretend-team");
-    vi.stubGlobal("fetch", () => Promise.reject(new Error("nothing may reach Lichess")));
+    const fetch = vi.fn(() => Promise.reject(new Error("nothing may reach Lichess")));
+    vi.stubGlobal("fetch", fetch);
     const removalsBefore = await teamRemovals();
     // One has not agreed yet; the other has agreed and not connected Lichess. Each signed in once with LinkedIn.
     for (const [id, agreed] of [["leaving-test-new", false], ["leaving-test-half", true]] as const) {
@@ -134,6 +136,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       for (const table of ["session", "account"]) expect(await count(`select 1 from "${table}" where "userId" = $1`, [id])).toBe(0);
     }
     expect(await teamRemovals()).toEqual(removalsBefore);
+    expect(fetch).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);

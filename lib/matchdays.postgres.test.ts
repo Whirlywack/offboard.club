@@ -9,9 +9,10 @@ import { getRecap, recapDates } from "./recaps";
 // Ingestion's and the Recap's real SQL against the database in DATABASE_URL, inside one transaction that is always
 // rolled back, so nothing it does is kept; Lichess is the fake. The app's database is one connection holding that
 // transaction, and the ingestion's own transaction a savepoint within it. Inside it, it empties the Matchday tables, so
-// point it only at a development database with the migrations applied, never the live one: it runs only when
-// ALLOW_DB_TESTS=1 is set as well as DATABASE_URL, and a plain `pnpm test` skips it. To run it:
-// ALLOW_DB_TESTS=1 DATABASE_URL=postgres://…/a-development-database pnpm vitest run lib/matchdays.postgres.test.ts
+// it runs only when ALLOW_DB_TESTS=1 is set as well as DATABASE_URL, and a plain `pnpm test` skips it. Run it against a
+// local database from `pnpm db:start`, never a shared or live one, before seeding (once that one is seeded, a second
+// from `pnpm db:start --dir .local-db-tests`), with that database's address:
+// ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/matchdays.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });

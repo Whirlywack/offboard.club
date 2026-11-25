@@ -3,10 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { matchdaysOfSeason, postgresStore, setSeasonStart, skipSunday, unskipSunday, upcomingMatchday } from "./seasons";
 
 // The real Store's SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
-// so nothing it does is kept. Inside it, it empties the Season tables, so point it only at a development database with
-// the migrations applied, never the live one: it runs only when ALLOW_DB_TESTS=1 is set as well as DATABASE_URL, and a
-// plain `pnpm test` skips it. To run it:
-// ALLOW_DB_TESTS=1 DATABASE_URL=postgres://…/a-development-database pnpm vitest run lib/seasons.postgres.test.ts
+// so nothing it does is kept. Inside it, it empties the Season tables. It runs only when ALLOW_DB_TESTS=1 is set as well
+// as DATABASE_URL, and a plain `pnpm test` skips it. Run it against a local database from `pnpm db:start`, never a
+// shared or live one, before seeding (once that one is seeded, a second from `pnpm db:start --dir .local-db-tests`),
+// with that database's address:
+// ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/seasons.postgres.test.ts
 describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("the Postgres store", () => {
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   const store = postgresStore(client);

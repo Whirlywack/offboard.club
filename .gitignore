@@ -45,4 +45,4 @@ next-env.d.ts
 /.claude/worktrees/
 
 # the throwaway local database (scripts/local-db.mjs)
-/.local-db/
+/.local-db*/

@@ -68,11 +68,17 @@ jobs:
           ALLOW_DB_TESTS: "1"
 
       # The local seed (scripts/seed.ts) still fits the schema and still makes every state each scenario promises,
-      # which it checks through the site's own code once it has seeded. In a second database, so the tests' is left alone.
+      # which it checks through the site's own code once it has seeded. In a second database, so the tests' is left alone,
+      # marked as `pnpm db:start` marks its own (scripts/local-db.mjs, MARK), with pretend values like the ones it writes.
       - name: Seed each local scenario into a second database
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/seeded
+          BETTER_AUTH_URL: http://localhost:3100
+          LICHESS_TEAM_ID: pretend-team
+          ORGANISER_USER_ID: org
         run: |
-          psql postgres://postgres:postgres@localhost:5432/postgres -c "create database seeded"
+          export BETTER_AUTH_SECRET="$(openssl rand -base64 32)" LICHESS_TOKEN_KEY="$(openssl rand -base64 32)"
+          psql postgres://postgres:postgres@localhost:5432/postgres -c "create database seeded" \
+            -c "comment on database seeded is 'offboard: a throwaway local database made by pnpm db:start'"
           pnpm migrate
           for scenario in club season-over empty; do pnpm seed "$scenario"; done

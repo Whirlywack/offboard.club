@@ -61,7 +61,7 @@ export function scratch(name) {
   temporary = join(folder, "tmp");
   // What db:start starts in the copy is recorded where the repository's own are, so that `pnpm local:list` and
   // `pnpm local:stop --all` there find it too (ticket #58); the steps and the watcher inherit it.
-  process.env.OFFBOARD_LOCAL_REGISTRY ??= `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
+  process.env.OFFBOARD_LOCAL_REGISTRY ||= `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
   store = spawnSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).stdout?.trim() ?? "";
   mkdirSync(temporary);
   spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store], {

@@ -21,7 +21,7 @@ function checkout(finished: (end: () => void) => void = onTestFinished) {
 // Runs check in `root` without holding up the tests running beside it, and gives how it ended.
 const check = (root: string, env: Record<string, string> = {}) =>
   new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
-    const child = spawn(process.execPath, [join(root, "scripts/check.mjs")], { env: { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), ...env } });
+    const child = spawn(process.execPath, [join(root, "scripts/check.mjs")], { env: { ...process.env, DATABASE_URL: "", OFFBOARD_LOCAL_REGISTRY: undefined, TMPDIR: join(root, "tmp"), ...env } });
     let [stdout, stderr] = ["", ""];
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
@@ -224,7 +224,7 @@ describe.concurrent("a check", () => {
     ["SIGTERM", 143],
   ] as const)("killed with %s mid-step, stops that step and its databases and removes its copy, by the watcher it leaves behind", { timeout: 60_000 }, async ([signal, code], { onTestFinished }) => {
     const { root, log } = fakeCheckout(onTestFinished);
-    const env = { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), FAKE_LOG: log, FAKE_SLOW: "lint" };
+    const env = { ...process.env, DATABASE_URL: "", OFFBOARD_LOCAL_REGISTRY: undefined, TMPDIR: join(root, "tmp"), FAKE_LOG: log, FAKE_SLOW: "lint" };
     const child = spawn(process.execPath, [join(root, "scripts/check.mjs")], { env, stdio: "ignore" });
     const ended = new Promise<number | null>((done) => child.on("exit", (status) => done(status)));
     expect(await until(() => existsSync(`${log}.pid`))).toBe(true);

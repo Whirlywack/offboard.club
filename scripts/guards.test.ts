@@ -315,7 +315,7 @@ function fakeCheckout(finished: (end: () => void) => void) {
   git("init", "--quiet");
   git("add", ".");
   git("commit", "--quiet", "--message", "first");
-  const env = { ...process.env, DATABASE_URL: "", ALLOW_DB_TESTS: "", TMPDIR: join(root, "tmp"), FAKE_LOG: join(root, "fake.log") };
+  const env = { ...process.env, DATABASE_URL: "", ALLOW_DB_TESTS: "", OFFBOARD_LOCAL_REGISTRY: undefined, TMPDIR: join(root, "tmp"), FAKE_LOG: join(root, "fake.log") };
   const guards = (args: string[], more: Record<string, string> = {}) => exec(process.execPath, [join(root, "scripts/guards.mjs"), ...args], { ...env, ...more });
   const runs = () =>
     readFileSync(join(root, "fake.log"), "utf8")

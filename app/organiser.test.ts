@@ -594,6 +594,14 @@ describe("the next Matchday on the Organiser page", () => {
     expect(await panel()).toMatch(alertSaying("It's due on Lichess now, but the site can't create it until the problems below are fixed."));
   });
 
+  it("moves on to the next Matchday once one starts, while Members can still join that one from the home page", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    at("2026-11-29T18:05:00Z");
+    const html = await panel();
+    expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
+    expect(html).not.toContain("AbCd1234");
+  });
+
   it("links it on Lichess once it is there", async () => {
     at("2026-11-25T12:00:00Z");
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });

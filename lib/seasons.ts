@@ -112,6 +112,14 @@ export function nextMatchdayIn(schedule: Schedule, now: Date): Matchday | null {
 
 export const upcomingMatchday = async (now: Date, store = postgres) => nextMatchdayIn(await load(store, now), now);
 
+// Lichess lets a Member join a Matchday late, until its third round starts. The site does not know the round, so it
+// offers the Matchday for this long after the start.
+const LATE_JOIN_MS = 90 * 60_000;
+
+// The Matchday a Member can join at `now`: one that started less than 90 minutes ago, or else the next one.
+export const matchdayToJoin = async (now: Date) =>
+  nextMatchdayIn(await load(postgres, now), new Date(now.getTime() - LATE_JOIN_MS));
+
 const isSeasonNumber = (number: number) => Number.isInteger(number) && number >= 1 && number <= MAX_SEASONS;
 
 // The dates of a Season's six Matchdays, or null if there is no such Season yet.

@@ -66,3 +66,48 @@ describe("the next Matchday's tournament on the home page", () => {
     }
   });
 });
+
+// Lichess lets a Member join a five-round Swiss until its third round starts; the site keeps the link for 90 minutes.
+describe("the Matchday under way on the home page", () => {
+  const NEXT = "2026-12-06";
+  const at = (time: string) => vi.setSystemTime(new Date(`${DATE}T${time}:00+02:00`)); // Vilnius time in winter
+
+  beforeEach(() => matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null }));
+
+  it("stays linked for a Member until 21:30, saying it has started and until when Lichess lets them join", async () => {
+    signedIn = "member";
+    for (const time of ["20:05", "21:29"]) {
+      at(time);
+      const html = await nextMatchday();
+      expect(html).toContain("Matchday under way");
+      expect(html).not.toContain("Next Matchday");
+      expect(html).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November at 20:00</time>');
+      expect(html).toContain("Lichess lets you join until round 3 starts.");
+      expect(html).toContain('<a href="https://lichess.org/swiss/AbCd1234"');
+    }
+  });
+
+  it("gives way at 21:30 to the next Matchday, with no link to the one just played", async () => {
+    signedIn = "member";
+    at("21:30");
+    const html = await nextMatchday();
+    expect(html).toContain("Next Matchday");
+    expect(html).toContain('<time dateTime="2026-12-06T18:00:00.000Z">Sunday 6 December at 20:00</time>');
+    expect(html).not.toContain("under way");
+    expect(html).not.toContain("lichess.org/swiss");
+  });
+
+  it("is never shown or linked to a visitor or someone part-way through signing up, who see the next Matchday", async () => {
+    matchdays.set(NEXT, { date: NEXT, lichessTournamentId: "EfGh5678", ingestedAt: null });
+    for (const [time, shown] of [["19:55", "Sunday 29 November"], ["20:05", "Sunday 6 December"], ["21:30", "Sunday 6 December"]]) {
+      at(time);
+      for (const who of [null, "newcomer"]) {
+        signedIn = who;
+        const html = await nextMatchday();
+        expect(html).toContain("Next Matchday");
+        expect(html).toContain(`${shown} at 20:00`);
+        expect(html).not.toContain("lichess.org/swiss");
+      }
+    }
+  });
+});

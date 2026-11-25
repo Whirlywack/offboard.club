@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { sendTestMessage } from "@/lib/alerts";
 import { requireOrganiser } from "@/lib/auth";
 import { pendingCookie } from "@/lib/connect-lichess";
 import { forgetTeamRemoval, isMember, MEMBER_ID_MAX, removeMember } from "@/lib/leaving";
@@ -64,6 +65,13 @@ export async function setStart(_previous: Said | null, form: FormData): Promise<
   const said = await changeSeasonStart(Number(season), start, new Date());
   refresh();
   return said;
+}
+
+// "Send a test message to me" or "... to the group" on the Organiser page, by the pressed button's value: one message,
+// sent at once, and what Telegram said. Anyone but the Organiser is not found, and nothing is sent.
+export async function testTelegram(_previous: Said | null, form: FormData): Promise<Said> {
+  await requireOrganiser();
+  return sendTestMessage(form.get("to") === "group" ? "group" : "me");
 }
 
 // "Remove" on the step that confirms removing a Member (app/organiser/remove): that Member's account deleted, as if they

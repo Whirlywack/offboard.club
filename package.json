@@ -19,9 +19,12 @@
     "fake-telegram": "tsx --env-file-if-exists=.env.local scripts/fake-telegram.ts",
     "post-to-telegram": "tsx --env-file-if-exists=.env.local scripts/post-to-telegram.ts",
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
-    "seed:cookies": "tsx --env-file-if-exists=.env.local scripts/seed.ts --cookies"
+    "seed:cookies": "tsx --env-file-if-exists=.env.local scripts/seed.ts --cookies",
+    "restore": "tsx --env-file-if-exists=.env.local scripts/restore.ts",
+    "telegram-chats": "tsx --env-file-if-exists=.env.local scripts/telegram-chats.ts"
   },
   "dependencies": {
+    "@vercel/blob": "2.9.0",
     "better-auth": "^1.7.27",
     "next": "16.4.6",
     "pg": "^8.23.1",

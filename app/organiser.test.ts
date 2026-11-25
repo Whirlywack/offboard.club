@@ -8,10 +8,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
+import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/organiser-callback/route";
-import { connectOrganiserLichess } from "./organiser/actions";
+import { connectOrganiserLichess, testTelegram } from "./organiser/actions";
 import OrganiserPage, { generateMetadata } from "./organiser/page";
 
 const { getSession, jar } = vi.hoisted(() => {
@@ -405,14 +406,23 @@ describe("the scheduled jobs on the Organiser page", () => {
       lastDetail: detail,
     });
 
-  beforeEach(() => vi.stubEnv("CRON_SECRET", SECRET));
+  beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", SECRET);
+    // Backups and alerts set up, so that neither says it is off.
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_pretendstore_a-pretend-blob-token");
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+  });
 
-  // Each job has its own part of the page, from its heading to the next.
+  // Each job has its own part of the page, from its heading to the next. An hourly job is late after two hours; the
+  // nightly backup after a day and two hours.
   describe.each([
-    ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
-    ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."],
-    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
-  ])("%s", (job, title, neverRun) => {
+    ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+    ["backup", "Backing up", "Not run yet: Vercel runs it every night once CRON_SECRET is set.", 26 * 60, "a day"],
+    ["alert-organiser", "Alerting you", "Not run yet: Vercel runs it hourly once CRON_SECRET is set.", 120, "two hours"],
+  ])("%s", (job, title, neverRun, lateAfter, late) => {
     const part = async () => {
       const html = await openPage();
       const from = html.indexOf(`<h3>${title}</h3>`);
@@ -436,15 +446,15 @@ describe("the scheduled jobs on the Organiser page", () => {
       expect(await part()).toMatch(alertSaying(neverRun));
     });
 
-    it("flags plainly a last run more than two hours old, and marks its time", async () => {
-      ran(119, "skipped", "Nothing to do.", job);
+    it(`flags plainly a last run more than ${late} old, and marks its time`, async () => {
+      ran(lateAfter - 1, "skipped", "Nothing to do.", job);
       let html = await part();
-      expect(html).not.toContain("for over two hours");
+      expect(html).not.toContain(`for over ${late}`);
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">/);
-      ran(121, "skipped", "Nothing to do.", job);
+      ran(lateAfter + 1, "skipped", "Nothing to do.", job);
       html = await part();
       expect(html).toMatch(
-        alertSaying("It hasn't run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled."),
+        alertSaying(`It hasn't run for over ${late}. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled.`),
       );
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+" class="[^"]+">/);
     });
@@ -484,6 +494,52 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
     expect(html).not.toContain("The job stopped");
   });
+
+  it("says of the latest failure whether its job has run without failing since, for any job, the backup too", async () => {
+    const lastFailure = async () => {
+      const html = await openPage();
+      return html.slice(html.indexOf("<h3>Last failure</h3>"));
+    };
+    jobFailures.set("1", { id: 1, job: "backup", at: new Date(Date.now() - 50 * 60 * 60_000), matchdayDate: null, problem: "The backup failed: oops." });
+    ran(30, "failed", "The backup failed: oops.", "backup");
+    let html = await lastFailure();
+    expect(html).toContain("<dt>Job</dt><dd>Backing up</dd>");
+    expect(html).toContain("<dt>Since</dt><dd>Still failing</dd>");
+    ran(20, "done", "Backed up the database (3 kB). Each backup is kept for at least 12 days.", "backup");
+    html = await lastFailure();
+    expect(html).toMatch(/<dt>Since<\/dt><dd>Ran without failing on <time dateTime="[^"]+">\d{1,2} \w+ \d{4} at \d\d:\d\d<\/time><\/dd>/);
+    // A job the page doesn't know any more: its name, and nothing said of since, whatever the other jobs did.
+    ran(10, "done", "Created it.", "create-matchdays");
+    jobFailures.set("2", { id: 2, job: "an-old-job", at: new Date(), matchdayDate: null, problem: "Gone." });
+    html = await lastFailure();
+    expect(html).toContain("<dt>Job</dt><dd>an-old-job</dd>");
+    expect(html).not.toContain("<dt>Since</dt>");
+  });
+
+  it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
+    const off = "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.";
+    let html = await openPage();
+    expect(html).toMatch(alertSaying(off));
+    // Once, though the last run said the same.
+    ran(30, "skipped", off, "backup");
+    html = await openPage();
+    expect(html.split(off.replaceAll("'", "&#x27;")).length - 1).toBe(1);
+    expect(html).toMatch(
+      alertSaying("Alerts are off: TELEGRAM_ORGANISER_CHAT_ID is missing or not in the form .env.example gives, so the bot can't message you."),
+    );
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    html = await openPage();
+    expect(html).toMatch(alertSaying("Alerts are off: TELEGRAM_BOT_TOKEN and TELEGRAM_ORGANISER_CHAT_ID are missing"));
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_pretendstore_a-pretend-blob-token");
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+    html = await openPage();
+    expect(html).not.toContain("Backups aren't set up");
+    expect(html).not.toContain("Alerts are off");
+    for (const value of ["vercel_blob_rw_pretendstore_a-pretend-blob-token", "a-pretend-telegram-token", "123456789"]) expect(html).not.toContain(value);
+  });
 });
 
 describe("the Organiser page as a whole", () => {
@@ -495,6 +551,88 @@ describe("the Organiser page as a whole", () => {
     const parts = ["lichess", "cancellations", "removals", "schedule", "remove", "telegram", "jobs"].map((id) => `<h2 id="${id}">`);
     const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure"].map((title) => `<h3>${title}</h3>`);
     for (const part of [...parts, ...jobs]) expect([part, html.split(part).length - 1]).toEqual([part, 1]);
+  });
+});
+
+describe("a test message from the Organiser page", () => {
+  const TOKEN = "a-pretend-telegram-token";
+  const [GROUP, CHAT] = ["@pretend_group", "123456789"];
+  let telegram: ReturnType<typeof createFakeTelegram>;
+  const press = (to: string) => {
+    const form = new FormData();
+    form.set("to", to);
+    return testTelegram(null, form);
+  };
+
+  beforeEach(() => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    vi.stubEnv("TELEGRAM_GROUP_ID", GROUP);
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", CHAT);
+    vi.stubEnv("TELEGRAM_URL", "");
+    telegram = createFakeTelegram({ token: TOKEN, chats: [GROUP, CHAT] });
+    vi.stubGlobal("fetch", telegram.fetch);
+  });
+
+  it("offers both, and says everyone in the group sees the one sent there", async () => {
+    const html = await openPage();
+    const section = html.slice(html.indexOf('<h2 id="telegram">'), html.indexOf("</section>", html.indexOf('<h2 id="telegram">')));
+    expect(section).toMatch(/<button [^>]*value="me" name="to">Send a test message to me<\/button>/);
+    expect(section).toMatch(/<button [^>]*value="group" name="to">Send a test message to the group<\/button>/);
+    expect(section).toContain("Everyone in the group sees the one sent to the group.");
+  });
+
+  it("sends one message, at once, to the Organiser's own chat or to the group, and says Telegram took it", async () => {
+    expect(await press("me")).toEqual({ text: "Telegram took it: check your chat with the bot.", problem: false });
+    expect(await press("group")).toEqual({ text: "Telegram took it: check the group.", problem: false });
+    expect(telegram.posts).toEqual([
+      { chatId: CHAT, text: "A test message from Offboard: the bot's alerts reach you here." },
+      { chatId: GROUP, text: "A test message from Offboard's bot: its posts reach this group." },
+    ]);
+  });
+
+  it("says a token Telegram doesn't know apart from a chat it has no way into, never showing the token", async () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "not-the-bots-token");
+    const wrong = await press("me");
+    expect(wrong).toEqual({
+      text: "Nothing was sent: Telegram refused it: Unauthorized. Check TELEGRAM_BOT_TOKEN: it is the whole token @BotFather gave.",
+      problem: true,
+    });
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    vi.stubEnv("TELEGRAM_GROUP_ID", "@not_the_group");
+    expect(await press("group")).toEqual({
+      text: "Nothing was sent: Telegram refused it: Bad Request: chat not found. Check TELEGRAM_GROUP_ID, and that the bot is in the group.",
+      problem: true,
+    });
+    // As Telegram answers a person the bot knows of, from the group, who has never pressed Start in its chat.
+    telegram.override = () => Response.json({ ok: false, error_code: 403, description: "Forbidden: bot can't initiate conversation with a user" }, { status: 403 });
+    expect(await press("me")).toEqual({
+      text: "Nothing was sent: Telegram refused it: Forbidden: bot can't initiate conversation with a user. Open the bot in Telegram and press Start, then check TELEGRAM_ORGANISER_CHAT_ID.",
+      problem: true,
+    });
+    expect(JSON.stringify(wrong)).not.toContain("not-the-bots-token");
+    // Each press one request, none tried again.
+    expect(telegram.calls).toHaveLength(3);
+  });
+
+  it("sends nothing, and says which setting is missing, when one is", async () => {
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
+    expect(await press("me")).toEqual({ text: "TELEGRAM_ORGANISER_CHAT_ID is missing or not in the form .env.example gives, so nothing was sent.", problem: true });
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    expect(await press("group")).toEqual({ text: "TELEGRAM_BOT_TOKEN is missing or not in the form .env.example gives, so nothing was sent.", problem: true });
+    vi.stubEnv("TELEGRAM_GROUP_ID", "");
+    expect(await press("group")).toEqual({
+      text: "TELEGRAM_BOT_TOKEN and TELEGRAM_GROUP_ID are missing or not in the form .env.example gives, so nothing was sent.",
+      problem: true,
+    });
+    expect(telegram.calls).toEqual([]);
+  });
+
+  it("is not found by anyone but the Organiser, and sends nothing", async () => {
+    signedIn = "member";
+    await expect(press("group")).rejects.toThrow("not found");
+    signedIn = null;
+    await expect(press("me")).rejects.toThrow("not found");
+    expect(telegram.calls).toEqual([]);
   });
 });
 

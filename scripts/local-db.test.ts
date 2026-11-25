@@ -101,6 +101,16 @@ describe("refusing before touching anything", () => {
     }
   }, 30_000);
 
+  it("the seed while a Blob store's token is set, as the seed runs the nightly backup", () => {
+    const block = { DATABASE_URL: LOCAL, BETTER_AUTH_SECRET: "a-pretend-secret", BETTER_AUTH_URL: "http://localhost:3100", LICHESS_TEAM_ID: "pretend-team" };
+    const organiser = { ORGANISER_USER_ID: "org", LICHESS_TOKEN_KEY: Buffer.alloc(32, 1).toString("base64") };
+    refuses(tsx, ["scripts/seed.ts"], /^BLOB_READ_WRITE_TOKEN is set, and the seed backs up to no real store: unset it first\.$/, {
+      ...block,
+      ...organiser,
+      BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_pretendstore_a-pretend-blob-token",
+    });
+  }, 30_000);
+
   it("collecting results from anything but a fake Lichess on this machine, which the site follows", () => {
     const refused = /^Refusing to collect results: the site does not follow LICHESS_URL to http:\/\/127\.0\.0\.1:<port>\./;
     const script = "scripts/collect-results.ts";

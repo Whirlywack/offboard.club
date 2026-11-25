@@ -131,6 +131,8 @@ const block = ({ postgres, site, lichess, telegram }) =>
     "TELEGRAM_BOT_TOKEN=pretend-telegram-bot-token",
     "TELEGRAM_GROUP_ID=@pretend_offboard_group",
     "TELEGRAM_INVITE_LINK=https://t.me/+pretend-invite-link",
+    "# Pretend: the Organiser's own chat, where the fake Telegram takes the private alerts.",
+    "TELEGRAM_ORGANISER_CHAT_ID=123456789",
     `TELEGRAM_URL=http://127.0.0.1:${telegram}`,
     "NEXT_TELEMETRY_DISABLED=1",
     "",

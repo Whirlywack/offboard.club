@@ -1,6 +1,7 @@
 // The tests' fake Telegram (lib/fixtures/fake-telegram.ts) as a server at TELEGRAM_URL, so that the bot's posts can be
 // read without Telegram: each message the site posts is printed here as the group would show it. It posts them, as
-// Telegram would, only to the chat TELEGRAM_GROUP_ID names, for the bot TELEGRAM_BOT_TOKEN names. `pnpm fake-telegram`,
+// Telegram would, only to the chats TELEGRAM_GROUP_ID and TELEGRAM_ORGANISER_CHAT_ID name, the second the Organiser's
+// own, which gets the private alerts, for the bot TELEGRAM_BOT_TOKEN names. `pnpm fake-telegram`,
 // in the foreground beside `pnpm dev:local`, with the block from `pnpm db:start` in .env.local; it listens on 127.0.0.1
 // alone. Then `pnpm post-to-telegram <time>` posts what is due at that time, and `pnpm collect-results` the Recap of
 // the Matchday it collects.
@@ -17,7 +18,10 @@ if (address?.hostname !== "127.0.0.1") {
   process.exit(1);
 }
 
-const telegram = createFakeTelegram({ token: process.env.TELEGRAM_BOT_TOKEN ?? "", chats: [process.env.TELEGRAM_GROUP_ID ?? ""] });
+const telegram = createFakeTelegram({
+  token: process.env.TELEGRAM_BOT_TOKEN ?? "",
+  chats: [process.env.TELEGRAM_GROUP_ID ?? "", process.env.TELEGRAM_ORGANISER_CHAT_ID ?? ""],
+});
 
 createServer(async (request, reply) => {
   const chunks: Buffer[] = [];

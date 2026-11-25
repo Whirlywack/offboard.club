@@ -188,6 +188,7 @@ export default function PrivacyPage() {
           </li>
           <li>The site&apos;s copy of a Recap&apos;s post to the Telegram group: until the next Matchday starts.</li>
           <li>Deleted data stays in the database provider&apos;s restore history for up to 6 hours.</li>
+          <li>Deleted data stays in the nightly backups of the database, kept by Vercel in Frankfurt, for up to 14 days.</li>
           <li>The hosting provider&apos;s logs of requests and errors: 1 day.</li>
         </ul>
       </section>

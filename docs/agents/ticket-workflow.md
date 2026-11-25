@@ -6,11 +6,13 @@ Tickets cut from the spec are sub-issues of #1; later ones stand alone. The owne
 
 ## Stages
 
-Each stage is its own agent with a fresh context, and hands over through the branch and a written report. A brief is the issue number plus what is special about this ticket; the standing rules live in the agent's definition.
+Each stage is its own agent with a fresh context, on Opus at extra-high effort, and hands over through the branch and a written report. The orchestrating session only orchestrates. A brief is the issue number plus what is special about this ticket; the standing rules live in the agent's definition.
 
 1. **Build**: `ticket-builder`, in its own worktree, on `ticket-<n>-<short-name>` cut from `origin/main`. Give it the migration number to use.
 2. **Design**: `page-designer`, in the builder's worktree, when the ticket adds or changes a page. Give it the pages and a folder for screenshots.
 3. **Copy**: `page-copywriter`, in the same worktree, when the ticket has reader-facing words.
+
+   **Stages 2 and 3 are paused** (owner's decision, 25 November 2026): the owner will rework the site's design and wording in passes of their own. Until they say otherwise a ticket goes from build straight to review, and the builder is told to write plain, short words and stop its local database when it finishes. The owner's bar for words: say it once, in as few plain words as a person would.
 4. **Review**: `ticket-reviewer`, on the finished branch. Send each finding back to the agent whose stage owns it (a message resumes that agent with its context), then have the review repeated on what changed, until it finds nothing material.
 5. **Pull request**: opened by this session, to `main`, with the `pr` skill's template. The body ends with `Closes #<n>` and records what review found, what could not be verified, and each place the build differs from the issue's words (from the builder's report), with the issue edited or a `ready-for-human` issue opened for each. CI must be green before the link goes to the owner.
 

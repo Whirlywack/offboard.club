@@ -10,7 +10,12 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts"
+    "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts",
+    "db:start": "node scripts/local-db.mjs start",
+    "db:stop": "node scripts/local-db.mjs stop",
+    "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "seed:cookies": "tsx --env-file-if-exists=.env.local scripts/seed.ts --cookies",
+    "fake-lichess": "tsx --env-file-if-exists=.env.local scripts/fake-lichess.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.27",

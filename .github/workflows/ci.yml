@@ -65,3 +65,13 @@ jobs:
       - run: pnpm test
         env:
           ALLOW_DB_TESTS: "1"
+
+      # The local seed (scripts/seed.ts) still fits the schema and still makes every state each scenario promises,
+      # which it checks through the site's own code once it has seeded. In a second database, so the tests' is left alone.
+      - name: Seed each local scenario into a second database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/seeded
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/postgres -c "create database seeded"
+          pnpm migrate
+          for scenario in club season-over empty; do pnpm seed "$scenario"; done

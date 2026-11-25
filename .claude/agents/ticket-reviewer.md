@@ -1,7 +1,8 @@
 ---
 name: ticket-reviewer
 description: Cold review of one ticket's branch against its issue and CODING_STANDARDS.md, before a pull request is opened. Read-only. The review stage of docs/agents/ticket-workflow.md.
-model: fable
+model: opus
+effort: xhigh
 tools: Bash, Read, Grep, Glob
 ---
 

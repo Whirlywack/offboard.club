@@ -6,7 +6,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { apply, confirmed, FAKE_REFUSES, hasSql, inSql, label, locate, parse, parseErrors, propose, shown, verdict } from "./guards.mjs";
+import { apply, confirmed, FAKE_REFUSES, hasSql, inSql, label, locate, namePattern, parse, parseErrors, propose, shown, verdict } from "./guards.mjs";
 
 const TEXT = "one\ntwo\nthree\n";
 type Edit = { first?: number; last?: number; replace?: string[] };
@@ -148,7 +148,7 @@ describe("a file", () => {
 });
 
 describe("a run of the tests", () => {
-  type Test = { status: string; fullName?: string; failureMessages?: string[] };
+  type Test = { status: string; fullName?: string; failureMessages?: string[]; ancestorTitles?: string[]; title?: string };
   const report = (files: { name?: string; status?: string; message?: string; tests: Test[] }[]) => ({
     testResults: files.map((file) => ({
       name: `/tmp/offboard-guards-x/checkout/${file.name ?? "app/a.test.ts"}`,
@@ -165,7 +165,9 @@ describe("a run of the tests", () => {
 
   it("is red, to be run again without the change, when a test failed, even beside files the first failure cancelled", () => {
     const run = report([{ status: "failed", tests: [] }, { name: "app/b.test.ts", status: "failed", tests: [passed, failed] }]);
-    expect(verdict(run, 1, false)).toEqual({ kind: "red", failed: [{ file: "app/b.test.ts", name: "refuses a stranger" }] });
+    expect(verdict(run, 1, false)).toEqual({ kind: "red", failed: [{ file: "app/b.test.ts", name: "refuses a stranger", path: "refuses a stranger" }] });
+    const nested = report([{ tests: [{ ...failed, fullName: "a page refuses a stranger", ancestorTitles: ["a page"], title: "refuses a stranger" } as Test] }]);
+    expect(verdict(nested, 1, false)).toMatchObject({ failed: [{ name: "a page refuses a stranger", path: "a page > refuses a stranger" }] });
     expect(verdict(report([{ tests: [refused, failed] }]), 1, false).kind).toBe("red");
   });
 
@@ -190,6 +192,21 @@ describe("a run of the tests", () => {
     const unloaded = report([{ status: "failed", message: "\x1b[31mTransform failed with 1 error:\x1b[0m\nmore", tests: [] }]);
     expect(verdict(unloaded, 1, false)).toEqual({ kind: "broken", why: "app/a.test.ts no longer loads: Transform failed with 1 error:" });
     expect(verdict(null, 1, false)).toEqual({ kind: "broken", why: "vitest wrote no report" });
+  });
+
+  it("is run again for exactly the tests that failed, by names as vitest matches them", () => {
+    const root = mkdtempSync(join(tmpdir(), "offboard-guards-names-"));
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    const suite = 'describe("a page, for a stranger", () => {\n  it("refuses (once) [all] of it?", () => {});\n  it("refuses", () => {});\n});\n';
+    writeFileSync(join(root, "a.test.ts"), `${suite}it("refuses (once) [all] of it?", () => {});\n`);
+    const out = join(root, "report.json");
+    const pattern = namePattern(["a page, for a stranger > refuses (once) [all] of it?"]);
+    const args = ["run", "--root", root, "--globals", "--reporter=json", `--outputFile=${out}`, `--testNamePattern=${pattern}`];
+    spawnSync(join(process.cwd(), "node_modules/.bin/vitest"), args, { cwd: root, encoding: "utf8" });
+    const ran = JSON.parse(readFileSync(out, "utf8")).testResults.flatMap((file: { assertionResults: { fullName: string; status: string }[] }) =>
+      file.assertionResults.map((test) => `${test.status} ${test.fullName}`),
+    );
+    expect(ran.sort()).toEqual(["passed a page, for a stranger refuses (once) [all] of it?", "skipped a page, for a stranger refuses", "skipped refuses (once) [all] of it?"]);
   });
 
   it("stays red only for the tests that pass without the change", () => {

@@ -212,7 +212,8 @@ export function verdict(report, code, postgres) {
       const message = test.failureMessages.join("\n");
       if (message.includes(FAKE_REFUSES)) refused++;
       else if (/Test timed out in \d+ms/.test(message)) timedOut.push(`${relative(file.name)} > ${test.fullName}`);
-      else failed.push({ file: relative(file.name), name: test.fullName });
+      // vitest's --testNamePattern matches the names of its describe blocks and its own, joined by " > ".
+      else failed.push({ file: relative(file.name), name: test.fullName, path: [...(test.ancestorTitles ?? []), test.title ?? test.fullName].join(" > ") });
     }
   if (failed.length) return { kind: "red", failed };
   if (timedOut.length) return { kind: "unjudged", why: `only by timing out, which load alone can do: ${timedOut.slice(0, 2).join("; ")}` };
@@ -241,6 +242,9 @@ export function confirmed(red, without) {
   if (noticed.length === 0) return { kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${names.slice(0, 2).join("; ")}` };
   return { kind: "red", why: `${noticed.length} failed with the change and pass without it, first: ${noticed.slice(0, 2).join("; ")}` };
 }
+
+// A --testNamePattern for exactly the tests of these names, each its describe blocks' names and its own joined by " > ".
+export const namePattern = (names) => `^(${names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})$`;
 
 const NAMES = { red: "RED", green: "GREEN", broken: "BROKEN", unjudged: "UNJUDGED" };
 
@@ -311,12 +315,12 @@ async function guards(args) {
       if (!database) throw new Error(`pnpm db:start failed (${log}).`);
     }
     const report = join(folder, "report.json");
-    // Runs the test files `filters` (all of them if none) with `pnpm test`, on the database `url` if any, and gives
-    // vitest's report and exit code.
-    const tests = async (filters, url, bail = true) => {
+    // Runs the test files `filters` (all of them if none) with `pnpm test`, on the database `url` if any, stopped at the
+    // first failure or, given `names`, only the tests of those names (describe > test); gives vitest's report and exit code.
+    const tests = async (filters, url, names = null) => {
       rmSync(report, { force: true });
       const env = url ? { ALLOW_DB_TESTS: "1", DATABASE_URL: url } : {};
-      const flags = ["--reporter=json", `--outputFile=${report}`, ...(bail ? ["--bail=1"] : [])];
+      const flags = ["--reporter=json", `--outputFile=${report}`, names ? `--testNamePattern=${namePattern(names)}` : "--bail=1"];
       const code = await run("pnpm", ["test", ...flags, ...filters], { cwd: checkout, log, env, limit: 5 * 60_000 });
       return { report: readJson(report), code };
     };
@@ -376,9 +380,10 @@ async function guards(args) {
       } finally {
         for (const [file, text] of plan.texts) writeFileSync(join(checkout, file), text);
       }
-      // A red run is run again, on the failing files alone, without the change: only a test that passes there noticed it.
+      // A red run is run again, the failing tests alone, without the change: only a test that passes there noticed it.
       if (result.kind === "red") {
-        const without = await tests([...new Set(result.failed.map((test) => test.file))], plan.migration ? database.url : url, false);
+        const failing = [...new Set(result.failed.map((test) => test.file))];
+        const without = await tests(failing, plan.migration ? database.url : url, result.failed.map((test) => test.path));
         result = confirmed(result, without.report);
       }
       say(`${NAMES[result.kind].padEnd(8)}  ${label(plan.change)}`);

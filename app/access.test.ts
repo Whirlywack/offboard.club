@@ -144,7 +144,7 @@ describe("the Profile page", () => {
 
   it("reads nobody's Games or record for anyone who is not a Member, even when every Game is asked for", async () => {
     // A Game and a result of the Member's, so that anything read would have something to show.
-    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PF2C2AUC", ingestedAt: at });
+    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PRETEND1", ingestedAt: at });
     results.set("2026-11-22 member", { matchdayDate: "2026-11-22", userId: "member", rank: 1, points: 2, rating: 1500, companyDomain: null });
     games.set("Game0001", {
       lichessGameId: "Game0001",
@@ -174,7 +174,7 @@ describe("the Profile page", () => {
   });
 
   it("shows a Member's Games and record to another Member", async () => {
-    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PF2C2AUC", ingestedAt: at });
+    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PRETEND1", ingestedAt: at });
     results.set("2026-11-22 member", { matchdayDate: "2026-11-22", userId: "member", rank: 1, points: 2, rating: 1500, companyDomain: null });
     signedInAs("another");
     const html = renderToStaticMarkup((await open("member")) as ReactElement);

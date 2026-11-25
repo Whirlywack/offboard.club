@@ -46,7 +46,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await upcomingMatchday(now, store)).toEqual({ season: 1, number: 1, date: "2026-01-25", start: new Date("2026-01-25T18:00:00Z") });
     expect(await store.seasons()).toEqual([{ number: 1, start: "2026-01-25" }]);
     // A racing request's insert changes nothing.
-    await store.addSeason({ number: 1, start: "2026-02-01" });
+    await store.addSeason({ number: 1, start: "2026-02-01" }, null);
     expect(await store.seasons()).toEqual([{ number: 1, start: "2026-01-25" }]);
 
     expect(await skipSunday("2026-02-01", now, store)).toBeNull();

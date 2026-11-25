@@ -18,6 +18,7 @@ import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { upcomingMatchday } from "@/lib/seasons";
 import { countSignUps } from "@/lib/signups";
+import { inviteLink } from "@/lib/telegram";
 
 export default function Home() {
   return (
@@ -97,7 +98,11 @@ export default function Home() {
             or hearing about jobs. Only signed-in Members can see Profiles; Leaderboards and Recaps are public and show
             names and Companies.
           </p>
-          <p className={styles.plans}>Still to come: a Telegram group for Members.</p>
+          {inviteLink() ? (
+            <p>Members also talk in a Telegram group. Its invite link is shown to Members once they&apos;ve signed up.</p>
+          ) : (
+            <p className={styles.plans}>Still to come: a Telegram group for Members.</p>
+          )}
         </div>
       </section>
 
@@ -226,11 +231,14 @@ async function SeasonChampions() {
   );
 }
 
-async function You() {
+// Who is signed in, or the way to sign in. A Member also gets the Telegram group's invite link, which nobody else is
+// given. Exported for app/home.test.ts.
+export async function You() {
   const session = await getSession().catch(() => null);
   if (!session) return <SignIn contactable={organiserEmail() !== null} />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);
+  const invite = unfinished ? null : inviteLink();
   return (
     <section aria-label="You" className={`${styles.you} ${ui.arrive}`}>
       <div className={styles.who}>
@@ -259,6 +267,11 @@ async function You() {
           </>
         )}
       </div>
+      {invite && (
+        <p className={ui.small}>
+          <ExternalLink href={invite}>Join the Club&apos;s Telegram group</ExternalLink>
+        </p>
+      )}
     </section>
   );
 }

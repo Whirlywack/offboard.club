@@ -4,8 +4,11 @@
 //                                        Member was missed, such as one who connected Lichess only after playing
 // The id is the last part of lichess.org/swiss/<id>. DATABASE_URL and LICHESS_TEAM_ID come from .env.local or the
 // environment. Exits with 1 if the tournament is refused or ingestion fails, in which case nothing has been stored.
+// Once stored, the Recap is posted to the Telegram group, until the next Matchday starts: from here if the Telegram
+// settings are here too, and otherwise by the site's next hourly run of Posting to Telegram.
 import { db } from "@/lib/db";
 import { ingestTournament } from "@/lib/matchdays";
+import { postRecap } from "@/lib/post-to-telegram";
 
 const USAGE = "Usage: pnpm ingest <Lichess Swiss tournament id> [--redo]";
 
@@ -29,6 +32,8 @@ async function main(args: string[]): Promise<number> {
       console.log(
         `${redone ? "Ingested again" : "Ingested"} the Matchday of ${date}: ${members} of the ${participants} participants are Members and ${participants - members} are not; ${games} Games between Members. Its Recap is at /recaps/${date}.`,
       );
+      // Once only, and only until the next Matchday starts (lib/post-to-telegram.ts); a redo has nothing new to tell.
+      if (!redone) console.log(await postRecap(date, new Date()));
       return 0;
     }
     case "unchanged":

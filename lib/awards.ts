@@ -30,6 +30,21 @@ export type Player = { name: string; excluded: boolean };
 // lasted, so that its board opens on the last move, from the winner's side.
 export type RecapAward = Award & { name: string; colour: Colour; plies: number };
 
+// Each Award's name, on the Recap and in its post to the Telegram group.
+export const AWARD_TITLES: Record<Award["kind"], string> = {
+  biggestUpset: "Biggest upset",
+  leastTimeLeft: "Closest call",
+  fastestCheckmate: "Fastest checkmate",
+};
+
+// Time left as a clock shows it, never rounded up: under a minute in seconds to a tenth, so 2.78 seconds is "2.7
+// seconds"; from a minute up in minutes and whole seconds, so 272.34 seconds is "4:32".
+export function timeLeft(centis: number) {
+  if (centis < 6000) return { n: (Math.floor(centis / 10) / 10).toFixed(1), unit: " seconds" };
+  const seconds = Math.floor(centis / 100);
+  return { n: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`, unit: "" };
+}
+
 // The Awards of a Matchday from its decisive Games and the Members in its results, by id. A Game can win an Award only
 // if its winner is still a Member in good standing: neither player's Lichess account may be marked or closed, and the
 // winner must not have left. A loser who has left since does not take the Award from the winner; a loser who is neither

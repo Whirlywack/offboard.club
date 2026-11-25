@@ -5,12 +5,14 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { SCENARIOS, seedSettings, testTally } from "./check.mjs";
 
-// A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use.
+// A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use,
+// removed when the test ends, passed or failed.
 function checkout() {
   const root = mkdtempSync(join(tmpdir(), "offboard-check-test-"));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
   mkdirSync(join(root, "tmp"));
   for (const script of ["check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
@@ -25,7 +27,6 @@ describe("a checkout whose .env.local holds real settings", () => {
     writeFileSync(join(root, ".env.local"), "DATABASE_URL=postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb\n");
     const { status, stdout, stderr } = check(root);
     const left = readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"));
-    rmSync(root, { recursive: true });
     expect(stderr.trim()).toMatch(/^This checkout's \.env\.local holds real settings/);
     expect(stdout).toBe("");
     expect(status).toBe(1);
@@ -105,7 +106,6 @@ describe("a check", () => {
     expect(ran.filter((run) => run.name !== "db:start").some((run) => run.envLocal)).toBe(false);
     expect(existsSync(join(root, ".env.local"))).toBe(false);
     expect(readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"))).toEqual([]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 
   it("fails when any step does, runs the others, and says which failed, a skipped test among them", () => {
@@ -120,7 +120,6 @@ describe("a check", () => {
     expect(skipped.stdout).toContain("skipped, which a check may not: lib/a.test.ts > it works");
     expect(skipped.status).toBe(1);
     expect(readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"))).toEqual([]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 
   it("fails when a merged migration was edited, and runs nothing that needs a database it could not start", () => {
@@ -132,7 +131,6 @@ describe("a check", () => {
     expect(stdout).toContain("  ✗ tests: not run\n  ✗ seeds: not run");
     expect(status).toBe(1);
     expect(readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"))).toEqual([]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 });
 

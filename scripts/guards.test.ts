@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { apply, FAKE_REFUSES, inSql, label, locate, parse, propose, shown, verdict } from "./guards.mjs";
 
 const TEXT = "one\ntwo\nthree\n";
@@ -217,8 +217,10 @@ const FAKE = [
   "",
 ].join("\n");
 
+// Removed when the test ends, passed or failed.
 function fakeCheckout() {
   const root = mkdtempSync(join(tmpdir(), "offboard-guards-test-"));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   for (const dir of ["scripts", "lib", "app", "tmp"]) mkdirSync(join(root, dir));
   for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
   const scripts = Object.fromEntries(["test", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
@@ -249,12 +251,12 @@ function fakeCheckout() {
     git("status", "--porcelain").stdout,
     readFileSync(join(root, "lib/a.ts"), "utf8"),
   ];
-  return { root, guards, runs, left };
+  return { guards, runs, left };
 }
 
 describe("a run of pnpm guards", () => {
   it("says which changes went red, judging one to SQL by the real-Postgres suites alone, and leaves the checkout as it was", () => {
-    const { root, guards, runs, left } = fakeCheckout();
+    const { guards, runs, left } = fakeCheckout();
     const { status, stdout } = guards(["lib/a.ts:3", "lib/a.ts:4", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true", "lib/a.ts:1", "--replace", '"x" = $1', "true"]);
     expect(stdout).toContain("The tests pass as the code is (the whole suite with the real-Postgres suites: 3 passed).");
     expect(stdout).toContain('RED       lib/a.ts:3\n         - if (!ok) return "refused";\n         1 failed, first: app/a.test.ts > refuses a stranger\n');
@@ -273,21 +275,19 @@ describe("a run of pnpm guards", () => {
     expect(tests.every((run) => run.postgres)).toBe(true);
     expect(runs().filter((run) => run.name.startsWith("db:")).map((run) => run.name)).toEqual(["db:start", "db:stop"]);
     expect(left()).toEqual([[], "", A]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 
   it("judges nothing when the tests fail before any change", () => {
-    const { root, guards, left } = fakeCheckout();
+    const { guards, left } = fakeCheckout();
     const { status, stdout, stderr } = guards(["lib/a.ts:3"], { FAKE_FAIL: "all" });
     expect(stderr.trim()).toBe("The tests fail before any change, so no change can be judged: 1 failed, first: app/a.test.ts > refuses a stranger");
     expect(stdout).not.toMatch(/^(RED|GREEN)/m);
     expect(status).toBe(1);
     expect(left()).toEqual([[], "", A]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 
   it("makes no change that is not in the file once, nor one to SQL that --tests leaves to the fast tests, and needs no database then", () => {
-    const { root, guards, runs, left } = fakeCheckout();
+    const { guards, runs, left } = fakeCheckout();
     const places = ["lib/a.ts:9", "lib/none.ts:1", "lib/a.ts:3", "--replace", "nothing", "x", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true"];
     const { status, stdout } = guards([...places, "--tests", "app/a.test.ts"]);
     expect(stdout).toContain("NOT MADE  lib/a.ts:9\n         lib/a.ts: it has 6 lines\n");
@@ -298,6 +298,5 @@ describe("a run of pnpm guards", () => {
     expect(status).toBe(1);
     expect(runs().map((run) => run.name)).toEqual(["test"]);
     expect(left()).toEqual([[], "", A]);
-    rmSync(root, { recursive: true });
   }, 60_000);
 });

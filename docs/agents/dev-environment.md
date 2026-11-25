@@ -24,6 +24,16 @@ Each script's header has the options. Each refuses a database that is not on thi
 
 The local site can still reach the real internet when something is clicked. "Sign in with LinkedIn" sends the browser to linkedin.com: use a seeded cookie. A seeded Profile's LinkedIn and Lichess links, and an Award's Replay, lead to the real sites, where the pretend names do not exist. Saving a new Company website makes the server fetch that website: use the seeded Companies.
 
+## Checking pages in a browser
+
+- **The Playwright browser is shared** with every other agent on the machine. Open your own browser context, and close it when you finish.
+- **After a link click Next.js keeps the previous page in the DOM, hidden.** Select `main:visible`, not `main`.
+- **Leaderboard tables arrive after the page.** Wait for the table before reading it.
+- **Sign in with a seeded cookie**, read from `.local-db/cookies.json` in your shell and passed into the page: Playwright's code runner cannot read files.
+- **The scratchpad is shared too.** Start every scratch file's name with the ticket, `t<n>-`.
+- **A worktree's shell refuses long multi-line commands.** Put the lines in a helper script in the scratchpad and run that.
+- **If the ports `db:start` chose earlier are now taken** by another worktree, start a second folder with `--dir`.
+
 ## The owner's running site
 
 `localhost:3000` is served from the main checkout, on `main`, with the owner's real settings in its `.env.local`. Builds, typechecks, merges and branch switches happen in a worktree, on another port: a merge, a build and a typecheck run in the folder the dev server was serving once left the owner's browser reloading in a loop.

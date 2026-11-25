@@ -34,8 +34,9 @@ vi.mock("@/lib/db", async () => {
 });
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
-const TOURNAMENT = "PF2C2AUC";
-// The recorded exports, standing for the Matchday of Sunday 22 November.
+const TOURNAMENT = "PRETEND1";
+// The recorded exports, their people invented (lib/matchday.test.ts says how), standing for the Matchday of Sunday 22
+// November.
 const DATE = "2026-11-22";
 
 describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("ingestion and the Recap in Postgres", () => {
@@ -44,9 +45,9 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     teamId: "offboard-team",
     teamPassword: "pw",
     accounts: [
-      { id: "gevorgsargsyan", username: "GEVorgSaRgSyAn", perfs: { blitz: { games: 900, rating: 1930, rd: 60, prog: 12 } } },
-      { id: "iksannur", username: "iksannur", perfs: { blitz: { games: 9, rating: 1810, rd: 60, prog: 1 } } },
-      { id: "olwerre", username: "Olwerre", tosViolation: true },
+      { id: "pretend--ada", username: "Pretend--Ada", perfs: { blitz: { games: 900, rating: 1930, rd: 60, prog: 12 } } },
+      { id: "pretend--bruno", username: "pretend--bruno", perfs: { blitz: { games: 9, rating: 1810, rd: 60, prog: 1 } } },
+      { id: "pretend--ines", username: "Pretend--Ines", tosViolation: true },
     ],
     tournaments: [
       {
@@ -94,10 +95,10 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
          values ($1, $1, $2, false, $3, $3, $4, $4, 1500, '2026-01-01T00:00:00Z', $5)`,
         [id, `${id}@example.invalid`, welcomed ? "2026-01-01T00:00:00Z" : null, lichessId, companyDomain],
       );
-    await addPerson("ingest-test-ana", "gevorgsargsyan", true, "ingest-test.example");
-    await addPerson("ingest-test-ben", "iksannur");
-    await addPerson("ingest-test-cora", "olwerre");
-    await addPerson("ingest-test-gil", "enotik67", false);
+    await addPerson("ingest-test-ana", "pretend--ada", true, "ingest-test.example");
+    await addPerson("ingest-test-ben", "pretend--bruno");
+    await addPerson("ingest-test-cora", "pretend--ines");
+    await addPerson("ingest-test-gil", "pretend--olaf", false);
 
     expect(await registerTournament(DATE, TOURNAMENT)).toBe(true);
     expect(await registerTournament(DATE, "OTHER123")).toBe(false);
@@ -120,8 +121,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { userId: "ingest-test-cora", rank: 3, points: 5, rating: 1584, companyDomain: null },
     ]);
     expect(await select(`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "winnerClockCentis" is not null as "clock" from "game" order by "finishedAt"`)).toEqual([
-      { lichessGameId: "T5PhEOXy", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true },
-      { lichessGameId: "wmKSbb6v", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true },
+      { lichessGameId: "Pretend100", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true },
+      { lichessGameId: "Pretend119", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true },
     ]);
     expect(await select(`select id, "lichessBlitzRating", "lichessMarked", "lichessClosed" from "user" where id like 'ingest-test-%' order by id`)).toEqual([
       { id: "ingest-test-ana", lichessBlitzRating: 1930, lichessMarked: false, lichessClosed: false },
@@ -143,8 +144,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       ],
       // ana, with Black, mated ben on her 74th move (148 half-moves) with 5.30 seconds on her clock.
       awards: [
-        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
-        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "Pretend100", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
       ],
     });
     expect(await getRecap("2026-11-23")).toBeNull();
@@ -167,7 +168,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { userId: "ingest-test-ben" },
       { userId: "ingest-test-gil" },
     ]);
-    expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'wmKSbb6v'`)).toEqual([
+    expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },
     ]);
   }, 60_000);
@@ -195,7 +196,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     };
     expect(await ingestTournament(TOURNAMENT)).toEqual({
       outcome: "refused",
-      problem: "Tournament PF2C2AUC became the Matchday of 2026-11-15 while it was being ingested.",
+      problem: "Tournament PRETEND1 became the Matchday of 2026-11-15 while it was being ingested.",
     });
     lichess.override = undefined;
     expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" from "matchday"`)).toEqual([

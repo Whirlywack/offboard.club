@@ -256,14 +256,14 @@ describe("reading Lichess's answers", () => {
   });
 
   it("tells a Swiss tournament Lichess does not have from one it cannot read", async () => {
-    answering({ id: "PF2C2AUC", status: "finished", startsAt: "2026-11-24T13:30:00Z", name: "x" });
-    expect(await lichess.getSwiss("PF2C2AUC")).toEqual({ id: "PF2C2AUC", status: "finished", startsAt: new Date("2026-11-24T13:30:00Z") });
+    answering({ id: "PRETEND1", status: "finished", startsAt: "2026-11-24T13:30:00Z", name: "x" });
+    expect(await lichess.getSwiss("PRETEND1")).toEqual({ id: "PRETEND1", status: "finished", startsAt: new Date("2026-11-24T13:30:00Z") });
     answering({ error: "Not found" }, 404);
-    expect(await lichess.getSwiss("PF2C2AUC")).toBeNull();
-    answering({ id: "PF2C2AUC", status: "paused", startsAt: "2026-11-24T13:30:00Z" });
-    await expect(lichess.getSwiss("PF2C2AUC")).rejects.toThrow(lichess.LichessError);
+    expect(await lichess.getSwiss("PRETEND1")).toBeNull();
+    answering({ id: "PRETEND1", status: "paused", startsAt: "2026-11-24T13:30:00Z" });
+    await expect(lichess.getSwiss("PRETEND1")).rejects.toThrow(lichess.LichessError);
     answering({ error: "oops" }, 500);
-    await expect(lichess.getSwiss("PF2C2AUC")).rejects.toMatchObject({ status: 500 });
+    await expect(lichess.getSwiss("PRETEND1")).rejects.toMatchObject({ status: 500 });
   });
 
   it("stops reading a team's tournaments, latest first, once past the start of the one it looks for", async () => {

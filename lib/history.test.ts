@@ -101,19 +101,20 @@ describe("Matchdays played and the Streak", () => {
   });
 
   describe("after a Matchday is redone", () => {
-    // The recorded tournament of lib/fixtures, ingested for real through lib/matchdays.ts with Lichess faked. Of its
-    // Members, gevorgsargsyan played two Games and calvinlidasan none, joining late for half a point.
+    // The recorded tournament of lib/fixtures, its people invented, ingested for real through lib/matchdays.ts
+    // with Lichess faked. Of its Members, pretend--ada played two Games and pretend--petra none, joining late for
+    // half a point.
     const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
     const lichess = createFakeLichess({
       teamId: "offboard-team",
       teamPassword: "pw",
       accounts: [
-        { id: "gevorgsargsyan", username: "GEVorgSaRgSyAn" },
-        { id: "calvinlidasan", username: "Calvinlidasan" },
+        { id: "pretend--ada", username: "Pretend--Ada" },
+        { id: "pretend--petra", username: "Pretend--Petra" },
       ],
       tournaments: [
         {
-          id: "PF2C2AUC",
+          id: "PRETEND1",
           teamId: "offboard-team",
           status: "finished",
           startsAt: "2026-11-22T18:00:00Z",
@@ -135,18 +136,18 @@ describe("Matchdays played and the Streak", () => {
     });
 
     it("counts the Matchday once for those already in it, and takes in a Member who was missed", async () => {
-      addPerson("eva", { lichessId: "gevorgsargsyan" });
+      addPerson("eva", { lichessId: "pretend--ada" });
       // fay played on 22 November on another Lichess account, and swapped to it only afterwards, so the first ingestion
       // missed her.
       addPerson("fay", { lichessId: "fays-old-account" });
       ingested("2026-11-08", ["eva", "fay"]);
       ingested("2026-11-15", ["eva", "fay"]);
-      expect(await ingestTournament("PF2C2AUC")).toMatchObject({ outcome: "ingested", date: "2026-11-22" });
+      expect(await ingestTournament("PRETEND1")).toMatchObject({ outcome: "ingested", date: "2026-11-22" });
       expect(await getHistory("eva", "eva")).toMatchObject({ played: 3, streak: 3 });
-      people.get("fay")!.lichessId = "calvinlidasan";
+      people.get("fay")!.lichessId = "pretend--petra";
       expect(await getHistory("fay", "eva")).toMatchObject({ played: 2, streak: 0 });
 
-      expect(await ingestTournament("PF2C2AUC", { redo: true })).toMatchObject({ outcome: "ingested", redone: true });
+      expect(await ingestTournament("PRETEND1", { redo: true })).toMatchObject({ outcome: "ingested", redone: true });
       expect(await getHistory("eva", "eva")).toMatchObject({ played: 3, streak: 3 });
       expect(await getHistory("fay", "eva")).toMatchObject({ played: 3, streak: 3 });
     });

@@ -17,8 +17,13 @@ const FETCH_WAIT_MS = 8000;
 // a limit, Companies whose websites never answer would make the site contact more and more domains every minute.
 export const FETCH_ATTEMPTS = 3;
 
-// The Company a person belongs to now, or null if they have not given one. Matchday ingestion (#7) records this
-// with each result, so a later change of Company leaves past Matchdays as they were.
+// How a page names a Company: by its name, with the domain beside it, since any website can claim any name. A Company
+// whose website gave no name is named by its domain alone.
+export const companyLabel = ({ domain, name }: Pick<Company, "domain" | "name">) =>
+  name === domain ? domain : `${name} (${domain})`;
+
+// The Company a person belongs to now, or null if they have not given one. Matchday ingestion (#7) copies the same
+// domain into each result as it stores it, so a later change of Company leaves past Matchdays as they were.
 export async function currentCompany(personId: string): Promise<Pick<Company, "domain" | "name"> | null> {
   const { rows } = await db.query<Pick<Company, "domain" | "name">>(
     `select c."domain", c."name" from "user" u join "company" c on c."domain" = u."companyDomain" where u.id = $1`,

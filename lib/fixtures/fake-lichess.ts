@@ -1,9 +1,13 @@
-// A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, a public user,
-// joining a team and revoking a token, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs,
-// as lichess.org's source (lila) does:
+// A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, public users one at
+// a time and in bulk, joining a team, revoking a token, and Swiss tournaments with their results and Games, behaving as
+// Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org's source (lila) does:
 // - a wrong team password is a 400 there, a 403 in the spec;
 // - "tosViolation" is shown to everyone except the account itself, so never on /api/account;
-// - a closed ("disabled") account's token is refused, and its public user is only { id, username, disabled }.
+// - a closed ("disabled") account's token is refused, and its public user is only { id, username, disabled };
+// - POST /api/users takes the first 300 ids and leaves out accounts it does not have;
+// - a Swiss tournament's own JSON does not say which team it is on; the team's list of tournaments, latest start
+//   first, is what does;
+// - a Swiss tournament's Games come as PGN unless the request accepts ndjson, and without clock times unless asked.
 //
 // Use `fetch` in place of the global one. The authorization page is the browser's, not the site's, so visits to it
 // are not recorded in `calls`; it approves as `signedInAs`, or declines when that is null.
@@ -18,11 +22,24 @@ export type FakeAccount = {
   tosViolation?: boolean;
 };
 
+// A Swiss tournament, with its exports as Lichess sends them: `results` and `games` are ndjson text.
+export type FakeSwiss = {
+  id: string;
+  teamId: string;
+  status: "created" | "started" | "finished";
+  startsAt: string;
+  results: string;
+  games: string;
+};
+
 export type FakeCall = {
   method: string;
   path: string;
+  query: URLSearchParams;
+  accept: string | null;
   authorization: string | null;
   userAgent: string | null;
+  text: string;
   body: URLSearchParams;
 };
 
@@ -31,11 +48,15 @@ type Token = { accountId: string; scope: string; revoked: boolean };
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
-export function createFakeLichess(options: { teamId: string; teamPassword: string; accounts: FakeAccount[] }) {
+const ndjson = (lines: unknown[]) =>
+  new Response(lines.map((line) => `${JSON.stringify(line)}\n`).join(""), { headers: { "content-type": "application/x-ndjson" } });
+
+export function createFakeLichess(options: { teamId: string; teamPassword: string; accounts: FakeAccount[]; tournaments?: FakeSwiss[] }) {
   const codes = new Map<string, Code>();
   const tokens = new Map<string, Token>();
   const fake = {
     accounts: new Map(options.accounts.map((account) => [account.id, account])),
+    tournaments: new Map((options.tournaments ?? []).map((swiss) => [swiss.id, swiss])),
     team: { id: options.teamId, password: options.teamPassword, members: new Set<string>() },
     calls: [] as FakeCall[],
     tokens,
@@ -48,12 +69,16 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
     async handle(request: Request): Promise<Response> {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/oauth") return authorize(url);
+      const text = request.method === "GET" ? "" : await request.text();
       const call: FakeCall = {
         method: request.method,
         path: url.pathname,
+        query: url.searchParams,
+        accept: request.headers.get("accept"),
         authorization: request.headers.get("authorization"),
         userAgent: request.headers.get("user-agent"),
-        body: new URLSearchParams(request.method === "GET" ? "" : await request.text()),
+        text,
+        body: new URLSearchParams(text),
       };
       fake.calls.push(call);
       const overridden = fake.override?.(call);
@@ -64,9 +89,22 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
       if (call.method === "GET" && user) {
         const account = fake.accounts.get(decodeURIComponent(user[1]).toLowerCase());
         if (!account) return json({ error: "Not found" }, 404);
-        if (account.disabled) return json({ id: account.id, username: account.username, disabled: true });
+        return json(publicUser(account, bearer(call)?.accountId));
+      }
+      if (call.method === "POST" && call.path === "/api/users") {
+        const ids = call.text.replace(/\n/g, "").split(",").slice(0, 300).map((id) => id.trim().toLowerCase());
         const viewer = bearer(call)?.accountId;
-        return json({ ...shown(account), ...(account.tosViolation && viewer !== account.id && { tosViolation: true }) });
+        return json(ids.flatMap((id) => (fake.accounts.has(id) ? [publicUser(fake.accounts.get(id)!, viewer)] : [])));
+      }
+      const swiss = /^\/api\/swiss\/([^/]+)(\/results|\/games)?$/.exec(call.path);
+      if (call.method === "GET" && swiss) return swissAnswer(call, decodeURIComponent(swiss[1]), swiss[2]);
+      const teamSwiss = /^\/api\/team\/([^/]+)\/swiss$/.exec(call.path);
+      if (call.method === "GET" && teamSwiss) {
+        const listed = [...fake.tournaments.values()]
+          .filter((t) => t.teamId === decodeURIComponent(teamSwiss[1]))
+          .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
+          .slice(0, Number(call.query.get("max") ?? 100));
+        return ndjson(listed.map(swissJson));
       }
       const token = bearer(call);
       if (!token) return json({ error: "No such token" }, 401);
@@ -140,6 +178,51 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
   // An account as Lichess shows it, its marks left out.
   function shown({ id, username, perfs }: FakeAccount) {
     return { id, username, perfs: perfs ?? {}, url: `https://lichess.org/@/${username}` };
+  }
+
+  // An account as Lichess shows it to `viewer`, who may be nobody: its mark, unless it is the viewer's own, and only
+  // its name if it is closed.
+  function publicUser(account: FakeAccount, viewer: string | undefined) {
+    if (account.disabled) return { id: account.id, username: account.username, disabled: true };
+    return { ...shown(account), ...(account.tosViolation && viewer !== account.id && { tosViolation: true }) };
+  }
+
+  // A tournament as GET /api/swiss/{id} shows it: no team.
+  function swissJson({ id, status, startsAt }: FakeSwiss) {
+    return {
+      id,
+      createdBy: "organiser",
+      startsAt,
+      name: "Offboard Matchday",
+      clock: { limit: 300, increment: 3 },
+      variant: "standard",
+      round: status === "created" ? 0 : 5,
+      nbRounds: 5,
+      nbPlayers: 0,
+      nbOngoing: status === "started" ? 1 : 0,
+      status,
+      verdicts: { list: [], accepted: true },
+      rated: true,
+    };
+  }
+
+  function swissAnswer(call: FakeCall, id: string, part: string | undefined): Response {
+    const swiss = fake.tournaments.get(id);
+    if (!swiss) return json({ error: "Not found" }, 404);
+    if (!part) return json(swissJson(swiss));
+    const lines = (text: string) => text.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+    if (part === "/results") return ndjson(lines(swiss.results));
+    if (!call.accept?.includes("application/x-ndjson"))
+      return new Response(`[Event "Offboard Matchday"]\n\n1. e4 *\n`, { headers: { "content-type": "application/x-chess-pgn" } });
+    const clocks = call.query.get("clocks") === "true";
+    const moves = call.query.get("moves") !== "false";
+    return ndjson(
+      lines(swiss.games).map(({ clocks: clockTimes, moves: played, ...game }) => ({
+        ...game,
+        ...(moves && { moves: played }),
+        ...(clocks && clockTimes && { clocks: clockTimes }),
+      })),
+    );
   }
 
   return fake;

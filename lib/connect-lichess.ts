@@ -174,12 +174,14 @@ async function connectedToSomeoneElse(lichessId: string, personId: string): Prom
 }
 
 // Only the Lichess columns of the person's own row change, so a swap leaves the Member and everything attached to
-// them as it was, including when they first connected (MEMBER_SINCE). False if someone else connected the same
-// account in the meantime.
+// them as it was, including when they first connected (MEMBER_SINCE). The account was just found to be neither marked
+// nor closed, so marks a previous account carried go with it. False if someone else connected the same account in
+// the meantime.
 async function saveConnection(personId: string, account: LichessAccount): Promise<boolean> {
   try {
     await db.query(
       `update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
+         "lichessMarked" = false, "lichessClosed" = false,
          "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now()
        where id = $1`,
       [personId, account.id, account.username, account.blitzRating],

@@ -19,6 +19,9 @@ export default function Home() {
         <Suspense>
           <NextMatchday />
         </Suspense>
+        <p>
+          <Link href="/recaps">Recaps of past Matchdays</Link>
+        </p>
         <Suspense>
           <You />
         </Suspense>

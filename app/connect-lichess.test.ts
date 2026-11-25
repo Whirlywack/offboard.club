@@ -46,6 +46,8 @@ type Person = {
   lichessUsername: string | null;
   lichessBlitzRating: number | null;
   lichessConnectedAt: Date | null;
+  lichessMarked: boolean;
+  lichessClosed: boolean;
 };
 const at = new Date("2026-11-24T18:00:00Z");
 let people: Map<string, Person>;
@@ -61,6 +63,8 @@ const person = (id: string, more: Partial<Person> = {}): Person => ({
   lichessUsername: null,
   lichessBlitzRating: null,
   lichessConnectedAt: null,
+  lichessMarked: false,
+  lichessClosed: false,
   ...more,
 });
 
@@ -70,12 +74,20 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
     const [lichessId, id] = params;
     return { rows: [...people.values()].filter((p) => p.lichessId === lichessId && p.id !== id).map(() => ({})) };
   }
-  if (/^update "user" set "lichessId" = \$2, "lichessUsername" = \$3, "lichessBlitzRating" = \$4,\s+"lichessConnectedAt" = coalesce\("lichessConnectedAt", now\(\)\), "updatedAt" = now\(\)\s+where id = \$1$/.test(sql)) {
+  if (/^update "user" set "lichessId" = \$2, "lichessUsername" = \$3, "lichessBlitzRating" = \$4,\s+"lichessMarked" = false, "lichessClosed" = false,\s+"lichessConnectedAt" = coalesce\("lichessConnectedAt", now\(\)\), "updatedAt" = now\(\)\s+where id = \$1$/.test(sql)) {
     const [id, lichessId, lichessUsername, lichessBlitzRating] = params as [string, string, string, number | null];
     if ([...people.values()].some((p) => p.lichessId === lichessId && p.id !== id))
       throw Object.assign(new Error('duplicate key value violates unique constraint "user_lichessId_key"'), { code: "23505" });
     const row = people.get(id);
-    if (row) Object.assign(row, { lichessId, lichessUsername, lichessBlitzRating, lichessConnectedAt: row.lichessConnectedAt ?? new Date() });
+    if (row)
+      Object.assign(row, {
+        lichessId,
+        lichessUsername,
+        lichessBlitzRating,
+        lichessMarked: false,
+        lichessClosed: false,
+        lichessConnectedAt: row.lichessConnectedAt ?? new Date(),
+      });
     return { rows: [] };
   }
   throw new Error(`unexpected query: ${sql}`);
@@ -492,6 +504,12 @@ describe("swapping to a different Lichess account", () => {
     expect(updates()[0][1][0]).toBe("member");
     expect(lichess.team.members.has("newbie")).toBe(true);
     expect(revoked()).toBe(true);
+  });
+
+  it("drops the marks the old account carried, since the new one was just found unmarked", async () => {
+    Object.assign(people.get("member")!, { lichessMarked: true, lichessClosed: true });
+    await connectAs("newbie");
+    expect(people.get("member")).toMatchObject({ lichessId: "newbie", lichessMarked: false, lichessClosed: false });
   });
 
   it("keeps when the Member first connected, which is when they signed up", async () => {

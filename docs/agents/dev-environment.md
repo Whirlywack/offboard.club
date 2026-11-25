@@ -12,17 +12,15 @@ What `package.json` and the config files do not tell you. Script names and their
 
 In a fresh worktree, in this order:
 
-1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated, and a `.env.local` in which every value is pretend, created only when the worktree has none. It names the ports it chose, and refuses to run in a checkout whose `.env.local` holds real settings.
-2. The real-Postgres suites, if you need them, now: `ALLOW_DB_TESTS=1 pnpm test` with that file's `DATABASE_URL` in the environment. They expect empty tables, so they come before the seed; later, a second `pnpm db:start --dir <another folder>` gives another empty database.
-3. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises.
-4. `pnpm dev --port <the site port it named>`. Next.js does not take its port from `.env.local`.
-5. `pnpm fake-lichess` beside it, for the Connect Lichess step. Restart it after seeding again.
-6. `pnpm seed:cookies` prints a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`.
-7. `pnpm db:stop` when you are done. It stops only what this checkout started.
+1. `pnpm db:start`: a throwaway Postgres on 127.0.0.1, migrated; a `.env.local` in which every value is pretend, created only when the worktree has none; then the site and the fake Lichess, running in the background. It prints the three addresses. Ports come as a set (Postgres 55432, site 3100, fake Lichess 8089, each plus the same n), so two worktrees never share one. It refuses to start in a checkout whose `.env.local` holds real settings.
+2. The real-Postgres suites, if you need them, now: `ALLOW_DB_TESTS=1 DATABASE_URL=<the address it printed> pnpm test`. They expect empty tables, so they come before the seed. Once the first database is seeded, `pnpm db:start --dir .local-db-tests` starts a second, empty one.
+3. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises through the site's own code.
+4. `pnpm seed:cookies` writes `.local-db/cookies.json`, a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`. The Organiser is `org`.
+5. `pnpm db:stop` when you are done. It stops exactly what `db:start` started.
 
-Each script's header has the options. Each refuses a `DATABASE_URL` that is not on this machine.
+Each script's header has the options. Each refuses a database that is not on this machine, and the seed refuses one `db:start` did not make.
 
-The local site still reaches the real internet in three places. "Sign in with LinkedIn" sends the browser to linkedin.com: use a seeded cookie. Saving a new Company website makes the server fetch that website: use the seeded Companies. An Award's Replay loads a board from lichess.org.
+The local site can still reach the real internet when something is clicked. "Sign in with LinkedIn" sends the browser to linkedin.com: use a seeded cookie. A seeded Profile's LinkedIn and Lichess links, and an Award's Replay, lead to the real sites, where the pretend names do not exist. Saving a new Company website makes the server fetch that website: use the seeded Companies.
 
 ## The owner's running site
 

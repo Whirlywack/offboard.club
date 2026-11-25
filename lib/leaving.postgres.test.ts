@@ -1,9 +1,11 @@
+import { randomBytes } from "node:crypto";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { finishConnection, startConnection } from "./connect-lichess";
 import { createFakeLichess } from "./fixtures/fake-lichess";
 import { forgetTeamRemoval, removeMember, removeSwitchedFrom, teamRemovals } from "./leaving";
+import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
 
 // Leaving the Club's real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
 // so nothing it does is kept: that the foreign keys of migrations/ take everything of the person's with them but their
@@ -141,25 +143,90 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     for (const lichessId of ["switch-test-new", "switch-test-unheld"])
       await run(`insert into "teamRemoval" ("lichessId", "problem") values ($1, 'kept')`, [lichessId]);
 
-    const { url, cookie } = startConnection(MEMBER);
-    lichess.signedInAs = "switch-test-new";
-    const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
-    expect(await finishConnection({ id: MEMBER, lichessId: `${MEMBER}-on-lichess` }, back.searchParams, cookie)).toBe(`/profiles/${MEMBER}`);
+    // Each switch is saved, and names the account it replaced, as the row was.
+    const switchTo = async (account: string, person: { id: string; lichessId: string | null }) => {
+      const { url, cookie } = startConnection(person.id);
+      lichess.signedInAs = account;
+      const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
+      return finishConnection(person, back.searchParams, cookie);
+    };
+    expect(await switchTo("switch-test-new", { id: MEMBER, lichessId: `${MEMBER}-on-lichess` })).toEqual({
+      to: `/profiles/${MEMBER}`,
+      replaced: `${MEMBER}-on-lichess`,
+    });
     expect((await run(`select id, "lichessId" from "user" where id in ($1, $2) order by id`, [MEMBER, OTHER])).rows).toEqual([
       { id: MEMBER, lichessId: "switch-test-new" },
       { id: OTHER, lichessId: `${OTHER}-on-lichess` },
     ]);
     expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept" }]);
+    // A second switch, from a session still naming the first account, names the account the row has now.
+    for (const id of ["switch-test-third", "switch-test-unheld"]) lichess.accounts.set(id, { id, username: id });
+    expect((await switchTo("switch-test-third", { id: MEMBER, lichessId: `${MEMBER}-on-lichess` })).replaced).toBe("switch-test-new");
+    // Someone who deleted their account while connecting: nothing is saved, so nothing is forgotten, even if keeping
+    // the account then fails; once that works, the account is kept with why (#43).
+    const through = db.query.bind(db) as (sql: string, params?: unknown[]) => Promise<unknown>;
+    const failing = vi.spyOn(db, "query").mockImplementation(((sql: string, params?: unknown[]) =>
+      sql.includes(`insert into "teamRemoval"`) ? Promise.reject(new Error("Connection terminated unexpectedly")) : through(sql, params)) as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await switchTo("switch-test-unheld", { id: "switch-test-gone", lichessId: null })).to).toBe("/welcome/lichess?lichess=failed");
+    failing.mockRestore();
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept" }]);
+    expect(await switchTo("switch-test-unheld", { id: "switch-test-gone", lichessId: null })).toEqual({ to: "/welcome/profile", replaced: null });
+    const never = "Its owner deleted their account on Offboard while it was joining the Club's team, so it was never connected.";
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: never }]);
 
-    // The account switched from is nobody's now: kept, with why. The one switched to, and another Member's, are left.
-    await removeSwitchedFrom(`${MEMBER}-on-lichess`, 25_000);
-    await removeSwitchedFrom("switch-test-new", 25_000);
-    await removeSwitchedFrom(`${OTHER}-on-lichess`, 25_000);
+    // The accounts switched from are nobody's now: kept, with why. The one in use, and another Member's, are left.
+    const by = Date.now() + 25_000;
+    for (const account of [`${MEMBER}-on-lichess`, "switch-test-new", "switch-test-third", `${OTHER}-on-lichess`])
+      await removeSwitchedFrom(account, by);
     const why = "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read.";
     expect((await teamRemovals()).sort((a, b) => (a.lichessId < b.lichessId ? -1 : 1))).toEqual([
       { lichessId: `${MEMBER}-on-lichess`, problem: why },
-      { lichessId: "switch-test-unheld", problem: "kept" },
+      { lichessId: "switch-test-new", problem: why },
+      { lichessId: "switch-test-unheld", problem: never },
     ]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  }, 60_000);
+
+  it("keeps for the Organiser only an account nobody has once Lichess has answered", async () => {
+    // The Organiser has connected their Lichess account, which leads the team; Lichess then fails every removal, slowly
+    // enough that a Member can switch back to the account meanwhile.
+    const lichess = createFakeLichess({ teamId: "switch-team", teamPassword: "pw", accounts: [{ id: "switch-boss", username: "switch-boss" }] });
+    lichess.team.leaders.add("switch-boss");
+    const ORGANISER = "switch-test-organiser";
+    for (const [name, value] of Object.entries({
+      LICHESS_URL: "https://fake.lichess.test",
+      BETTER_AUTH_URL: "https://offboard.test",
+      BETTER_AUTH_SECRET: "test secret",
+      LICHESS_TEAM_ID: "switch-team",
+      LICHESS_TOKEN_KEY: randomBytes(32).toString("base64"),
+      ORGANISER_USER_ID: ORGANISER,
+    }))
+      vi.stubEnv(name, value);
+    let duringRemoval = async () => {};
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes("/kick/")) return lichess.fetch(input, init);
+      await duringRemoval();
+      return new Response("", { status: 503 });
+    });
+    await addPerson(ORGANISER, "switch-boss-plays");
+    await run(`delete from "organiserLichess"`);
+    await run(`delete from "teamRemoval"`);
+    const { url, cookie } = startOrganiserConnection(ORGANISER);
+    lichess.signedInAs = "switch-boss";
+    const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
+    expect(await finishOrganiserConnection({ id: ORGANISER }, back.searchParams, cookie)).toBe("/organiser?lichess=connected");
+
+    // A Member has switched from race-old to race-new, and switches back while Lichess is being asked to remove race-old.
+    const MEMBER = "switch-test-racer";
+    await addPerson(MEMBER, "race-new");
+    duringRemoval = async () => void (await run(`update "user" set "lichessId" = 'race-old' where id = $1`, [MEMBER]));
+    await removeSwitchedFrom("race-old", Date.now() + 25_000);
+    // Someone else's old account, which nobody takes meanwhile.
+    duringRemoval = async () => {};
+    await removeSwitchedFrom("race-gone", Date.now() + 25_000);
+    expect(await teamRemovals()).toEqual([{ lichessId: "race-gone", problem: "Lichess answered POST /api/team/{teamId}/kick/{userId} with 503." }]);
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);

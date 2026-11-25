@@ -28,12 +28,13 @@ export const CALLBACK_PATH = "/api/lichess/callback";
 const PENDING_SECONDS = 600;
 
 // The callback may run for 300 s (its maxDuration), including what it does after the person has been sent on. Rate
-// limits can stretch each Lichess call to two minutes, so the connection gives up after 240 s, revoking the token may
-// use what is left up to 295 s, and removing the account a switch replaced from the Club's team, once the person has
-// been sent on, what is left up to 298 s, so that there is still time to keep it for the Organiser if that fails.
+// limits can stretch each Lichess call to two minutes, so the connection gives up after 240 s, and revoking the token
+// may use what is left up to 295 s. Removing the account a switch replaced from the Club's team, once the person has
+// been sent on, gives up on Lichess at 297 s from the callback's first line, reckoned just before Lichess is asked,
+// leaving 3 s for the one statement that keeps the account for the Organiser if Lichess did not remove it.
 export const CONNECTION_DEADLINE_MS = 240_000;
 export const REVOKED_BY_MS = 295_000;
-export const REMOVED_BY_MS = 298_000;
+export const REMOVED_BY_MS = 297_000;
 
 // Until the Organiser supplies the team's id and password, the connect step says so instead of failing.
 export const lichessConfigured = () => Boolean(process.env.LICHESS_TEAM_ID && process.env.LICHESS_TEAM_PASSWORD);
@@ -141,14 +142,15 @@ export const lichessProblem = (code: unknown): string | null =>
   typeof code === "string" && Object.hasOwn(PROBLEMS, code) ? PROBLEMS[code as Problem] : null;
 
 // The person must already be signed in and past the welcome step (the caller checks). Returns where to send them:
-// on to the next step, or back to where they started with a problem code.
+// on to the next step, or back to where they started with a problem code; and, once the connection is saved, the
+// Lichess account it replaced, if they had one, for the caller to remove from the Club's team.
 export async function finishConnection(
   person: { id: string; lichessId?: string | null },
   query: URLSearchParams,
   pendingCookieValue: string | undefined,
-): Promise<string> {
+): Promise<{ to: string; replaced?: string | null }> {
   const swap = !mustConnectLichess(person);
-  const problem = (code: Problem) => `${swap ? "/profile" : "/welcome/lichess"}?lichess=${code}`;
+  const problem = (code: Problem) => ({ to: `${swap ? "/profile" : "/welcome/lichess"}?lichess=${code}` });
 
   const returned = returnedFrom(MEMBER, person.id, query, pendingCookieValue);
   if ("problem" in returned) return problem(returned.problem);
@@ -173,9 +175,9 @@ export async function finishConnection(
       console.error("Lichess refused to add an account to the Club's team:", error.message);
       return problem("team");
     }
-    if (!(await saveConnection(person.id, account))) return problem("taken");
-    // On a swap the old account is removed from the Club's team once the person has been sent on (the callback).
-    return swap ? `/profiles/${person.id}` : "/welcome/profile";
+    const saved = await saveConnection(person.id, account);
+    if (!saved) return problem("taken");
+    return { to: swap ? `/profiles/${person.id}` : "/welcome/profile", replaced: saved.replaced };
   } catch (error) {
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);
     return problem("failed");
@@ -200,28 +202,36 @@ async function connectedToSomeoneElse(lichessId: string, personId: string): Prom
 
 // Only the Lichess columns of the person's own row change, so a swap leaves the Member and everything attached to
 // them as it was, including when they first connected (MEMBER_SINCE). The account was just found to be neither marked
-// nor closed, so marks a previous account carried go with it. An account kept for the Organiser to remove from the
-// Club's team by hand (lib/leaving.ts) belongs in the team again, so it is forgotten in the same statement. False if
-// someone else connected the same account in the meantime.
-async function saveConnection(personId: string, account: LichessAccount): Promise<boolean> {
+// nor closed, so marks a previous account carried go with it. Once saved, an account kept for the Organiser to remove
+// from the Club's team by hand (lib/leaving.ts) belongs in the team again, so it is forgotten in the same statement.
+// Returns the account the save replaced, as the row was when the save locked it, so that of two saves at once each
+// names the account the other did not; null when there was none, or nobody to save. False if someone else connected
+// the same account in the meantime.
+async function saveConnection(personId: string, account: LichessAccount): Promise<{ replaced: string | null } | false> {
   try {
-    const { rowCount } = await db.query(
-      `with forgotten as (delete from "teamRemoval" where "lichessId" = $2)
-       update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
-         "lichessMarked" = false, "lichessClosed" = false,
-         "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now()
-       where id = $1`,
+    const { rows } = await db.query<{ replaced: string | null }>(
+      `with saved as (
+         update "user" u set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
+           "lichessMarked" = false, "lichessClosed" = false,
+           "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now()
+         from (select id, "lichessId" from "user" where id = $1 for update) before
+         where u.id = before.id
+         returning before."lichessId" as "replaced"
+       ), forgotten as (delete from "teamRemoval" where "lichessId" = $2 and exists (select 1 from saved))
+       select "replaced" from saved`,
       [personId, account.id, account.username, account.blitzRating],
     );
     // They deleted their account, in another tab, while the account joined the team: nobody is left whose leaving
-    // would remove it, so it is kept for the Organiser to remove by hand, as removeMember keeps one (lib/leaving.ts).
-    if (!rowCount)
+    // would remove it, so it is kept for the Organiser to remove by hand, as removeMember keeps one (lib/leaving.ts),
+    // unless someone else has connected it since.
+    if (!rows[0])
       await db.query(
-        `insert into "teamRemoval" ("lichessId", "problem") values ($1, $2)
+        `insert into "teamRemoval" ("lichessId", "problem")
+         select $1, $2 where not exists (select 1 from "user" where "lichessId" = $1)
          on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`,
         [account.id, "Its owner deleted their account on Offboard while it was joining the Club's team, so it was never connected."],
       );
-    return true;
+    return { replaced: rows[0]?.replaced ?? null };
   } catch (error) {
     if ((error as { code?: string }).code === "23505") return false; // unique_violation on "lichessId"
     throw error;

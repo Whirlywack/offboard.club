@@ -8,27 +8,29 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, organiserLichess, people, resetDb, teamRemovals } from "@/lib/fake-db";
+import { addPerson, db, organiserLichess, people, resetDb, teamRemovals } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/callback/route";
 import OrganiserPage from "./organiser/page";
 
-const { getSession, jar, afterwards } = vi.hoisted(() => {
-  // The browser's cookies for the site. Paths are ignored: only the callback ever reads this cookie.
-  const values = new Map<string, string>();
-  const jar = {
-    values,
-    get: (name: string) => (values.has(name) ? { name, value: values.get(name)! } : undefined),
-    set: (cookie: { name: string; value: string }) => void values.set(cookie.name, cookie.value),
-    delete: (cookie: { name: string }) => void values.delete(cookie.name),
+const { getSession, browser, afterwards } = vi.hoisted(() => {
+  // A browser's cookies for the site. Paths are ignored: only the callback ever reads this cookie.
+  const newJar = () => {
+    const values = new Map<string, string>();
+    return {
+      get: (name: string) => (values.has(name) ? { name, value: values.get(name)! } : undefined),
+      set: (cookie: { name: string; value: string }) => void values.set(cookie.name, cookie.value),
+      delete: (cookie: { name: string }) => void values.delete(cookie.name),
+    };
   };
-  return { getSession: vi.fn(), jar, afterwards: [] as (() => Promise<unknown>)[] };
+  // `jar` is the cookies of the browser the next request comes from.
+  return { getSession: vi.fn(), browser: { jar: newJar(), newJar }, afterwards: [] as (() => Promise<unknown>)[] };
 });
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: async () => jar }));
+vi.mock("next/headers", () => ({ headers: async () => new Headers(), cookies: () => Promise.resolve(browser.jar) }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);
@@ -43,6 +45,7 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 const TEAM = "offboard-team";
 const KEY = randomBytes(32).toString("base64");
 const NOW = new Date("2026-11-25T12:00:00Z");
+const answeredAtOnce = db.query.getMockImplementation()!;
 
 let lichess: ReturnType<typeof createFakeLichess>;
 let token: string; // the Organiser's, as Lichess issued it
@@ -112,7 +115,7 @@ beforeEach(async () => {
   vi.stubEnv("LICHESS_TEAM_PASSWORD", "team password");
   vi.stubEnv("ORGANISER_USER_ID", "organiser");
   vi.stubEnv("LICHESS_TOKEN_KEY", KEY);
-  const accounts = ["boss", "boss-plays", "lichess-ana", "ana-new", "lichess-ben"];
+  const accounts = ["boss", "boss-plays", "lichess-ana", "ana-new", "ana-third", "lichess-ben"];
   lichess = createFakeLichess({ teamId: TEAM, teamPassword: "team password", accounts: accounts.map((id) => ({ id, username: id })) });
   lichess.team.leaders.add("boss");
   for (const id of ["boss", "boss-plays", "lichess-ana", "lichess-ben"]) lichess.team.members.add(id);
@@ -127,7 +130,7 @@ beforeEach(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;
     return person ? { user: { ...person } } : null;
   });
-  jar.values.clear();
+  browser.jar = browser.newJar();
   afterwards.length = 0;
   logged = [];
   for (const method of ["log", "info", "warn", "error"] as const)
@@ -138,6 +141,7 @@ beforeEach(async () => {
 afterEach(() => {
   // No Lichess token ever reached the log, whatever happened.
   for (const issued of lichess.tokens.keys()) expect(logged.join("\n")).not.toContain(issued);
+  db.query.mockImplementation(answeredAtOnce);
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -205,11 +209,16 @@ describe("switching to another Lichess account", () => {
     expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 25 s.");
   });
 
-  it("gives up on Lichess within the callback's 300 s when connecting took most of them, leaving time to list the old account", async () => {
+  it("gives up on Lichess at 297 s from the callback's start, however long the database took, leaving time to list the old account", async () => {
     vi.useFakeTimers({ now: NOW, toFake: ["Date", "setTimeout", "clearTimeout"] });
-    // Lichess is rate-limiting. The marks and the join each answer 429 after 25 s, then properly after the minute's wait
-    // and 25 s more: the switch is saved at 220 s. Revoking the token gets a 429 too and is given up at 295 s, and the
-    // removal is never answered.
+    // The database takes half a second over each statement. Lichess is rate-limiting: the marks and the join each answer
+    // 429 after 25 s, then properly after the minute's wait and 25 s more, so the switch is saved at 221 s. Revoking the
+    // token gets a 429 too and is given up at 295 s. The removal reads the database until 296 s, and Lichess never
+    // answers it.
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return answeredAtOnce(sql, params);
+    });
     const slowed = new Set<string>();
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
       const request = new Request(input, init);
@@ -230,12 +239,14 @@ describe("switching to another Lichess account", () => {
     expect(await arrived).toBe("/profiles/ana");
     expect(people.get("ana")?.lichessId).toBe("ana-new");
     const removing = afterResponses();
-    await vi.advanceTimersByTimeAsync(2_999);
+    // Its two reads take until 296 s, so Lichess is given the one second left before 297 s, and the account is kept,
+    // in one more statement, by 297.5 s.
+    await vi.advanceTimersByTimeAsync(2_499);
     expect(teamRemovals.size).toBe(0);
     await vi.advanceTimersByTimeAsync(1);
     await removing;
-    expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 3 s.");
-    expect(Date.now() - started).toBe(298_000);
+    expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 1 s.");
+    expect(Date.now() - started).toBe(297_500);
   });
 
   it("removes nothing when the Member \"switches\" to the account they already have", async () => {
@@ -279,6 +290,38 @@ describe("switching to another Lichess account", () => {
     expect(kicks()).toEqual(["lichess-ana"]);
     expect(inTeam("lichess-ana")).toBe(true);
     expect(teamRemovals.size).toBe(0);
+  });
+
+  it("removes each account a switch replaced when two switches overlap", async () => {
+    // ana switches to ana-new in one browser and to ana-third in another, and both come back from Lichess at once.
+    const first = browser.jar;
+    const toNew = await approveAs("ana-new");
+    const second = (browser.jar = browser.newJar());
+    const toThird = await approveAs("ana-third");
+    browser.jar = first;
+    const arriving = [arrive(toNew)];
+    browser.jar = second;
+    arriving.push(arrive(toThird));
+    expect(await Promise.all(arriving)).toEqual(["/profiles/ana", "/profiles/ana"]);
+    await afterResponses();
+    const now = people.get("ana")!.lichessId!;
+    expect(["ana-new", "ana-third"]).toContain(now);
+    expect(["lichess-ana", "ana-new", "ana-third"].filter(inTeam)).toEqual([now]);
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("does not list an old account its Member has switched back to while Lichess was being asked", async () => {
+    // Lichess fails the removal slowly, and meanwhile ana's switch back to her old account is saved by another of the
+    // site's servers, whose requests to Lichess do not wait behind this one's.
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
+      if (!String(input).includes("/kick/")) return lichess.fetch(input, init);
+      people.get("ana")!.lichessId = "lichess-ana";
+      return new Response("", { status: 503 });
+    });
+    await switchTo("ana-new");
+    await afterResponses();
+    expect(teamRemovals.size).toBe(0);
+    expect(await listedForOrganiser()).toBeNull();
   });
 
   it("does not remove an old account that another Member has connected since", async () => {

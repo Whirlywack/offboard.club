@@ -36,7 +36,7 @@ export async function removeMember(memberId: string): Promise<boolean> {
   if (!rows[0]) return false;
   const { lichessId } = rows[0];
   const ownToken = await tokenConnectedBy(memberId, now);
-  const problem = lichessId === null ? null : await leaveTeam(lichessId, now, LICHESS_DEADLINE_MS);
+  const problem = lichessId === null ? null : await leaveTeam(lichessId, now);
   const deleted = await inTransaction(async (q) => {
     const { rowCount } = await q.query(`delete from "user" where id = $1`, [memberId]);
     if (problem) await keepForOrganiser(q, lichessId!, problem);
@@ -46,35 +46,19 @@ export async function removeMember(memberId: string): Promise<boolean> {
   return deleted;
 }
 
-// After a Member has switched to another Lichess account (app/api/lichess/callback/route.ts), removes the account they
-// had from the Club's Lichess team as removeMember does, giving up on Lichess after `ms` at most, or keeps it for the
-// Organiser with why. Unless someone has that account now: the Member themselves, if they did not switch after all or
-// have switched back, or another Member who has connected it since. Throws if the database fails.
-export async function removeSwitchedFrom(lichessId: string, ms: number): Promise<void> {
-  const { rowCount } = await db.query(`select 1 from "user" where "lichessId" = $1`, [lichessId]);
-  if (rowCount) return;
-  const problem = await leaveTeam(lichessId, new Date(), Math.min(ms, LICHESS_DEADLINE_MS));
-  if (problem) await keepForOrganiser(db, lichessId, problem);
-}
-
-// Kept once per account, however many removals of it ran at once.
-const keepForOrganiser = (q: Queryable, lichessId: string, problem: string) =>
-  q.query(
-    `insert into "teamRemoval" ("lichessId", "problem") values ($1, $2)
-     on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`,
-    [lichessId, problem],
-  );
-
 const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);
 
-// Removes the account from the Club's Lichess team with the Organiser's permission, giving up on Lichess after `ms`: null
-// once Lichess has answered that it did, or why not as a sentence for the Organiser. Lichess answers the same when it
-// keeps the account because it leads the team (kickFromTeam), so a leader who leaves stays in the team with nothing kept.
-async function leaveTeam(lichessId: string, now: Date, ms: number): Promise<string | null> {
+// Removes the account from the Club's Lichess team with the Organiser's permission, giving up on Lichess after
+// LICHESS_DEADLINE_MS, or at `by` (a time, in ms) if that comes first: null once Lichess has answered that it did, or
+// why not as a sentence for the Organiser. Lichess answers the same when it keeps the account because it leads the team
+// (kickFromTeam), so a leader who leaves stays in the team with nothing kept.
+async function leaveTeam(lichessId: string, now: Date, by = Infinity): Promise<string | null> {
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.";
   const permission = await organiserToken(now);
   if ("problem" in permission) return permission.problem;
+  // Reckoned only now, once the permission has been read, just before Lichess is asked.
+  const ms = Math.min(LICHESS_DEADLINE_MS, by - Date.now());
   const deadline = timeLimit(ms, `Lichess took more than ${ms / 1000} s`);
   try {
     await kickFromTeam(permission.token, teamId, lichessId, deadline.signal);
@@ -85,6 +69,28 @@ async function leaveTeam(lichessId: string, now: Date, ms: number): Promise<stri
     deadline.clear();
   }
 }
+
+// After a Member has switched to another Lichess account (app/api/lichess/callback/route.ts), removes the account the
+// switch replaced from the Club's Lichess team as removeMember does, giving up on Lichess at `by` if not before, or
+// keeps it for the Organiser with why. Unless someone has that account now: the Member themselves, if they "switched"
+// to the account they had or have switched back, or another Member who has connected it since. Throws if the database
+// fails.
+export async function removeSwitchedFrom(lichessId: string, by: number): Promise<void> {
+  const { rowCount } = await db.query(`select 1 from "user" where "lichessId" = $1`, [lichessId]);
+  if (rowCount) return;
+  const problem = await leaveTeam(lichessId, new Date(), by);
+  if (problem) await keepForOrganiser(db, lichessId, problem);
+}
+
+// Kept once per account, however many removals of it ran at once, and only while nobody has it: a Member may connect
+// it again while Lichess is being asked, and the Organiser must not then be told to remove it.
+const keepForOrganiser = (q: Queryable, lichessId: string, problem: string) =>
+  q.query(
+    `insert into "teamRemoval" ("lichessId", "problem")
+     select $1, $2 where not exists (select 1 from "user" where "lichessId" = $1)
+     on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`,
+    [lichessId, problem],
+  );
 
 // An account still to remove from the Club's Lichess team by hand, with why the site could not.
 export type TeamRemoval = { lichessId: string; problem: string };

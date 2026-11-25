@@ -605,22 +605,24 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     answer([...people.values()].filter((p) => p.lichessId === lichessId && p.id !== id).map(() => ({}))),
 
   // saveConnection: refused, changing nothing, when someone else has the account, as its unique constraint makes it;
-  // otherwise the account is no longer kept for the Organiser to remove from the team by hand.
-  [`with forgotten as (delete from "teamRemoval" where "lichessId" = $2) update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4, "lichessMarked" = false, "lichessClosed" = false, "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now() where id = $1`]:
+  // otherwise, if the person is there, the account they had before, and the new one is no longer kept for the Organiser
+  // to remove from the team by hand. Each statement runs whole, as the row lock makes two saves of one person do.
+  [`with saved as ( update "user" u set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4, "lichessMarked" = false, "lichessClosed" = false, "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now() from (select id, "lichessId" from "user" where id = $1 for update) before where u.id = before.id returning before."lichessId" as "replaced" ), forgotten as (delete from "teamRemoval" where "lichessId" = $2 and exists (select 1 from saved)) select "replaced" from saved`]:
     (id, lichessId, lichessUsername, lichessBlitzRating) => {
       if ([...people.values()].some((p) => p.lichessId === lichessId && p.id !== id)) throw violation("23505", "user_lichessId_key");
-      teamRemovals.delete(lichessId);
       const person = people.get(id);
-      if (person)
-        Object.assign(person, {
-          lichessId,
-          lichessUsername: lichessUsername as string,
-          lichessBlitzRating: lichessBlitzRating as number | null,
-          lichessMarked: false,
-          lichessClosed: false,
-          lichessConnectedAt: person.lichessConnectedAt ?? new Date(),
-        });
-      return answer([], person ? 1 : 0);
+      if (!person) return answer();
+      const replaced = person.lichessId;
+      teamRemovals.delete(lichessId);
+      Object.assign(person, {
+        lichessId,
+        lichessUsername: lichessUsername as string,
+        lichessBlitzRating: lichessBlitzRating as number | null,
+        lichessMarked: false,
+        lichessClosed: false,
+        lichessConnectedAt: person.lichessConnectedAt ?? new Date(),
+      });
+      return answer([{ replaced }]);
     },
 
   // --- Leaving the Club (lib/leaving.ts) ---
@@ -649,10 +651,11 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], 1);
   },
 
-  // removeMember and removeSwitchedFrom: an account the site could not remove from the Lichess team, kept once however
-  // often it is recorded.
-  [`insert into "teamRemoval" ("lichessId", "problem") values ($1, $2) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
+  // keepForOrganiser, and saveConnection when nobody was there: an account the site could not remove from the Lichess
+  // team, kept once however often it is recorded, and not while anyone has it.
+  [`insert into "teamRemoval" ("lichessId", "problem") select $1, $2 where not exists (select 1 from "user" where "lichessId" = $1) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
     (lichessId, problem) => {
+      if ([...people.values()].some((p) => p.lichessId === lichessId)) return answer([], 0);
       teamRemovals.set(lichessId, { lichessId, at: new Date(), problem: String(problem) });
       return answer([], 1);
     },

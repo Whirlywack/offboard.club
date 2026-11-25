@@ -42,8 +42,10 @@ const DATE_TIME = { ...DATE, hour: "2-digit", minute: "2-digit" } as const;
 const WEEKDAY = { weekday: "long", day: "numeric", month: "long" } as const;
 const MATCHDAY = { ...WEEKDAY, hour: "2-digit", minute: "2-digit" } as const; // as the home page shows it
 
-const Time = ({ at, as = DATE }: { at: Date; as?: Intl.DateTimeFormatOptions }) => (
-  <time dateTime={at.toISOString()}>{format(at, as)}</time>
+const Time = ({ at, as = DATE, className }: { at: Date; as?: Intl.DateTimeFormatOptions; className?: string }) => (
+  <time dateTime={at.toISOString()} className={className}>
+    {format(at, as)}
+  </time>
 );
 
 const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -252,23 +254,31 @@ function Unreadable({ lichessId }: { lichessId: string }) {
 
 const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Skipped", failed: "Failed" };
 
-// A scheduled job's last run, and plainly when it has never run or has not run for over two hours.
+// A scheduled job's last run, and plainly when it has never run or has not run for over two hours. The outcome comes
+// first, in the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome
+// and a late last run are flagged where they stand, and explained in an alert below. A run that went well keeps its
+// sentence quiet.
 function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: string; run: LastRun | null; now: Date }) {
+  const late = run !== null && now.getTime() - run.at.getTime() > OVERDUE_MS;
   return (
     <div className={styles.part}>
       <h3>{title}</h3>
       {run ? (
         <>
           <dl className={styles.facts}>
-            <Fact label="Last run">
-              <Time at={run.at} as={DATE_TIME} />
-            </Fact>
             <Fact label="Outcome">
-              {run.outcome === "failed" ? <span className={styles.failed}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
+              {run.outcome === "failed" ? <span className={styles.flagged}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
+            </Fact>
+            <Fact label="Last run">
+              <Time at={run.at} as={DATE_TIME} className={late ? styles.flagged : undefined} />
             </Fact>
           </dl>
-          <p className={styles.detail}>{run.detail}</p>
-          {now.getTime() - run.at.getTime() > OVERDUE_MS && (
+          {run.outcome === "failed" ? (
+            <Alert>{run.detail}</Alert>
+          ) : (
+            <p className={styles.detail}>{run.detail}</p>
+          )}
+          {late && (
             <Alert>
               The last run was more than two hours ago, though the job runs every hour, so runs aren&apos;t getting
               through. Check that CRON_SECRET is set on Vercel and that the project&apos;s cron jobs are enabled.
@@ -297,7 +307,7 @@ function LastFailure({ failure }: { failure: Failure | null }) {
           <p className={styles.detail}>{failure.problem}</p>
         </>
       ) : (
-        <p className={ui.muted}>No scheduled job has failed.</p>
+        <p className={styles.detail}>No scheduled job has failed.</p>
       )}
     </div>
   );

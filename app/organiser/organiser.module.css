@@ -66,15 +66,24 @@
   border-top: 1px solid var(--line);
 }
 
-/* Facts in rows: a muted label, then the value. Narrow enough for a phone's column without stacking. */
+/* The first part stands a little apart from what heads the box (its heading, and the CRON_SECRET alert when shown) */
+.section > :not(.part) + .part {
+  margin-top: var(--space-2);
+}
+
+/* Facts in rows: a muted label, then the value. The labels' column is as wide as its longest label, and no narrower
+   than 4rem so that the jobs' lists line up with each other, which leaves a date and time one line on a phone. */
 .facts {
+  display: grid;
+  grid-template-columns: minmax(4rem, max-content) minmax(0, 1fr);
+  column-gap: var(--space-4);
   border-top: 1px solid var(--line);
 }
 
 .facts > div {
   display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
   padding-block: var(--space-2);
   border-bottom: 1px solid var(--line);
@@ -101,14 +110,23 @@
   inset: calc((var(--tap) - 100%) / -2) 0;
 }
 
-.failed {
+/* A fact that is wrong, a failed outcome or a last run too long ago: words say so (the outcome, and the alert below
+   the facts), and the colour lets a glance find it */
+.flagged {
   color: var(--error);
   font-weight: 600;
 }
 
-/* What a run or a failure said: the job's own sentence, which can name a long Lichess address */
+/* What a run that went well, or a past failure, said: the job's own sentence, quiet beside an alert. It can name a long
+   Lichess address. */
 .detail {
+  color: var(--muted);
   font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* An alert in a job's part, such as why its last run failed in the job's own words, which can name a long address */
+.part > [role="alert"] {
   overflow-wrap: anywhere;
 }
 

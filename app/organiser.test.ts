@@ -419,11 +419,13 @@ describe("the scheduled jobs on the Organiser page", () => {
       return html.slice(from, html.indexOf("<h3>", from + 1));
     };
 
-    it("shows when the job last ran, how it went and why", async () => {
+    it("shows how the job last went, then when it ran and why", async () => {
       ran(30, "skipped", `What ${job} did.`, job);
       const html = await part();
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">\d{1,2} \w+ \d{4} at \d\d:\d\d<\/time><\/dd>/);
       expect(html).toContain("<dt>Outcome</dt><dd>Skipped</dd>");
+      // The outcome first, in the same place for every job, so that a glance down the box finds each job's.
+      expect(html.indexOf("<dt>Outcome</dt>")).toBeLessThan(html.indexOf("<dt>Last run</dt>"));
       expect(html).toContain(`>What ${job} did.</p>`);
       expect(html).not.toContain('role="alert"');
       expect(html).not.toContain(SECRET);
@@ -433,18 +435,24 @@ describe("the scheduled jobs on the Organiser page", () => {
       expect(await part()).toMatch(alertSaying(neverRun));
     });
 
-    it("flags plainly a last run more than two hours old", async () => {
+    it("flags plainly a last run more than two hours old, and marks its time", async () => {
       ran(119, "skipped", "Nothing to do.", job);
-      expect(await part()).not.toContain("more than two hours ago");
+      let html = await part();
+      expect(html).not.toContain("more than two hours ago");
+      expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">/);
       ran(121, "skipped", "Nothing to do.", job);
-      expect(await part()).toMatch(
+      html = await part();
+      expect(html).toMatch(
         alertSaying("The last run was more than two hours ago, though the job runs every hour, so runs aren't getting through."),
       );
+      expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+" class="[^"]+">/);
     });
 
-    it("shows a failed last run as failed", async () => {
+    it("shows a failed last run as failed, and why in an alert", async () => {
       ran(30, "failed", "It went wrong.", job);
-      expect(await part()).toMatch(/<dt>Outcome<\/dt><dd><span class="[^"]+">Failed<\/span><\/dd>/);
+      const html = await part();
+      expect(html).toMatch(/<dt>Outcome<\/dt><dd><span class="[^"]+">Failed<\/span><\/dd>/);
+      expect(html).toMatch(alertSaying("It went wrong.</p>"));
     });
   });
 
@@ -468,6 +476,7 @@ describe("the scheduled jobs on the Organiser page", () => {
     let html = await openPage();
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-24T10:07:00.000Z">24 November 2026 at 12:07</time></dd>');
     expect(html).toMatch(/>The Matchday of 2026-11-29 could not be created: oops\.<\/p>/);
+    expect(html).not.toMatch(alertSaying("The Matchday of 2026-11-29")); // history, which may be long over: not an alert
     expect(html).not.toContain("No scheduled job has failed.");
     jobFailures.set("2", { id: 2, job: "collect-results", at: new Date("2026-11-29T20:05:00Z"), matchdayDate: "2026-11-29", problem: "The results of the Matchday of 2026-11-29 could not be collected: oops." });
     html = await openPage();

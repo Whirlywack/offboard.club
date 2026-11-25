@@ -59,6 +59,9 @@ export function scratch(name) {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), `offboard-${name}-`)));
   running = join(folder, "running");
   temporary = join(folder, "tmp");
+  // What db:start starts in the copy is recorded where the repository's own are, so that `pnpm local:list` and
+  // `pnpm local:stop --all` there find it too (ticket #58); the steps and the watcher inherit it.
+  process.env.OFFBOARD_LOCAL_REGISTRY ??= `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
   store = spawnSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).stdout?.trim() ?? "";
   mkdirSync(temporary);
   spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store], {
@@ -181,20 +184,13 @@ export function run(command, args, { cwd, env = {}, log, limit = 20 * 60_000 }) 
 }
 
 // A fresh, empty, migrated database from `pnpm db:start --dir <folder>/db-<name>`, run in the copy: its address and
-// folder, or null if it could not be started. db:start chooses ports that are free when it looks, so of runs starting at
-// once all but one can lose them, and the losers then race for the next ones; each tries again in another folder, after
-// a pause of its own. A failure with the server running, such as a migration that does not apply, is not tried again.
+// folder, or null if it could not be started. db:start finds free ports itself, again if another run takes them first.
 // The .env.local db:start gives the copy is removed: CI has none, and the build and the seeds would read it.
 export async function startDatabase(folder, name, log) {
-  for (let attempt = 1; attempt <= 8; attempt++) {
-    const dir = join(folder, `db-${name}-${attempt}`);
-    const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log });
-    rmSync(join(folder, "checkout", ".env.local"), { force: true });
-    if (code === 0) return { url: /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1], dir };
-    if (existsSync(join(dir, "postmaster.pid"))) return null;
-    await new Promise((resume) => setTimeout(resume, Math.random() * 3000));
-  }
-  return null;
+  const dir = join(folder, `db-${name}`);
+  const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log });
+  rmSync(join(folder, "checkout", ".env.local"), { force: true });
+  return code === 0 ? { url: /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1], dir } : null;
 }
 
 // Stops the database db:start made in `dir`.

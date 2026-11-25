@@ -242,7 +242,7 @@ const MIGRATION = "create table t (x int check (x > 0));\n";
 const FAKE = [
   'import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";',
   "const [name, ...args] = process.argv.slice(2);",
-  'appendFileSync(process.env.FAKE_LOG, JSON.stringify({ name, args, postgres: process.env.ALLOW_DB_TESTS === "1", url: process.env.DATABASE_URL ?? null, tmp: process.env.TMPDIR }) + "\\n");',
+  'appendFileSync(process.env.FAKE_LOG, JSON.stringify({ name, args, postgres: process.env.ALLOW_DB_TESTS === "1", url: process.env.DATABASE_URL ?? null, tmp: process.env.TMPDIR, registry: process.env.OFFBOARD_LOCAL_REGISTRY }) + "\\n");',
   'const dir = args[args.indexOf("--dir") + 1];',
   'const migration = readFileSync("migrations/001_a.sql", "utf8");',
   'if (name === "db:start") {',
@@ -321,7 +321,7 @@ function fakeCheckout(finished: (end: () => void) => void) {
     readFileSync(join(root, "fake.log"), "utf8")
       .trim()
       .split("\n")
-      .map((line) => JSON.parse(line) as { name: string; args: string[]; postgres: boolean; url: string | null; tmp: string });
+      .map((line) => JSON.parse(line) as { name: string; args: string[]; postgres: boolean; url: string | null; tmp: string; registry: string });
   const tests = () => runs().filter((run) => run.name === "test");
   const filters = () => tests().map((run) => [run.args.includes("--bail=1") ? "bail" : "all", ...run.args.filter((arg) => !arg.startsWith("--"))].join(" "));
   // What is left: guards' folders in the temporary folder, git's status, and the files.
@@ -402,10 +402,10 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(stdout).toContain("the changed migrations do not apply to an empty database (pnpm db:start failed)\n");
     expect(status).toBe(1);
     const databases = runs().filter((run) => run.name === "db:start").map((run) => run.args.at(-1)!.split("/").pop());
-    expect(databases).toEqual(["db-tests-1", "db-change-1-1", "db-change-2-1"]);
+    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2"]);
     // The change is judged on its own database; the test that noticed it, again on the one migrated without it.
     const urls = runs().filter((run) => run.name === "test").map((run) => run.url?.split("/").pop());
-    expect(urls).toEqual(["db-tests-1", "db-change-1-1", "db-tests-1"]);
+    expect(urls).toEqual(["db-tests", "db-change-1", "db-tests"]);
     expect(filters()).toEqual(["bail", "bail lib/a.postgres.test.ts", "all lib/a.postgres.test.ts"]);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
@@ -434,6 +434,9 @@ describe.concurrent("a run of pnpm guards", () => {
       [false, null],
     ]);
     expect(tests().every((run) => run.tmp.startsWith(join(realpathSync(join(root, "tmp")), "offboard-guards-")))).toBe(true);
+    // What db:start starts in the copy is recorded in the repository's own registry (ticket #58).
+    const registries = new Set(tests().map((run) => run.registry));
+    expect([...registries].map((registry) => [realpathSync(join(registry, "../..")), registry.endsWith("/.git/offboard-local")])).toEqual([[realpathSync(root), true]]);
     const real = await guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toBe(
       "Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123.eu-central-1.aws.neon.tech, not this machine (localhost, 127.0.0.1 or ::1). Unset it first.",

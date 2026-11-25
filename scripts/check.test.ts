@@ -43,8 +43,8 @@ describe("a checkout whose .env.local holds real settings", () => {
 
 // Each script records how it was run in $FAKE_LOG and fails when $FAKE_FAIL names it; the one $FAKE_SLOW names writes
 // its pid beside the log and waits a minute. db:start makes a folder as db:start does, with offboard.env and a
-// postmaster.pid, and gives the checkout a .env.local; its first try in a folder for the tests' database loses its ports,
-// as when two checks start at once. $FAKE_FAIL=exit makes the tests write a clean report and exit 1 all the same.
+// postmaster.pid, and gives the checkout a .env.local. $FAKE_FAIL=exit makes the tests write a clean report and exit 1
+// all the same.
 const FAKE = `
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 const [name, ...args] = process.argv.slice(2);
@@ -52,7 +52,6 @@ const fail = (process.env.FAKE_FAIL ?? "").split(",").includes(name);
 appendFileSync(process.env.FAKE_LOG, JSON.stringify({ name, args, env: process.env, envLocal: existsSync(".env.local") }) + "\\n");
 const dir = args[args.indexOf("--dir") + 1];
 if (name === "db:start") {
-  if (dir.endsWith("tests-1")) process.exit(1);
   mkdirSync(dir, { recursive: true });
   writeFileSync(dir + "/offboard.env", "DATABASE_URL=postgres://offboard@127.0.0.1:1/" + dir.split("/").pop() + "\\n");
   writeFileSync(dir + "/postmaster.pid", "1\\n");
@@ -139,13 +138,13 @@ describe.concurrent("a check", () => {
     expect(summary).toContain(`\nChecked ${head} first, as committed: what CI tests.\n`);
     expect(status).toBe(0);
     const ran = runs(log);
-    expect(ran.map((run) => run.name)).toEqual(["db:start", "db:start", "db:start", "lint", "typecheck", "test", "build", "seed", "seed", "seed", "db:stop", "db:stop"]);
+    expect(ran.map((run) => run.name)).toEqual(["db:start", "db:start", "lint", "typecheck", "test", "build", "seed", "seed", "seed", "db:stop", "db:stop"]);
     const stopped = ran.filter((run) => run.name === "db:stop").map((run) => run.args.at(-1)!.split("/").pop());
-    expect(stopped.sort()).toEqual(["db-seeded-1", "db-tests-2"]);
+    expect(stopped.sort()).toEqual(["db-seeded", "db-tests"]);
     const test = ran.find((run) => run.name === "test")!;
-    expect([test.env.ALLOW_DB_TESTS, test.env.DATABASE_URL]).toEqual(["1", "postgres://offboard@127.0.0.1:1/db-tests-2"]);
+    expect([test.env.ALLOW_DB_TESTS, test.env.DATABASE_URL]).toEqual(["1", "postgres://offboard@127.0.0.1:1/db-tests"]);
     for (const seed of ran.filter((run) => run.name === "seed")) {
-      expect(seed.env.DATABASE_URL).toBe("postgres://offboard@127.0.0.1:1/db-seeded-1");
+      expect(seed.env.DATABASE_URL).toBe("postgres://offboard@127.0.0.1:1/db-seeded");
       expect(seed.env).toMatchObject({ BETTER_AUTH_URL: "http://localhost:3100", LICHESS_TEAM_ID: "pretend-team", ORGANISER_USER_ID: "org" });
     }
     // CI has no .env.local: the one db:start gave the copy is gone before anything reads it.
@@ -210,6 +209,9 @@ describe.concurrent("a check", () => {
     for (const run of ran.filter((run) => !["test", "seed"].includes(run.name))) {
       expect([run.name, run.env.DATABASE_URL, run.env.ALLOW_DB_TESTS]).toEqual([run.name, undefined, undefined]);
       expect(run.env.TMPDIR.startsWith(join(realpathSync(join(root, "tmp")), "offboard-check-"))).toBe(true);
+      // What db:start starts in the copy is recorded in the repository's own registry (ticket #58).
+      expect(realpathSync(join(run.env.OFFBOARD_LOCAL_REGISTRY, "../.."))).toBe(realpathSync(root));
+      expect(run.env.OFFBOARD_LOCAL_REGISTRY.endsWith("/.git/offboard-local")).toBe(true);
     }
     const real = await check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toMatch(/^Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123/);

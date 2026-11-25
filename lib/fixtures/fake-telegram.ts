@@ -11,11 +11,11 @@
 // a Response; "unreachable", a connection that is never made; "silent", a request that is never answered; "lost", a
 // message posted whose answer never arrives. Use `fetch` in place of the global one for these.
 
-export type FakeTelegramCall = { method: string; token: string; params: Record<string, unknown> };
-export type FakeTelegramPost = { chatId: string; text: string };
+type FakeTelegramCall = { method: string; token: string; params: Record<string, unknown> };
+type FakeTelegramPost = { chatId: string; text: string };
 type Override = Response | "unreachable" | "silent" | "lost" | undefined;
 
-export const MAX_TEXT = 4096;
+const MAX_TEXT = 4096;
 
 const answer = (status: number, description: string) => Response.json({ ok: false, error_code: status, description }, { status });
 

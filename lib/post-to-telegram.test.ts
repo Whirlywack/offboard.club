@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as cronRequest } from "@/app/api/jobs/post-to-telegram/route";
-import { addCompany, addPerson, db, jobFailures, matchdays, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
+import { addCompany, addPerson, db, games, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { collectResults, SETTLE_MS } from "./collect-results";
@@ -32,9 +32,13 @@ const at = (iso: string) => new Date(iso);
 const vilnius = (time: string, date = DATE) => at(`${date}T${time}:00+02:00`); // winter time
 const WEDNESDAY = at("2026-11-25T12:00:00Z");
 
-const MORNING = `Matchday tonight at 20:00: five Games of 5+3 on Lichess. Join here: https://lichess.org/swiss/${TOURNAMENT}`;
-const HOUR_BEFORE = `Matchday starts in an hour, at 20:00. Join here: https://lichess.org/swiss/${TOURNAMENT}`;
+// They send Members to the site, whose home page links a signed-in Member to the tournament (docs/adr/0002).
+const MORNING = "Matchday tonight at 20:00: five Games of 5+3 on Lichess. The link to join is on https://offboard.test once you're signed in.";
+const HOUR_BEFORE = "Matchday starts in an hour, at 20:00. The link to join is on https://offboard.test once you're signed in.";
 const POSTED_ONE = "Posted 1 message to the Telegram group.";
+// What a run says of a post Telegram may have posted, by its first line, and why it could not tell when the run knows.
+const unsure = (text: string, why?: string) =>
+  `It isn't known whether Telegram posted "${text.split("\n")[0]}"${why ? ` (${why})` : ""}, so it won't be posted again. Check the group.`;
 
 // The Matchday as Lichess exports it once played: ana, ben and cora are Members, zed is not. ana, rated 1500, mated
 // ben, rated 1550, in 31 half-moves with 42 seconds left; zed beat cora on time; ben and cora drew.
@@ -65,7 +69,7 @@ const exported = lines([
 ]);
 const RECAP = [
   "The Recap of Sunday 29 November is up: https://offboard.test/recaps/2026-11-29",
-  "1. Member ana, Pretend Robotics (example.com): 4 points\n2. Member ben: 2 points\n3. Member cora: 0.5 points",
+  "1. Member ana: 4 points\n2. Member ben: 2 points\n3. Member cora: 0.5 points",
   "Biggest upset: Member ana beat someone rated 50 points higher.\nClosest call: Member ana won with 42.0 seconds left on the clock.\nFastest checkmate: Member ana checkmated their opponent in 16 moves.",
 ].join("\n\n");
 const OVER = new Date(START.getTime() + 90 * MINUTE); // 21:30 in Vilnius, once the tournament has finished
@@ -132,7 +136,7 @@ afterEach(() => {
 });
 
 describe("the reminders on a Matchday Sunday", () => {
-  it("go out at 10:00 and 19:00 Vilnius time, each with the Matchday's Lichess link, and nothing else that day", async () => {
+  it("go out at 10:00 and 19:00 Vilnius time, each sending Members to the site, and nothing else that day", async () => {
     const runs: [string, string][] = [];
     for (const time of ["07:00", "09:59", "10:00", "10:07", "11:07", "18:07", "18:59", "19:00", "19:07", "19:59", "20:00", "21:07"]) {
       const run = await runAt(vilnius(time));
@@ -189,14 +193,15 @@ describe("the reminders on a Matchday Sunday", () => {
     expect(posted()).toEqual([MORNING]);
   });
 
-  // A run that cannot tell whether Telegram posted the reminder: later runs leave it alone, and the Organiser is asked.
+  // A run that cannot tell whether Telegram posted the reminder: later runs never send it again, and from 15 minutes
+  // after it was claimed ask the Organiser to look, until it is out of date at 19:00.
   const neverAgain = async (why: string) => {
     telegram.override = undefined;
-    for (const time of ["10:07", "11:07", "18:07"]) expect((await runAt(vilnius(time))).detail).toBe("Nothing to post.");
+    expect((await runAt(vilnius("10:07"))).detail).toBe("Nothing to post."); // a delivery may still be at it
+    for (const time of ["10:16", "11:07", "18:07"]) expect(await runAt(vilnius(time))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    expect(await runAt(vilnius("19:07"))).toMatchObject({ outcome: "done", detail: POSTED_ONE }); // the 19:00 one
     expect(telegram.calls.filter((call) => call.params.text === MORNING)).toHaveLength(1);
-    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([
-      `It isn't known whether Telegram posted "${MORNING}" (${why}), so it won't be posted again. Check the group.`,
-    ]);
+    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([unsure(MORNING, why), unsure(MORNING)]);
   };
 
   it.each([
@@ -240,16 +245,39 @@ describe("the reminders on a Matchday Sunday", () => {
 });
 
 describe("the Recap", () => {
-  it("is posted as Collecting results stores the Matchday: its link, its top three with their Companies, and its Awards", async () => {
+  it("is posted as Collecting results stores the Matchday: its link, its top three and its Awards, by name", async () => {
     const run = await collectAt(OVER);
     expect(run.outcome).toBe("done");
     expect(posted()).toEqual([RECAP]);
     expect(telegram.posts[0].chatId).toBe(GROUP);
   });
 
-  it("says only what the public Recap says: no Lichess username, rating, tournament or Game", async () => {
+  it("says less than the public Recap: no Company, Lichess username, rating, tournament or Game", async () => {
     await collectAt(OVER);
-    for (const hidden of ["Lichess-", "lichess.org", TOURNAMENT, "Pretend01", "1610", "1500"]) expect(posted()[0]).not.toContain(hidden);
+    for (const hidden of ["Pretend Robotics", "example.com", "Lichess-", "lichess.org", TOURNAMENT, "Pretend01", "1610", "1500"])
+      expect(posted()[0]).not.toContain(hidden);
+  });
+
+  it("writes each name so that Telegram can make no link of it: no address, @username, #hashtag, $cashtag, /command or number", async () => {
+    Object.assign(people.get("ana")!, { name: "Ana evil.example https://t.me/scam" });
+    Object.assign(people.get("ben")!, { name: "@pretend_scammer #free $USD /start +37060000000 ben@mail.example" });
+    Object.assign(people.get("cora")!, { name: `J. R. O'Neil-Šimkutė ${"x".repeat(300)}` });
+    await collectAt(OVER);
+    const [, top, awards] = posted()[0].split("\n\n");
+    expect(top.split("\n")).toEqual([
+      "1. Ana evil example https t me scam: 4 points",
+      "2. pretend scammer free USD start ben mail example: 2 points",
+      `3. J. R. O'Neil-Šimkutė ${"x".repeat(100 - "J. R. O'Neil-Šimkutė ".length)}: 0.5 points`,
+    ]);
+    expect(awards).toContain("Biggest upset: Ana evil example https t me scam beat someone");
+    Object.assign(people.get("ana")!, { name: "@@@ 123" });
+    expect(await postRecap(DATE, OVER)).toBe("Nothing to post."); // sent already: a new text would not be
+  });
+
+  it("names someone whose name is nothing a post can write as \"a Member\"", async () => {
+    Object.assign(people.get("ana")!, { name: "@@@ 123 ://" });
+    await collectAt(OVER);
+    expect(posted()[0]).toContain("\n1. a Member: 4 points\n");
   });
 
   it("is posted once: not by later runs, nor when pnpm ingest or another collection finds it stored", async () => {
@@ -312,6 +340,143 @@ describe("the posts the site keeps", () => {
     expect([...telegramPosts.values()].map((post) => post.text)).toEqual([
       "No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00.",
     ]);
+  });
+});
+
+const refused = () => Response.json({ ok: false, error_code: 500, description: "Internal Server Error" }, { status: 500 });
+
+describe("a post Telegram may have posted, wherever it was sent from", () => {
+  it("is reported by the next run when it was the Recap Collecting results sent", async () => {
+    telegram.override = () => "lost";
+    vi.setSystemTime(OVER);
+    const run = collectResults(OVER);
+    await vi.advanceTimersByTimeAsync(SETTLE_MS + 10_000);
+    expect((await run).outcome).toBe("done");
+    telegram.override = undefined;
+    expect(await runAt(at("2026-11-29T20:07:00Z"))).toMatchObject({ outcome: "failed", detail: unsure(RECAP) });
+    expect(posted()).toEqual([RECAP]); // the one Telegram got, and no other
+  });
+
+  it("is reported by the next run when it was a notice the change sent", async () => {
+    telegram.override = () => "lost";
+    const skipping = skipSunday("2026-12-06", WEDNESDAY);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await skipping).toBeNull();
+    telegram.override = undefined;
+    const notice = "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.";
+    expect(await runAt(at("2026-11-25T13:07:00Z"))).toMatchObject({ outcome: "failed", detail: unsure(notice) });
+    expect(posted()).toEqual([notice]);
+  });
+
+  it("is reported once a delivery has held it for 15 minutes without sending it, as when the run died", async () => {
+    await queuePost({ key: "reminder:2026-11-29:10", text: MORNING, until: vilnius("19:00") });
+    telegramPosts.get("reminder:2026-11-29:10")!.claimedAt = vilnius("10:00"); // and then nothing
+    expect(await runAt(vilnius("10:14"))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
+    expect(await runAt(vilnius("10:15"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    expect(posted()).toEqual([]);
+  });
+});
+
+describe("a Recap waiting to be posted", () => {
+  // Leaving deletes the "user" row: their results go with it, and each Game keeps an empty side (migrations/006).
+  const leaves = (id: string) => {
+    people.delete(id);
+    for (const [key, row] of results) if (row.userId === id) results.delete(key);
+    for (const g of games.values()) Object.assign(g, { whiteId: g.whiteId === id ? null : g.whiteId, blackId: g.blackId === id ? null : g.blackId });
+  };
+
+  it("names nobody who has left since it was queued", async () => {
+    telegram.override = refused;
+    await collectAt(OVER);
+    leaves("ben");
+    telegram.override = undefined;
+    await runAt(at("2026-11-29T20:07:00Z"));
+    expect(posted()).toEqual([RECAP.replace("2. Member ben: 2 points\n3. Member cora: 0.5 points", "2. Member cora: 0.5 points")]);
+  });
+
+  it("names nobody whose Lichess account has been marked since, and no Award of theirs", async () => {
+    telegram.override = refused;
+    await collectAt(OVER);
+    people.get("ana")!.lichessMarked = true;
+    telegram.override = undefined;
+    await runAt(at("2026-11-29T20:07:00Z"));
+    expect(posted()).toEqual(["The Recap of Sunday 29 November is up: https://offboard.test/recaps/2026-11-29\n\n1. Member ben: 2 points\n2. Member cora: 0.5 points"]);
+  });
+
+  it("keeps the text it was sent with once a delivery has claimed it", async () => {
+    telegram.override = () => new Response("Bad Gateway", { status: 502 });
+    await collectAt(OVER);
+    leaves("ben");
+    await runAt(at("2026-11-29T20:07:00Z"));
+    expect(telegramPosts.get("recap:2026-11-29")?.text).toBe(RECAP);
+  });
+});
+
+describe("a skipped Sunday", () => {
+  const notice = "No Matchday on Sunday 29 November. The next one is on Sunday 6 December at 20:00.";
+
+  it("takes back its reminder that Telegram refused, so that only the notice goes out", async () => {
+    telegram.override = refused;
+    await runAt(vilnius("10:00"));
+    telegram.override = undefined;
+    vi.setSystemTime(vilnius("15:00"));
+    expect(await skipSunday(DATE, vilnius("15:00"))).toBeNull();
+    for (const time of ["15:07", "16:07", "19:00", "19:07"]) await runAt(vilnius(time));
+    expect(posted()).toEqual([notice]);
+  });
+
+  it("leaves a reminder Telegram may have posted, which the runs go on reporting", async () => {
+    telegram.override = () => new Response("Bad Gateway", { status: 502 });
+    await runAt(vilnius("10:00"));
+    telegram.override = undefined;
+    vi.setSystemTime(vilnius("15:00"));
+    expect(await skipSunday(DATE, vilnius("15:00"))).toBeNull();
+    expect(await runAt(vilnius("15:07"))).toMatchObject({ outcome: "failed", detail: unsure(MORNING) });
+    expect(posted()).toEqual([notice]);
+  });
+});
+
+describe("a change to the schedule", () => {
+  it("posts the notice it queued, or an older one, and nothing else: one request to Telegram at most", async () => {
+    telegram.override = refused;
+    await collectAt(OVER); // the Recap, refused, waits
+    await skipSunday("2026-12-13", OVER); // its notice, refused, waits
+    telegram.override = undefined;
+    const before = telegram.calls.length;
+    expect(await skipSunday("2026-12-20", OVER)).toBeNull();
+    expect(telegram.calls.length - before).toBe(1);
+    expect(posted()).toEqual(["No Matchday on Sunday 13 December. The next one is on Sunday 20 December at 20:00."]);
+  });
+});
+
+describe("Telegram's answers", () => {
+  it("are read for its reason, cut to 200 characters, and for the new id of a group that became a supergroup", async () => {
+    const long = `Bad Request: ${"x".repeat(400)}`;
+    telegram.override = () => Response.json({ ok: false, error_code: 400, description: long }, { status: 400 });
+    expect((await runAt(vilnius("10:00"))).detail).toBe(`Couldn't post to the Telegram group: Telegram refused it: ${long.slice(0, 200)}. The next run tries again.`);
+    telegram.override = () =>
+      Response.json(
+        { ok: false, error_code: 400, description: "Bad Request: group chat was upgraded to a supergroup chat", parameters: { migrate_to_chat_id: -1001234567890 } },
+        { status: 400 },
+      );
+    expect((await runAt(vilnius("10:07"))).detail).toBe(
+      "Couldn't post to the Telegram group: Telegram refused it: Bad Request: group chat was upgraded to a supergroup chat. The group's id is now -1001234567890. The next run tries again.",
+    );
+  });
+
+  it("come from api.telegram.org alone in production, whatever TELEGRAM_URL says, and from the fake it names elsewhere", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      asked.push(new URL(input instanceof Request ? input.url : String(input)).origin);
+      return telegram.fetch(input, init);
+    });
+    vi.stubEnv("TELEGRAM_URL", "https://fake.telegram.example");
+    vi.stubEnv("NODE_ENV", "production");
+    await runAt(vilnius("10:00"));
+    vi.stubEnv("NODE_ENV", "test");
+    await runAt(vilnius("19:00"));
+    expect(asked).toEqual(["https://api.telegram.org", "https://fake.telegram.example"]);
+    expect(posted()).toEqual([MORNING, HOUR_BEFORE]);
   });
 });
 
@@ -397,6 +562,16 @@ describe("with Telegram not set up", () => {
     expect(telegramPosts.size).toBe(0);
     expect(telegram.calls).toEqual([]);
     expect(jobFailures.size).toBe(0);
+  });
+
+  it("keeps no post once it is out of date, though Telegram was switched off with posts waiting", async () => {
+    telegram.override = refused;
+    await collectAt(OVER); // the Recap, which names Members, waits
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    expect(await runAt(new Date(matchdayStart("2026-12-06").getTime() - MINUTE))).toMatchObject({ outcome: "skipped" });
+    expect(telegramPosts.size).toBe(1);
+    expect(await runAt(matchdayStart("2026-12-06"))).toMatchObject({ outcome: "skipped" });
+    expect(telegramPosts.size).toBe(0);
   });
 });
 

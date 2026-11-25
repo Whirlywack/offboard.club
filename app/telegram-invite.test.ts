@@ -49,6 +49,17 @@ describe("the Telegram group's invite link", () => {
     expect(await render(AfterSignUp)).toContain(`${link}Join the Telegram group`);
   });
 
+  it("comes, after signing up, with what the bot posts there only once the bot is set up", async () => {
+    signedIn = "member";
+    let html = await render(AfterSignUp);
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group. <a");
+    expect(html).not.toContain("bot");
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_GROUP_ID", "@pretend_group");
+    html = await render(AfterSignUp);
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts the Matchday reminders and Recaps. <a");
+  });
+
   it("is given to nobody else: not a visitor, nor anyone part-way through signing up", async () => {
     for (const who of [null, "unwelcomed", "unconnected"]) {
       signedIn = who;

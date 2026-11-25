@@ -7,7 +7,8 @@
 // text; the answer is JSON whose "ok" says whether the message was posted, with a "description" when it was not. The
 // token travels in the path, so no address, request or answer is logged or put in a message.
 //
-// Every post is queued in "telegramPost" (migrations/008_telegram.sql) and sent from there by deliverPosts, once.
+// Every post is queued in "telegramPost" (migrations/008_telegram.sql) and sent from there, once, by deliverPosts or,
+// for a notice of the schedule, deliverNotice.
 
 import { db } from "./db";
 import { timeLimit } from "./lichess";
@@ -54,7 +55,7 @@ const NEVER_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREA
 
 // Whether Telegram posted the message: true; false when it refused it or never got it; "perhaps" when the request went
 // out and no answer that says came back.
-export type Sent = { posted: true } | { posted: false | "perhaps"; problem: string };
+type Sent = { posted: true } | { posted: false | "perhaps"; problem: string };
 
 type Answer = { ok?: unknown; description?: unknown; parameters?: { migrate_to_chat_id?: unknown } | null };
 
@@ -84,13 +85,14 @@ export async function sendMessage(chatId: string, text: string): Promise<Sent> {
       });
     } catch (error) {
       const code = (error as { cause?: { code?: unknown } }).cause?.code;
-      if (!limit.signal.aborted && typeof code === "string" && NEVER_SENT.has(code)) return { posted: false, problem: "Telegram couldn't be reached" };
+      // Given up on, the error is the deadline's own, which has no code.
+      if (typeof code === "string" && NEVER_SENT.has(code)) return { posted: false, problem: "Telegram couldn't be reached" };
       return { posted: "perhaps", problem: limit.signal.aborted ? (limit.signal.reason as Error).message : "the connection to Telegram broke" };
     }
     // An answer that is not Telegram's JSON, such as a proxy's error page, does not say whether the message was posted.
     const body = (await response.json().catch(() => null)) as Answer | null;
     if (typeof body?.ok === "boolean") return body.ok ? { posted: true } : { posted: false, problem: refusal(body) };
-    return { posted: "perhaps", problem: limit.signal.aborted ? (limit.signal.reason as Error).message : `Telegram answered ${response.status} without saying` };
+    return { posted: "perhaps", problem: `Telegram answered ${response.status} without saying` };
   } finally {
     limit.clear();
   }
@@ -98,9 +100,14 @@ export async function sendMessage(chatId: string, text: string): Promise<Sent> {
 
 export type Post = { key: string; text: string; until: Date };
 
-// Queues a post for the group, unless one with its key is queued already.
+// Queues a post for the group, once by its key. Queued again, it takes the new text for as long as no delivery has
+// claimed it, so that a Recap waiting to be posted names nobody who has since left or been marked.
 export async function queuePost({ key, text, until }: Post) {
-  await db.query(`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do nothing`, [key, text, until]);
+  await db.query(
+    `insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3)
+     on conflict ("key") do update set "text" = excluded."text" where "telegramPost"."claimedAt" is null`,
+    [key, text, until],
+  );
 }
 
 // Deletes the posts whose "until" has passed as of `now`, sent or not. None is queued again after it, and a Recap's
@@ -111,41 +118,74 @@ export async function forgetPastPosts(now: Date) {
 
 // How many a delivery sends at most: Telegram lets a bot post 20 messages a minute to a group, and a run has a few
 // minutes. The rest wait for the next.
-export const MAX_PER_DELIVERY = 10;
+const MAX_PER_DELIVERY = 10;
 
 // What a delivery did: how many posts went out, and the one that could not be sent, if any, with whether Telegram may
 // have posted it all the same.
 export type Delivery = { posted: number; failed: { text: string; problem: string; perhaps: boolean } | null };
 
-// Sends the posts that are waiting, oldest first, to the Club's group, until one cannot be sent. Exactly once:
-// - Each is claimed before it is sent, by one statement that takes a post nobody has claimed, so of deliveries at the
-//   same moment each sends different posts, and a post claimed is sent by its claimer alone.
+// Claims and sends the oldest post waiting whose key starts with `prefix`: null if there is none, else how it went.
+// Exactly once:
+// - The post is claimed before it is sent, by one statement that takes a post nobody has claimed and skips one another
+//   delivery is claiming at that moment, so of deliveries at the same moment each sends different posts, and a post
+//   claimed is sent by its claimer alone.
 // - A post Telegram refused, or that never reached it, is given back, and the next delivery tries it again.
 // - A post that may have been posted without Telegram saying so stays claimed and is never sent again; so does one
-//   whose delivery died while sending it.
+//   whose delivery died while sending it (stuckPost).
 // - A post is not sent after its "until", as of `now`.
-// Throws if the database fails.
+async function deliverOne(group: string, now: Date, prefix: string): Promise<Delivery | null> {
+  const { rows } = await db.query<{ key: string; text: string }>(
+    `update "telegramPost" set "claimedAt" = now()
+     where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2
+                    order by "createdAt", "key" limit 1 for update skip locked)
+     returning "key", "text"`,
+    [now, `${prefix}%`],
+  );
+  const post = rows[0];
+  if (!post) return null;
+  const sent = await sendMessage(group, post.text);
+  if (sent.posted === true) {
+    await db.query(`update "telegramPost" set "sentAt" = now() where "key" = $1`, [post.key]);
+    return { posted: 1, failed: null };
+  }
+  if (sent.posted === false) await db.query(`update "telegramPost" set "claimedAt" = null where "key" = $1`, [post.key]);
+  return { posted: 0, failed: { text: post.text, problem: sent.problem, perhaps: sent.posted === "perhaps" } };
+}
+
+// Sends the posts that are waiting, oldest first, to the Club's group, until one cannot be sent. Throws if the database
+// fails.
 export async function deliverPosts(now: Date): Promise<Delivery> {
   const group = setting("TELEGRAM_GROUP_ID");
   let posted = 0;
-  if (!group) return { posted, failed: null };
-  while (posted < MAX_PER_DELIVERY) {
-    const { rows } = await db.query<{ key: string; text: string }>(
-      `update "telegramPost" set "claimedAt" = now()
-       where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 order by "createdAt", "key" limit 1 for update skip locked)
-       returning "key", "text"`,
-      [now],
-    );
-    const post = rows[0];
-    if (!post) break;
-    const sent = await sendMessage(group, post.text);
-    if (sent.posted === true) {
-      await db.query(`update "telegramPost" set "sentAt" = now() where "key" = $1`, [post.key]);
-      posted++;
-      continue;
-    }
-    if (sent.posted === false) await db.query(`update "telegramPost" set "claimedAt" = null where "key" = $1`, [post.key]);
-    return { posted, failed: { text: post.text, problem: sent.problem, perhaps: sent.posted === "perhaps" } };
+  while (group && posted < MAX_PER_DELIVERY) {
+    const one = await deliverOne(group, now, "");
+    if (!one) break;
+    if (one.failed) return { posted, failed: one.failed };
+    posted++;
   }
   return { posted, failed: null };
+}
+
+// The start of a notice's key: lib/seasons.ts queues each under it and a random id.
+export const NOTICE = "notice:";
+
+// Sends the oldest notice of the schedule waiting, and nothing else: one request to Telegram at most, cut off at 10 s,
+// for the change that queued it, which waits on it. Throws if the database fails.
+export async function deliverNotice(now: Date) {
+  const group = setting("TELEGRAM_GROUP_ID");
+  if (group) await deliverOne(group, now, NOTICE);
+}
+
+// How long a delivery may hold one post, its 10 s request included, before the post counts as stuck.
+const STUCK_MS = 15 * 60_000;
+
+// The text of the oldest post claimed more than 15 minutes before `now` and never sent: Telegram may have posted it
+// without saying so, or its delivery died while sending it. Either way it is not sent again, so the Organiser is asked
+// to look. Null if there is none. It stands until its "until", when a run deletes it.
+export async function stuckPost(now: Date): Promise<string | null> {
+  const { rows } = await db.query<{ text: string }>(
+    `select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 order by "claimedAt", "key" limit 1`,
+    [new Date(now.getTime() - STUCK_MS)],
+  );
+  return rows[0]?.text ?? null;
 }

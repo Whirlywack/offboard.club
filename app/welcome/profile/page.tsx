@@ -5,7 +5,7 @@ import { ProfileForm } from "../../profile/profile-form";
 import ui from "../../ui.module.css";
 import { SignUpSteps } from "../steps";
 import { getProfile, requireSignedUp } from "@/lib/auth";
-import { inviteLink } from "@/lib/telegram";
+import { inviteLink, postingSetUp } from "@/lib/telegram";
 
 export const metadata: Metadata = { title: "Your Profile" };
 
@@ -36,7 +36,9 @@ export async function Step() {
     <>
       {invite && (
         <p className={ui.prose}>
-          Members talk in the Club&apos;s Telegram group, where the bot also posts the Matchday reminders and Recaps.{" "}
+          {postingSetUp()
+            ? "Members talk in the Club's Telegram group, where the bot also posts the Matchday reminders and Recaps."
+            : "Members talk in the Club's Telegram group."}{" "}
           <ExternalLink href={invite}>Join the Telegram group</ExternalLink>
         </p>
       )}

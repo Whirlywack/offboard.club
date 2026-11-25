@@ -54,8 +54,8 @@ export default function PrivacyPage() {
             links to them on Lichess.
           </li>
           <li>
-            <strong>The Club&apos;s Telegram group,</strong> whose invite link only Members see: each Recap&apos;s top three
-            and Award winners, with their Companies, as the site&apos;s bot posts them.
+            <strong>The Club&apos;s Telegram group,</strong> whose invite link only Members see: the names of each
+            Recap&apos;s top three and Award winners, as the site&apos;s bot posts them.
           </li>
           <li>
             <strong>Only the Organiser,</strong> who can read everything the site keeps: your email address, IP address

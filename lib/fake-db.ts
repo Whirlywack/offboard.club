@@ -209,8 +209,11 @@ function addPost(key: string, text: unknown, until: unknown) {
   return answer([], 1);
 }
 
-// A change's notice, queued under a random key unless the notice is null.
-const notice = (text: unknown, until: unknown) => (text === null ? answer([], 0) : addPost(randomUUID(), text, until));
+// A change's notice, queued under "notice:" and a random id unless the notice is null.
+const notice = (text: unknown, until: unknown) => (text === null ? answer([], 0) : addPost(`notice:${randomUUID()}`, text, until));
+
+// A string's match for a LIKE pattern whose only wildcard is a "%" at its end, as the app's are.
+const likePrefix = (value: string, pattern: string) => value.startsWith(pattern.replace(/%$/, ""));
 const statements: Record<string, (...params: Params) => ReturnType<typeof answer>> = {
   // getProfile
   [`select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo", u."lichessUsername", u."lichessBlitzRating", c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl" from "user" u left join "company" c on c."domain" = u."companyDomain" where u.id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
@@ -567,7 +570,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   // --- Changes to the schedule, each queueing its notice for the Telegram group when it changes something ---
 
   // addSeason
-  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing returning 1) insert into "telegramPost" ("key", "text", "until") select gen_random_uuid()::text, $3, $4 from changed where $3::text is not null`]:
+  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing returning 1) insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $3, $4 from changed where $3::text is not null`]:
     (number, start, text, until) => {
       if (seasons.has(Number(number))) return answer([], 0);
       seasons.set(Number(number), { number: Number(number), start });
@@ -575,21 +578,23 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     },
 
   // setStart: a Season's row is changed only when its start is another.
-  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do update set "start" = excluded."start" where "season"."start" is distinct from excluded."start" returning 1) insert into "telegramPost" ("key", "text", "until") select gen_random_uuid()::text, $3, $4 from changed where $3::text is not null`]:
+  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do update set "start" = excluded."start" where "season"."start" is distinct from excluded."start" returning 1) insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $3, $4 from changed where $3::text is not null`]:
     (number, start, text, until) => {
       if (seasons.get(Number(number))?.start === start) return answer([], 0);
       seasons.set(Number(number), { number: Number(number), start });
       return notice(text, until);
     },
 
-  // setSkipped
-  [`with changed as (insert into "skippedSunday" ("date") values ($1) on conflict do nothing returning 1) insert into "telegramPost" ("key", "text", "until") select gen_random_uuid()::text, $2, $3 from changed where $2::text is not null`]:
+  // setSkipped: skipping also deletes the Sunday's reminders that no delivery has claimed, whether or not it was skipped.
+  [`with reminders as (delete from "telegramPost" where "key" like 'reminder:' || to_char($1::date, 'YYYY-MM-DD') || ':%' and "claimedAt" is null), changed as (insert into "skippedSunday" ("date") values ($1) on conflict do nothing returning 1) insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $2, $3 from changed where $2::text is not null`]:
     (date, text, until) => {
+      for (const post of [...telegramPosts.values()])
+        if (likePrefix(post.key, `reminder:${date}:%`) && post.claimedAt === null) telegramPosts.delete(post.key);
       if (skippedSundays.has(date)) return answer([], 0);
       skippedSundays.set(date, { date });
       return notice(text, until);
     },
-  [`with changed as (delete from "skippedSunday" where "date" = $1 returning 1) insert into "telegramPost" ("key", "text", "until") select gen_random_uuid()::text, $2, $3 from changed where $2::text is not null`]:
+  [`with changed as (delete from "skippedSunday" where "date" = $1 returning 1) insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $2, $3 from changed where $2::text is not null`]:
     (date, text, until) => {
       if (!skippedSundays.delete(date)) return answer([], 0);
       return notice(text, until);
@@ -597,9 +602,23 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // --- Posts to the Telegram group (lib/telegram.ts) ---
 
-  // queuePost
-  [`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do nothing`]: (key, text, until) =>
-    addPost(key, text, until),
+  // queuePost: queued again, a post takes the new text while no delivery has claimed it.
+  [`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do update set "text" = excluded."text" where "telegramPost"."claimedAt" is null`]:
+    (key, text, until) => {
+      const post = telegramPosts.get(key);
+      if (!post) return addPost(key, text, until);
+      if (post.claimedAt !== null) return answer([], 0);
+      post.text = String(text);
+      return answer([], 1);
+    },
+
+  // stuckPost: the oldest post claimed at or before $1 and never sent.
+  [`select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 order by "claimedAt", "key" limit 1`]: (before) => {
+    const post = [...telegramPosts.values()]
+      .filter((p) => p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date))
+      .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1))[0];
+    return answer(post ? [{ text: post.text }] : []);
+  },
 
   // forgetPastPosts
   [`delete from "telegramPost" where "until" <= $1`]: (now) => {
@@ -608,11 +627,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], gone.length);
   },
 
-  // deliverPosts' claim: the oldest post nobody has claimed whose "until" is after $1.
-  [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
-    (now) => {
+  // A delivery's claim: the oldest post nobody has claimed whose "until" is after $1 and whose key is like $2. Each
+  // statement here runs whole, so none can take a post another is claiming: lib/telegram.postgres.test.ts shows that of
+  // Postgres, with two connections.
+  [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
+    (now, pattern) => {
       const post = [...telegramPosts.values()]
-        .filter((p) => p.claimedAt === null && p.until > new Date(now as unknown as Date))
+        .filter((p) => p.claimedAt === null && p.until > new Date(now as unknown as Date) && likePrefix(p.key, pattern))
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.order - b.order)[0];
       if (!post) return answer();
       post.claimedAt = new Date();

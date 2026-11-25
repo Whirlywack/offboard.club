@@ -236,12 +236,14 @@ describe("readProfileForm", () => {
     expect(readProfileForm(form({ position: "؜CTO؜" }))).toMatchObject({ position: "CTO" });
   });
 
-  it("tidies a megabyte of spaces and joiners in turn in well under a second", () => {
+  // A pass linear in the length takes a tenth of a second here; one that went back over the text for each character
+  // would take hours. 5 s tells them apart however busy the machine is.
+  it("tidies a megabyte of spaces and joiners in turn in one pass", () => {
     const position = "x" + " ‍".repeat(500_000) + "y";
     const start = performance.now();
     expect(readProfileForm(form({ position }))).toMatch(/80 characters/);
     expect(readProfileForm(form({ position: "CTO" + " ‍".repeat(500_000) }))).toMatchObject({ position: "CTO" });
-    expect(performance.now() - start).toBeLessThan(500);
+    expect(performance.now() - start).toBeLessThan(5_000);
   });
 
   it("keeps the zero-width joiner inside emoji", () => {

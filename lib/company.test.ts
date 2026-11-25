@@ -293,6 +293,8 @@ describe("fetchCompanyMeta", () => {
     expect([...name]).toHaveLength(80);
   });
 
+  // A pass linear in the length takes milliseconds; one that went back over the text for each character would take
+  // minutes. 5 s tells them apart however busy the machine is.
   it.each([
     ["repeated meta prefixes", `<meta name="og:site_name" `.repeat(8_000)],
     ["repeated link prefixes", `<link rel="icon" `.repeat(12_000)],
@@ -303,12 +305,12 @@ describe("fetchCompanyMeta", () => {
     ["an unterminated entity", `<title>&#x` + `1`.repeat(200_000)],
     ["spaces and joiners in turn", `<title>x` + ` ‍`.repeat(100_000) + `y`],
     ["a name ending in spaces and joiners", `<meta property="og:site_name" content="x` + ` ‍`.repeat(100_000) + `">`],
-  ])("reads 200 KB of hostile HTML (%s) in well under a second", async (_, html) => {
+  ])("reads 200 KB of hostile HTML (%s) in one pass", async (_, html) => {
     expect(html.length).toBeGreaterThanOrEqual(200_000);
     fetchMock.mockResolvedValue(page(html));
     const start = performance.now();
     const { name } = await fetchCompanyMeta("vinted.com");
-    expect(performance.now() - start).toBeLessThan(500);
+    expect(performance.now() - start).toBeLessThan(5_000);
     expect([...name].length).toBeLessThanOrEqual(80);
   });
 

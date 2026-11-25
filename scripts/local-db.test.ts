@@ -59,8 +59,8 @@ describe("a checkout's .env.local", () => {
   });
 });
 
-const run = (command: string, args: string[], env: Record<string, string | undefined> = {}) =>
-  spawnSync(command, args, { env: { ...process.env, DATABASE_URL: undefined, ...env }, encoding: "utf8" });
+const run = (command: string, args: string[], env: Record<string, string | undefined> = {}, cwd?: string) =>
+  spawnSync(command, args, { cwd, env: { ...process.env, DATABASE_URL: undefined, ...env }, encoding: "utf8" });
 const tsx = "node_modules/.bin/tsx";
 
 // A temporary checkout holding only scripts/local-db.mjs, which refuses before it needs anything else.
@@ -235,19 +235,23 @@ describe("a run on another major version of Node.js", () => {
   });
 });
 
-// A folder of pretend Postgres programs: pg_ctl reports `version`, and initdb refuses, which ends a db:start there.
-function pretendPostgres(dir: string, version: string) {
+
+// A folder of pretend Postgres programs: pg_ctl reports `version`, and initdb, if there is one, refuses, which ends a
+// db:start there.
+function pretendPostgres(dir: string, version: string, { initdb = true } = {}) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "pg_ctl"), `#!/bin/sh\n[ "$1" = --version ] && echo "pg_ctl (PostgreSQL) ${version}" && exit 0\nexit 1\n`, { mode: 0o755 });
-  writeFileSync(join(dir, "initdb"), "#!/bin/sh\necho 'pretend initdb' >&2\nexit 1\n", { mode: 0o755 });
+  if (initdb) writeFileSync(join(dir, "initdb"), "#!/bin/sh\necho 'pretend initdb' >&2\nexit 1\n", { mode: 0o755 });
   return dir;
 }
 
-// A checkout whose CI runs Postgres 98, which no machine has, so that only pretend programs are of its version.
-function ciOn98() {
+// A checkout whose CI runs Postgres 98, which no machine has, so that only pretend programs are of its version: a git
+// repository, unless `git` is false, so that db:start gets as far as its Postgres.
+function ciOn98({ image = "image: postgres:98", git: repository = true } = {}) {
   const { root, script } = checkout();
+  if (repository) git(root, "init", "-q");
   mkdirSync(join(root, ".github/workflows"), { recursive: true });
-  writeFileSync(join(root, ".github/workflows/ci.yml"), "services:\n  postgres:\n    image: postgres:98\n");
+  writeFileSync(join(root, ".github/workflows/ci.yml"), `services:\n  postgres:\n    ${image}\n`);
   return { root, script };
 }
 
@@ -272,6 +276,22 @@ describe("the Postgres db:start runs", () => {
       `Postgres 97.3 from ${newer}, not CI's 98, as no Postgres 98 was found on PATH, in Homebrew or in /usr/lib/postgresql (brew install postgresql@98).`,
     );
   });
+
+  it("is never one in a folder PATH names relatively, which is wherever it is run from, nor one without initdb", () => {
+    const { root, script } = ciOn98();
+    pretendPostgres(join(root, "relative"), "98.1");
+    const client = pretendPostgres(join(root, "client"), "98.2", { initdb: false });
+    const installed = pretendPostgres(join(root, "installed"), "97.0");
+    const { stdout } = run(process.execPath, [script, "start"], { PATH: `relative:${client}:${installed}:/usr/bin:/bin`, HOMEBREW_PREFIX: join(root, "no-brew") }, root);
+    expect(stdout.split("\n")[0]).toMatch(new RegExp(`^Postgres 97\\.0 from ${installed}, not CI's 98,`));
+  });
+
+  it("is refused when CI's workflow names no Postgres image", () => {
+    const { root, script } = ciOn98({ image: "image: redis:7" });
+    const PATH = `${pretendPostgres(join(root, "pg"), "98.1")}:/usr/bin:/bin`;
+    const refused = /^No `image: postgres:<major>` was found in \.github\/workflows\/ci\.yml\.$/;
+    refuses(process.execPath, [script, "start"], refused, { PATH, HOMEBREW_PREFIX: join(root, "no-brew") });
+  });
 });
 
 // Every temporary repository below, whose leftovers afterAll stops should a test fail part-way, and every process a
@@ -280,7 +300,7 @@ const repositories: string[] = [];
 const children: ChildProcess[] = [];
 afterAll(() => {
   for (const child of children) child.kill();
-  for (const root of repositories) tool(root, "stop-all");
+  for (const root of repositories) tool(root, "stop-all", "--all");
 });
 
 const tool = (root: string, ...args: string[]) => run(process.execPath, [join(root, "scripts/local-db.mjs"), ...args]);
@@ -303,8 +323,18 @@ const freePort = () =>
       server.close(() => done(port));
     });
   });
+// `pid` and every process under it.
+function descendants(pid: number) {
+  const pairs = execFileSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number));
+  const found = [pid];
+  for (let i = 0; i < found.length; i++) for (const [child, parent] of pairs) if (parent === found[i]) found.push(child);
+  return found;
+}
 
-// The files db:start, the migrations and the fake Telegram read, and this checkout's node_modules, put in `root`.
+// The files db:start, the migrations, the fake Telegram and next dev read, and this checkout's node_modules, put in `root`.
 function fill(root: string) {
   const files = ["scripts/local-db.mjs", "scripts/migrate.mjs", "scripts/fake-telegram.ts", "lib/fixtures/fake-telegram.ts", ".github/workflows/ci.yml", "package.json", "tsconfig.json"];
   for (const file of files) {
@@ -313,6 +343,9 @@ function fill(root: string) {
   }
   cpSync("migrations", join(root, "migrations"), { recursive: true });
   symlinkSync(resolve("node_modules"), join(root, "node_modules"));
+  mkdirSync(join(root, "app"));
+  writeFileSync(join(root, "app/layout.tsx"), "export default function Layout({ children }: { children: React.ReactNode }) {\n  return <html><body>{children}</body></html>;\n}\n");
+  writeFileSync(join(root, "app/page.tsx"), "export default function Page() {\n  return <p>pretend</p>;\n}\n");
   return root;
 }
 
@@ -325,8 +358,55 @@ function repository() {
   return fill(root);
 }
 
+// The fake Telegram, started in `root` as pnpm fake-telegram starts it, on `port` or a free one, once it is listening.
+async function fakeTelegram(root: string, { port = 0, env = {} }: { port?: number; env?: Record<string, string> } = {}) {
+  const at = port || (await freePort());
+  const child = spawn(join(root, "node_modules/.bin/tsx"), ["scripts/fake-telegram.ts"], {
+    cwd: root,
+    env: { ...process.env, TELEGRAM_URL: `http://127.0.0.1:${at}`, ...env },
+  });
+  children.push(child);
+  await new Promise<void>((listening, failed) => {
+    child.stdout!.on("data", (chunk) => String(chunk).includes("The fake Telegram is at") && listening());
+    child.once("exit", (code) => failed(new Error(`The fake Telegram exited with ${code}.`)));
+  });
+  return at;
+}
+
+describe("what these tools start is recorded", () => {
+  it("only in a git checkout: outside one, db:start and the fakes start nothing", async () => {
+    const { root, script } = ciOn98({ git: false });
+    const PATH = `${pretendPostgres(join(root, "pg"), "98.1")}:/usr/bin:/bin`;
+    const why = `${realpathSync(root)} is not a git checkout, where these tools record what they start, so nothing was started.`;
+    refuses(process.execPath, [script, "start"], new RegExp(`^${why.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), { PATH, HOMEBREW_PREFIX: join(root, "no-brew") });
+    expect(existsSync(join(root, ".local-db"))).toBe(false);
+
+    // Its port held, so that a fake that listened first would fail on that instead.
+    const plain = fill(realpathSync(mkdtempSync(join(tmpdir(), "offboard-checkout-"))));
+    const port = await freePort();
+    const release = await squat(port);
+    try {
+      const fake = run(join(plain, "node_modules/.bin/tsx"), ["scripts/fake-telegram.ts"], { TELEGRAM_URL: `http://127.0.0.1:${port}` }, plain);
+      expect([fake.status, fake.stdout, fake.stderr]).toEqual([1, "", expect.stringContaining(`${plain} is not a git checkout`)]);
+    } finally {
+      await release();
+    }
+  }, 30_000);
+
+  it("only while its process runs", () => {
+    const root = repository();
+    const gone = spawnSync(process.execPath, ["-e", ""]).pid;
+    const code = `const { recorder } = await import(${JSON.stringify(join(root, "scripts/local-db.mjs"))}); recorder()("site", 3000, { pid: ${gone} });`;
+    const { status, stderr } = run(process.execPath, ["--input-type=module", "-e", code]);
+    expect([status, stderr]).toEqual([1, expect.stringContaining(`site (process ${gone}) is not running, so it was not recorded.`)]);
+    expect(existsSync(join(root, ".git/offboard-local", `${gone}.json`))).toBe(false);
+  });
+});
+
 const blockIn = (dir: string) => readFileSync(join(dir, "offboard.env"), "utf8");
-const databaseUrl = (text: string) => /^DATABASE_URL=(.*)$/m.exec(text)![1];
+const urlIn = (text: string, name: string) => new URL(new RegExp(`^${name}=(.*)$`, "m").exec(text)![1]);
+const databaseUrl = (text: string) => urlIn(text, "DATABASE_URL").toString();
+const portIn = (text: string, name: string) => Number(urlIn(text, name).port);
 async function query(url: string, sql: string) {
   const client = new pg.Client({ connectionString: url });
   await client.connect();
@@ -347,25 +427,40 @@ describe("db:start in a folder it has used before", () => {
   const root = repository();
   const dir = join(root, ".local-db");
   const envLocal = join(root, ".env.local");
-  let first = "";
 
-  it("starts on the first free ports when its own have been taken since, and rewrites its block and the .env.local that was it", async () => {
+  it("keeps its data, its block and .env.local when its ports are free or held by its own fakes, and refuses another --port", async () => {
     const started = tool(root, "start");
     expect(started.status, started.stderr).toBe(0);
     const [, version] = /^Postgres ([\d.]+)(?:, CI's major version,)? from \//m.exec(started.stdout)!;
-    first = blockIn(dir);
+    const first = blockIn(dir);
     expect(readFileSync(envLocal, "utf8")).toBe(first);
     expect((await query(databaseUrl(first), "show server_version")).rows[0].server_version).toMatch(new RegExp(`^${version.replaceAll(".", "\\.")}\\b`));
+    await query(databaseUrl(first), "create table kept ()");
+    await fakeTelegram(root, { port: portIn(first, "TELEGRAM_URL") });
     expect(tool(root, "stop").status).toBe(0);
 
-    const release = await squat(Number(new URL(databaseUrl(first)).port));
+    const again = tool(root, "start");
+    expect(again.status, again.stderr).toBe(0);
+    expect(again.stdout).not.toContain("taken now");
+    expect([blockIn(dir), readFileSync(envLocal, "utf8")]).toEqual([first, first]);
+    expect((await query(databaseUrl(first), "select to_regclass('kept')::text as kept")).rows).toEqual([{ kept: "kept" }]);
+    const postgres = portIn(first, "DATABASE_URL");
+    const another = postgres === 55531 ? 55530 : postgres + 1;
+    const refused = new RegExp(`^${dir.replaceAll(".", "\\.")} uses port ${postgres}: leave out --port, or give another --dir\\.$`);
+    refuses(process.execPath, [join(root, "scripts/local-db.mjs"), "start", "--port", String(another)], refused);
+    expect(rows(tool(root, "stop-all", "--dir", root).stdout).map(({ kind }) => kind).sort()).toEqual(["Postgres", "fake Telegram"]);
+  }, 60_000);
+
+  it("starts on the first free ports when its own have been taken since, and rewrites its block and the .env.local that was it", async () => {
+    const first = blockIn(dir);
+    const release = await squat(portIn(first, "DATABASE_URL"));
     try {
       const again = tool(root, "start");
       expect(again.status, again.stderr).toBe(0);
       expect(again.stdout).toMatch(new RegExp(`^The ports ${dir} had are taken now, so it has the first free set: \\d+, \\d+, \\d+, \\d+\\.$`, "m"));
       expect(again.stdout).toContain(".env.local, which was its block, has the new ports.");
       const moved = blockIn(dir);
-      expect(new URL(databaseUrl(moved)).port).not.toBe(new URL(databaseUrl(first)).port);
+      expect(portIn(moved, "DATABASE_URL")).not.toBe(portIn(first, "DATABASE_URL"));
       expect(moved.replace(/:\d+\b/g, ":<port>")).toBe(first.replace(/:\d+\b/g, ":<port>")); // the same database and secrets
       expect(readFileSync(envLocal, "utf8")).toBe(moved);
       expect(await query(databaseUrl(moved), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
@@ -379,7 +474,7 @@ describe("db:start in a folder it has used before", () => {
     const before = blockIn(dir);
     const theirs = `${before}# a line of the agent's own\n`;
     writeFileSync(envLocal, theirs);
-    const release = await squat(Number(new URL(databaseUrl(before)).port));
+    const release = await squat(portIn(before, "DATABASE_URL"));
     try {
       const again = tool(root, "start");
       expect(again.status, again.stderr).toBe(0);
@@ -404,24 +499,28 @@ describe("db:start in a folder it has used before", () => {
     expect(blockIn(dir)).toBe(block);
     const { rows, marked } = await query(databaseUrl(block), "select to_regclass('left_behind') as table, (select count(*)::int from schema_migrations) as migrations");
     expect([rows, marked]).toEqual([[{ table: null, migrations: readdirSync("migrations").length }], true]);
-    expect(tool(root, "stop").status).toBe(0);
+  }, 60_000);
+
+  it("dev:local runs the site, which is listed and stopped with the server it started", async () => {
+    writeFileSync(envLocal, blockIn(dir));
+    const dev = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "dev"], { cwd: root, env: { ...process.env, DATABASE_URL: undefined } });
+    children.push(dev);
+    const exited = new Promise((done) => dev.once("exit", done));
+    await new Promise<void>((ready, failed) => {
+      dev.stdout!.on("data", (chunk) => String(chunk).includes("Ready in") && ready());
+      dev.once("exit", (code) => failed(new Error(`dev:local exited with ${code}.`)));
+    });
+    const site = { kind: "site", port: portIn(blockIn(dir), "BETTER_AUTH_URL"), folder: root, gone: false };
+    expect(rows(tool(root, "list").stdout)).toEqual([expect.objectContaining({ kind: "Postgres" }), site]);
+    const record = readdirSync(join(root, ".git/offboard-local")).map((name) => JSON.parse(readFileSync(join(root, ".git/offboard-local", name), "utf8")));
+    const servers = descendants(record.find(({ kind }) => kind === "site").pid);
+    expect(servers.length).toBeGreaterThan(1); // next dev, and the server it starts
+    expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([expect.objectContaining({ kind: "Postgres" }), site]);
+    await exited;
+    for (let waited = 0; servers.some(alive) && waited < 5_000; waited += 100) await new Promise((done) => setTimeout(done, 100));
+    expect(servers.filter(alive)).toEqual([]);
   }, 60_000);
 });
-
-// The fake Telegram, started in `root` as pnpm fake-telegram starts it, once it says it is listening.
-async function fakeTelegram(root: string) {
-  const port = await freePort();
-  const child = spawn(join(root, "node_modules/.bin/tsx"), ["scripts/fake-telegram.ts"], {
-    cwd: root,
-    env: { ...process.env, TELEGRAM_URL: `http://127.0.0.1:${port}` },
-  });
-  children.push(child);
-  await new Promise<void>((listening, failed) => {
-    child.stdout!.on("data", (chunk) => String(chunk).includes("The fake Telegram is at") && listening());
-    child.once("exit", (code) => failed(new Error(`The fake Telegram exited with ${code}.`)));
-  });
-  return port;
-}
 
 // The lines of pnpm local:list, or of pnpm local:stop without their "Stopped: ".
 const rows = (stdout: string) =>
@@ -434,17 +533,21 @@ const rows = (stdout: string) =>
     });
 
 describe("pnpm local:list and pnpm local:stop", () => {
-  it("list and stop what these tools started in each worktree of the repository, also once its folder is gone, and nothing else", async () => {
+  it("list and stop what these tools started from each worktree of the repository, also once its folder is gone, and nothing else", async () => {
     const main = repository();
-    const worktree = `${main}-worktree`;
+    const worktree = join(main, ".claude/worktrees/agent"); // inside the main checkout, as the agents' are
     git(main, "worktree", "add", "-q", "--detach", worktree);
     fill(worktree);
     const other = repository(); // another project's
+    const registry = join(main, ".git/offboard-local");
 
     const started = tool(worktree, "start");
     expect(started.status, started.stderr).toBe(0);
     const bin = / from (\/\S+?)[.,](?:\s|$)/m.exec(started.stdout)![1];
-    const postgres = { port: Number(new URL(databaseUrl(blockIn(join(worktree, ".local-db")))).port), pid: Number(readFileSync(join(worktree, ".local-db/postmaster.pid"), "utf8").split("\n")[0]) };
+    const postgres = {
+      port: portIn(blockIn(join(worktree, ".local-db")), "DATABASE_URL"),
+      pid: Number(readFileSync(join(worktree, ".local-db/postmaster.pid"), "utf8").split("\n")[0]),
+    };
     // A Postgres in the same worktree that db:start did not start, and a server standing in for the owner's site.
     let theirs = join(worktree, ".theirs");
     execFileSync(`${bin}/initdb`, ["-D", theirs, "-U", "theirs", "--auth=trust", "--no-locale", "-E", "UTF8"], { stdio: "ignore" });
@@ -453,49 +556,68 @@ describe("pnpm local:list and pnpm local:stop", () => {
     const site = spawn(process.execPath, ["-e", "require('node:http').createServer().listen(0, '127.0.0.1')"], { cwd: worktree });
     children.push(site);
     try {
-      const fakes = { main: await fakeTelegram(main), worktree: await fakeTelegram(worktree), other: await fakeTelegram(other) };
-      const listed = tool(main, "list");
-      expect(listed.status).toBe(0);
-      const ours = [
-        { kind: "Postgres", port: postgres.port, folder: join(worktree, ".local-db"), gone: false },
-        { kind: "fake Telegram", port: fakes.main, folder: main, gone: false },
-        { kind: "fake Telegram", port: fakes.worktree, folder: worktree, gone: false },
-      ];
+      // Recorded in one time zone and listed in another, as ps gives each caller its own.
+      const fakes = { main: await fakeTelegram(main, { env: { TZ: "Pacific/Kiritimati" } }), worktree: await fakeTelegram(worktree), other: await fakeTelegram(other) };
+      const listed = run(process.execPath, [join(main, "scripts/local-db.mjs"), "list"], { TZ: "Pacific/Pago_Pago" });
+      expect([listed.status, listed.stderr]).toEqual([0, ""]);
+      const ours = {
+        postgres: { kind: "Postgres", port: postgres.port, folder: join(worktree, ".local-db"), gone: false },
+        main: { kind: "fake Telegram", port: fakes.main, folder: main, gone: false },
+        worktree: { kind: "fake Telegram", port: fakes.worktree, folder: worktree, gone: false },
+      };
+      const all = [ours.postgres, ours.main, ours.worktree];
       expect(rows(listed.stdout)).toHaveLength(3);
-      expect(rows(listed.stdout)).toEqual(expect.arrayContaining(ours));
+      expect(rows(listed.stdout)).toEqual(expect.arrayContaining(all));
       expect(rows(tool(other, "list").stdout)).toEqual([{ kind: "fake Telegram", port: fakes.other, folder: other, gone: false }]);
 
       // A record of another process, whose start or command line is not what it was recorded with, is not this tool's.
       const [, start, command] = /^(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/.exec(
-        execFileSync("ps", ["-ww", "-o", "lstart=,command=", "-p", String(site.pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } }).trim(),
+        execFileSync("ps", ["-ww", "-o", "lstart=,command=", "-p", String(site.pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).trim(),
       )!;
-      const record = join(main, ".git/offboard-local", `${site.pid}.json`);
+      const record = join(registry, `${site.pid}.json`);
       for (const forged of [{ start: start.replace(/\d{4}$/, "2001"), command }, { start, command: `${command} --another` }]) {
-        writeFileSync(record, JSON.stringify({ kind: "site", port: 3000, folder: worktree, pid: site.pid, ...forged }));
+        writeFileSync(record, JSON.stringify({ kind: "site", port: 3000, folder: worktree, worktree, pid: site.pid, ...forged }));
         expect(rows(tool(main, "list").stdout)).toHaveLength(3);
         expect(existsSync(record)).toBe(false);
       }
 
+      // A file that is not a record is left alone and said so, and the records beside it still count.
+      const strays = [join(registry, "no-pid.json"), join(registry, "not-json.json")];
+      writeFileSync(strays[0], JSON.stringify({ kind: "site", port: 3000, folder: worktree, worktree, start, command }));
+      writeFileSync(strays[1], "{ not a record");
+      const beside = tool(main, "list");
+      expect(rows(beside.stdout)).toEqual(expect.arrayContaining(all));
+      expect(beside.stderr.trim().split("\n").sort()).toEqual(strays.map((file) => `${file} is not a record these tools write, so it was left alone.`));
+      expect(strays.every((file) => existsSync(file))).toBe(true);
+      // When ps itself fails, no record is believed or removed.
+      const failing = join(main, "failing-ps");
+      mkdirSync(failing);
+      writeFileSync(join(failing, "ps"), "#!/bin/sh\necho 'ps: pretend failure' >&2\nexit 1\n", { mode: 0o755 });
+      const blind = run(process.execPath, [join(main, "scripts/local-db.mjs"), "list"], { PATH: `${failing}:${process.env.PATH}` });
+      expect([blind.stdout, blind.stderr]).toEqual(["Nothing these tools started is running.\n", expect.stringMatching(/^ps could not say whether process \d+ runs/m)]);
+      expect(rows(tool(main, "list").stdout)).toHaveLength(3);
+
+      // Alone, pnpm local:stop stops nothing; with the main checkout it stops the main checkout's, not its worktrees'.
+      refuses(process.execPath, [join(main, "scripts/local-db.mjs"), "stop-all"], /^Usage: pnpm db:start/);
+      expect(rows(tool(main, "stop-all", "--dir", main).stdout)).toEqual([ours.main]);
+      expect(rows(tool(main, "list").stdout)).toEqual(expect.arrayContaining([ours.postgres, ours.worktree]));
+
       // The worktree's folder gone from where it was, as a removed one would be: Postgres runs on in a moved one.
       renameSync(worktree, `${worktree}-moved`);
       theirs = join(`${worktree}-moved`, ".theirs");
-      const orphans = ours.map((each) => (each.folder.startsWith(worktree) ? { ...each, gone: true } : each));
+      const orphans = [{ ...ours.postgres, gone: true }, { ...ours.worktree, gone: true }];
       expect(rows(tool(main, "list").stdout)).toEqual(expect.arrayContaining(orphans));
-
       const stopped = tool(main, "stop-all", "--dir", worktree);
       expect(stopped.status, stopped.stderr).toBe(0);
       expect(stopped.stdout).toMatch(/^Stopped: /);
-      expect(rows(stopped.stdout)).toEqual(expect.arrayContaining(orphans.filter(({ gone }) => gone)));
       expect(rows(stopped.stdout)).toHaveLength(2);
+      expect(rows(stopped.stdout)).toEqual(expect.arrayContaining(orphans));
       expect(alive(postgres.pid)).toBe(false);
-      expect(rows(tool(main, "list").stdout)).toEqual([ours[1]]);
+      expect(tool(main, "list").stdout).toBe("Nothing these tools started is running.\n");
       expect(spawnSync(`${bin}/pg_ctl`, ["-D", theirs, "status"]).status).toBe(0);
       expect(alive(site.pid!)).toBe(true);
 
-      expect(rows(tool(main, "stop-all").stdout)).toEqual([ours[1]]);
-      expect(tool(main, "list").stdout).toBe("Nothing these tools started is running.\n");
-      expect(rows(tool(other, "list").stdout)).toEqual([{ kind: "fake Telegram", port: fakes.other, folder: other, gone: false }]);
-      expect(rows(tool(other, "stop-all").stdout)).toHaveLength(1);
+      expect(rows(tool(other, "stop-all", "--all").stdout)).toEqual([{ kind: "fake Telegram", port: fakes.other, folder: other, gone: false }]);
       expect(tool(other, "list").stdout).toBe("Nothing these tools started is running.\n");
       expect(alive(site.pid!)).toBe(true);
     } finally {

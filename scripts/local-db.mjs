@@ -16,7 +16,8 @@
 //     and `pnpm seed:cookies`.
 //   pnpm local:list  Each Postgres, site and fake these tools started, from any worktree of this repository, that is
 //     still running: what it is, its port, its age and its folder, even once that folder is gone.
-//   pnpm local:stop [--dir <dir>]  Stops each of them, or each started in <dir> or below it, and nothing else.
+//   pnpm local:stop --dir <worktree>  Stops those started from that worktree, and nothing else: not what was started
+//     from the worktrees inside it. pnpm local:stop --all stops every one of them; alone, it stops nothing.
 // A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
 // `pnpm db:start --dir .local-db-tests`, which prints its address.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -79,13 +80,14 @@ const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const ENV_LOCAL = `${root}/.env.local`;
 const HEADER = "# From `pnpm db:start`: a throwaway database on this machine, and every other value pretend.";
 const USAGE =
-  "Usage: pnpm db:start [--dir <dir>] [--port <port>], pnpm db:stop [--dir <dir>], pnpm dev:local [--dir <dir>], pnpm local:list or pnpm local:stop [--dir <dir>].";
+  "Usage: pnpm db:start [--dir <dir>] [--port <port>], pnpm db:stop [--dir <dir>], pnpm dev:local [--dir <dir>], pnpm local:list, pnpm local:stop --dir <worktree> or pnpm local:stop --all.";
 const say = (line) => console.log(line);
 const variables = (block) => Object.fromEntries([...block.matchAll(/^([A-Z_]+)=(.*)$/gm)].map(([, name, value]) => [name, value]));
 const portOf = (url) => Number(new URL(url).port);
 
-// pnpm runs every script on the Node.js of package.json's devEngines.runtime, which CI's setup-node reads too. A line
-// saying so, when this runs on another major version, such as by `node` or `npx` from a shell; null otherwise.
+// pnpm runs every script on the Node.js of package.json's devEngines.runtime, which CI's setup-node reads too, and npm
+// and npx refuse to run on another major version (EBADDEVENGINES). A line saying so, when this runs on another major
+// version anyway, as `node` or a tool's own bin (node_modules/.bin/vitest) from a shell do; null otherwise.
 export function nodeNotice() {
   const file = `${root}/package.json`;
   const wanted = existsSync(file) && /^\D*(\d+)/.exec(JSON.parse(readFileSync(file, "utf8")).devEngines?.runtime?.version ?? "")?.[1];
@@ -218,48 +220,68 @@ const running = (pg, dir) => spawnSync(`${pg.dir}/pg_ctl`, ["-D", dir, "status"]
 const madeBy = (dir) => (existsSync(`${dir}/PG_VERSION`) ? readFileSync(`${dir}/PG_VERSION`, "utf8").trim() : null);
 
 // Each Postgres, site and fake these tools start is recorded in the repository's git folder, which every worktree of
-// it shares and which outlives a worktree's folder, as <pid>.json: what it is, its port, its folder, and the start time
-// and command line ps gives it. A record counts only while a process of that pid has both still, so that nothing else
-// is ever listed or stopped, whatever has taken its pid since.
+// it shares and which outlives a worktree's folder, as <pid>.json: what it is, its port, its folder, the worktree it
+// was started from (this checkout), and the start time and command line ps gives it. A record counts only while a
+// process of that pid has both still, so that nothing else is ever listed or stopped, whatever has taken its pid since.
 function registry() {
   const git = spawnSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
-  if (git.status !== 0) throw new Error(`${root} is not a git checkout, and these tools record what they start in its git folder.`);
+  if (git.status !== 0) throw new Error(`${root} is not a git checkout, where these tools record what they start, so nothing was started.`);
   return `${git.stdout.trim()}/offboard-local`;
 }
 
-// pid → when it started and its command line, for each of `pids` that is running.
-function processes(pids) {
-  const { stdout } = spawnSync("ps", ["-ww", "-o", "pid=,lstart=,command=", "-p", pids.join(",")], {
-    encoding: "utf8",
-    env: { ...process.env, LC_ALL: "C" },
-  });
-  return new Map([...stdout.matchAll(/^ *(\d+) +(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/gm)].map(([, pid, start, command]) => [Number(pid), { start, command }]));
+// When the process `pid` started, in UTC whatever the caller's time zone, and its command line; null when there is no
+// such process; undefined when ps cannot say.
+function processOf(pid) {
+  const ps = spawnSync("ps", ["-ww", "-o", "lstart=,command=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } });
+  if (ps.error || ps.stderr.trim()) return undefined;
+  const found = /^(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/m.exec(ps.stdout);
+  return found ? { start: found[1], command: found[2] } : null;
 }
+const started = (start) => Date.parse(`${start} UTC`);
 
-// Records the process `pid` as `kind`, on `port`, started in `folder`. The fakes record themselves once listening.
-export function record(kind, port, { folder = root, pid = process.pid } = {}) {
-  const found = processes([pid]).get(pid);
-  if (!found) throw new Error(`${kind} (process ${pid}) is not running, so it was not recorded.`);
+// Finds where records go before anything is started, so that nothing runs that could not be recorded: outside a git
+// checkout it throws. What it returns records the process `pid` as `kind`, on `port`, started in `folder`.
+export function recorder() {
   const dir = registry();
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(`${dir}/${pid}.tmp`, JSON.stringify({ kind, port, folder, pid, ...found }));
-  renameSync(`${dir}/${pid}.tmp`, `${dir}/${pid}.json`);
+  return (kind, port, { folder = root, pid = process.pid } = {}) => {
+    const found = processOf(pid);
+    if (!found) throw new Error(`${kind} (process ${pid}) is not running, so it was not recorded.`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(`${dir}/${pid}.tmp`, JSON.stringify({ kind, port, folder, worktree: root, pid, ...found }));
+    renameSync(`${dir}/${pid}.tmp`, `${dir}/${pid}.json`);
+  };
 }
 
-// Each record whose process is still running, oldest first; the others' files are removed.
+// The record in `file`, or null when it is not one these tools write.
+function recordIn(file) {
+  try {
+    const each = JSON.parse(readFileSync(file, "utf8"));
+    const strings = ["kind", "folder", "worktree", "start", "command"].every((name) => typeof each[name] === "string");
+    return strings && Number.isInteger(each.port) && Number.isInteger(each.pid) && each.pid > 0 ? each : null;
+  } catch {
+    return null;
+  }
+}
+
+// Each record whose process is still running, oldest first. The record of a process that has gone is removed; a file
+// that is not a record, or whose process ps cannot ask about, is left as it is, and said so.
 function recorded() {
   const dir = registry();
-  const records = existsSync(dir)
-    ? readdirSync(dir).flatMap((name) => (name.endsWith(".json") ? [{ file: `${dir}/${name}`, ...JSON.parse(readFileSync(`${dir}/${name}`, "utf8")) }] : []))
-    : [];
-  const live = records.length ? processes(records.map(({ pid }) => pid)) : new Map();
-  const still = records.filter(({ pid, start, command }) => live.get(pid)?.start === start && live.get(pid)?.command === command);
-  for (const { file } of records) if (!still.some((each) => each.file === file)) rmSync(file, { force: true });
-  return still.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  const still = [];
+  for (const name of existsSync(dir) ? readdirSync(dir).filter((each) => each.endsWith(".json")) : []) {
+    const file = `${dir}/${name}`;
+    const each = recordIn(file);
+    const now = each && processOf(each.pid);
+    if (!each) console.error(`${file} is not a record these tools write, so it was left alone.`);
+    else if (now === undefined) console.error(`ps could not say whether process ${each.pid} runs, so ${file} was left alone.`);
+    else if (now?.start === each.start && now.command === each.command) still.push(each);
+    else rmSync(file, { force: true });
+  }
+  return still.sort((a, b) => started(a.start) - started(b.start));
 }
 
 function age(start) {
-  const minutes = Math.floor((Date.now() - Date.parse(start)) / 60_000);
+  const minutes = Math.floor((Date.now() - started(start)) / 60_000);
   if (minutes < 60) return `${minutes} min`;
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
   return `${Math.floor(minutes / (24 * 60))} d ${Math.floor(minutes / 60) % 24} h`;
@@ -292,13 +314,16 @@ async function start(dir, port) {
   if (saved && port !== undefined && Number(port) !== portOf(variables(saved).DATABASE_URL))
     throw new Error(`${dir} uses port ${portOf(variables(saved).DATABASE_URL)}: leave out --port, or give another --dir.`);
   const pg = postgres();
+  const record = recorder();
   let text = saved ?? block(await freeSet(port));
   if (saved && running(pg, dir)) {
     const made = madeBy(dir);
     say(made === pg.major ? `Postgres ${made} was running already.` : `Postgres ${made} was running already, not ${pg.major}: pnpm db:stop, then pnpm db:start, makes it again on ${pg.major}.`);
   } else {
     say(pg.which);
-    if (saved && (await Promise.all(portsOf(saved).map(taken))).some(Boolean)) {
+    // A port this worktree's own site or fakes hold is not taken by anyone else.
+    const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
+    if (saved && (await Promise.all(portsOf(saved).map((each) => !own.has(each) && taken(each)))).some(Boolean)) {
       text = moved(saved, await freeSet(port));
       say(`The ports ${dir} had are taken now, so it has the first free set: ${portsOf(text).join(", ")}.`);
     }
@@ -350,6 +375,7 @@ async function dev(dir) {
   if (!text || envLocal() !== text) throw new Error(`.env.local is not ${dir}/offboard.env, so the site was not started: run pnpm db:start first.`);
   const site = portOf(variables(text).BETTER_AUTH_URL);
   if (await taken(site)) throw new Error(`Port ${site}, the site's, is taken.`);
+  const record = recorder();
   const next = `${root}/node_modules/next/dist/bin/next`;
   const child = spawn(process.execPath, [next, "dev", "--hostname", "127.0.0.1", "--port", String(site)], { cwd: root, stdio: "inherit" });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => child.kill(signal));
@@ -363,11 +389,13 @@ function list() {
   for (const each of all) say(line(each));
 }
 
-// Postgres is sent SIGINT, its fast shutdown, as pg_ctl stop -m fast sends; the site and the fakes SIGTERM.
+// What was started from the worktree <dir>, and not from the worktrees inside it (the main checkout holds the agents'
+// in .claude/worktrees), or with --all everything. Postgres is sent SIGINT, its fast shutdown, as pg_ctl stop -m fast
+// sends; the site and the fakes SIGTERM.
 async function stopAll(dir) {
-  const within = dir && existsSync(dir) ? realpathSync(dir) : dir; // the records' folders are real paths
-  const chosen = recorded().filter(({ folder }) => within === undefined || folder === within || folder.startsWith(`${within}/`));
-  if (!chosen.length) return say(`Nothing these tools started is running${dir === undefined ? "" : ` in ${dir}`}.`);
+  const worktree = dir && existsSync(dir) ? realpathSync(dir) : dir; // the records' are real paths
+  const chosen = recorded().filter((each) => dir === undefined || each.worktree === worktree);
+  if (!chosen.length) return say(`Nothing these tools started is running${dir === undefined ? "" : ` from ${dir}`}.`);
   for (const { pid, kind } of chosen)
     try {
       process.kill(pid, kind === "Postgres" ? "SIGINT" : "SIGTERM");
@@ -377,8 +405,7 @@ async function stopAll(dir) {
   let left = chosen;
   for (let waited = 0; left.length && waited < 20_000; waited += 100) {
     await new Promise((done) => setTimeout(done, 100));
-    const live = processes(left.map(({ pid }) => pid));
-    left = left.filter(({ pid, start }) => live.get(pid)?.start === start);
+    left = left.filter(({ pid, start }) => processOf(pid)?.start === start);
   }
   for (const each of chosen) say(`${left.includes(each) ? "Still running after 20 s:" : "Stopped:"} ${line(each)}`);
   return left.length ? 1 : 0;
@@ -391,13 +418,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   const notice = nodeNotice();
   if (notice) console.error(notice);
   const commands = { start, stop, dev, list, "stop-all": stopAll };
-  const takes = { start: ["--dir", "--port"], stop: ["--dir"], dev: ["--dir"], list: [], "stop-all": ["--dir"] };
+  const takes = { start: ["--dir", "--port"], stop: ["--dir"], dev: ["--dir"], list: [], "stop-all": ["--dir", "--all"] };
   const [command, ...rest] = process.argv.slice(2);
   const options = {};
   let valid = Object.hasOwn(commands, command ?? "");
-  for (let i = 0; i < rest.length && valid; i += 2)
-    if (takes[command].includes(rest[i]) && rest[i + 1] !== undefined) options[rest[i]] = rest[i + 1];
-    else valid = false;
+  for (let i = 0; i < rest.length && valid; i++)
+    if (!takes[command].includes(rest[i])) valid = false;
+    else if (rest[i] === "--all") options["--all"] = true;
+    else if (rest[i + 1] === undefined) valid = false;
+    else options[rest[i]] = rest[++i];
+  // pnpm local:stop alone stops nothing: it takes the worktree, or --all.
+  if (command === "stop-all" && Object.hasOwn(options, "--all") === Object.hasOwn(options, "--dir")) valid = false;
   if (!valid) {
     console.error(USAGE);
     process.exit(1);

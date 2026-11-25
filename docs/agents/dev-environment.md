@@ -17,7 +17,8 @@ In a fresh worktree, in this order:
 3. `pnpm dev:local` and `pnpm fake-lichess`, each as a background task of your own: the site and the fake Lichess, both on 127.0.0.1 only, on the ports `db:start` named. You stop them when you are done.
 4. `pnpm seed`: one invented Club. `club` is the default and the fullest; `season-over` and `empty` hold the states it cannot. It lists who is in it and checks each state it promises through the site's own code.
 5. `pnpm seed:cookies` writes `.local-db/cookies.json`, a Playwright cookie for each seeded person, to sign in without LinkedIn: `context.addCookies([cookies.ana])`. The Organiser is `org`.
-6. `pnpm db:stop` stops that Postgres and nothing else.
+6. `pnpm collect-results` runs the job that collects a Matchday's results once, against the fake Lichess, as Vercel's scheduled request would in production; the site's own endpoint refuses while it follows a fake Lichess. `pnpm seed season-over` leaves a finished Matchday on the fake Lichess for it to collect.
+7. `pnpm db:stop` stops that Postgres and nothing else.
 
 Each script's header has the options. Each refuses a database that is not on this machine, and the seed refuses one `db:start` did not make.
 
@@ -34,7 +35,7 @@ A worktree starts with no `.env.local`, and the local environment above makes on
 - `pnpm test` runs everything except the `*.postgres.test.ts` suites. Those run when `ALLOW_DB_TESTS=1` and `DATABASE_URL` are both set, each inside a transaction that is rolled back.
 - CI (`.github/workflows/ci.yml`) runs lint, typecheck, every migration on an empty Postgres 18 and all the tests on each pull request. A pull request merges when its `checks` job is green.
 - **`lib/fake-db.ts`** stands in for the database in the other tests. It knows each statement the app sends by its full text and throws on any other, so a query you add or change is written out there too, with the keys and constraints the migration gives it.
-- **`lib/fixtures/fake-lichess.ts`** stands in for Lichess, behaving as lichess.org does where that differs from its published spec. `LICHESS_URL` points the site at it; it is ignored in production, and ingesting a Matchday refuses to run while it is set.
+- **`lib/fixtures/fake-lichess.ts`** stands in for Lichess, behaving as lichess.org does where that differs from its published spec. `LICHESS_URL` points the site at it; it is ignored in production, and `pnpm ingest` and the endpoint that collects results refuse to run while it is set (`pnpm collect-results` is the local way in).
 - A test value is plainly pretend (`"a-pretend-lichess-token"`). ESLint refuses a string shaped like a real Lichess or Telegram token, because GitHub refuses the push that carries one.
 
 ## Migrations

@@ -10,9 +10,10 @@ export const USER_AGENT = "offboard.club (https://offboard.club)";
 export const RATE_LIMIT_WAIT_MS = 60_000;
 const TIMEOUT_MS = 30_000;
 
-// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org.
-const base = () =>
-  (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || "https://lichess.org";
+// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org. The fake's
+// address while it is followed, or null.
+export const fakeLichessUrl = () => (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || null;
+const base = () => fakeLichessUrl() ?? "https://lichess.org";
 
 export const lichessUrl = (path: string) => new URL(path, base());
 

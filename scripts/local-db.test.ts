@@ -89,11 +89,24 @@ describe("refusing before touching anything", () => {
     expect(existsSync(join(root, ".local-db"))).toBe(false);
   });
 
-  it("the seed and the fake Lichess on a real DATABASE_URL, or with any argument they do not take", () => {
-    for (const [script, usage] of [["scripts/seed.ts", /^Usage: pnpm seed/], ["scripts/fake-lichess.ts", /^Usage: pnpm fake-lichess/]] as const) {
+  it("the seed, the fake Lichess and collecting results on a real DATABASE_URL, or with any argument they do not take", () => {
+    const scripts = [
+      ["scripts/seed.ts", /^Usage: pnpm seed/],
+      ["scripts/fake-lichess.ts", /^Usage: pnpm fake-lichess/],
+      ["scripts/collect-results.ts", /^Usage: pnpm collect-results/],
+    ] as const;
+    for (const [script, usage] of scripts) {
       refuses(tsx, [script], /^Refusing.*ep-pretend-123.*not this machine/, { DATABASE_URL: REAL });
       for (const arg of ["--help", "constructor"]) refuses(tsx, [script, arg], usage, { DATABASE_URL: LOCAL });
     }
+  }, 30_000);
+
+  it("collecting results from anything but a fake Lichess on this machine, which the site follows", () => {
+    const refused = /^Refusing to collect results: the site does not follow LICHESS_URL to http:\/\/127\.0\.0\.1:<port>\./;
+    const script = "scripts/collect-results.ts";
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "https://fake.lichess.example" });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "http://127.0.0.1:8089", NODE_ENV: "production" });
   }, 30_000);
 
   it("the mark CI writes on the database it seeds is db:start's", () => {

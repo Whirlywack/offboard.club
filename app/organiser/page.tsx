@@ -7,9 +7,10 @@ import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
 import { getSession, requireOrganiser } from "@/lib/auth";
-import { dueFrom, JOB, OVERDUE_MS } from "@/lib/create-matchdays";
+import { JOB as COLLECT } from "@/lib/collect-results";
+import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
-import { lastFailure, lastRun, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
+import { lastFailure, lastRun, OVERDUE_MS, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
 import { lichessProfileUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
@@ -61,7 +62,13 @@ const Alert = ({ children }: { children: ReactNode }) => (
 async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "searchParams">) {
   await requireOrganiser();
   const now = new Date();
-  const [permission, run, failure, next] = await Promise.all([organiserPermission(), lastRun(JOB), lastFailure(), upcomingMatchday(now)]);
+  const [permission, creating, collecting, failure, next] = await Promise.all([
+    organiserPermission(),
+    lastRun(CREATE),
+    lastRun(COLLECT),
+    lastFailure(),
+    upcomingMatchday(now),
+  ]);
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage((await searchParams).lichess);
   const secretProblem = cronSecretProblem();
@@ -75,8 +82,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <p className={ui.eyebrow}>Only you can see this page</p>
         <h1>Organiser</h1>
         <p className={ui.lede}>
-          The site creates each Matchday on Lichess six days ahead, with the Lichess account you connect here. This page
-          shows whether that&apos;s working.
+          The site creates each Matchday on Lichess six days ahead, with the Lichess account you connect here, and
+          collects its results once it has been played. This page shows whether that&apos;s working.
         </p>
       </div>
 
@@ -104,7 +111,18 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
-        <CreatingMatchdays run={run} now={now} />
+        <JobStatus
+          title="Creating Matchdays"
+          neverRun="Creating Matchdays has never run. Vercel runs it every hour once the site is deployed with CRON_SECRET set. Until it runs, no Matchday is created."
+          run={creating}
+          now={now}
+        />
+        <JobStatus
+          title="Collecting results"
+          neverRun="Collecting results has never run. Vercel runs it every five minutes on Sunday evenings and every hour otherwise, once the site is deployed with CRON_SECRET set. Until it runs, no results are collected and no Recap is published."
+          run={collecting}
+          now={now}
+        />
         <LastFailure failure={failure} />
       </section>
 
@@ -234,10 +252,11 @@ function Unreadable({ lichessId }: { lichessId: string }) {
 
 const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Skipped", failed: "Failed" };
 
-function CreatingMatchdays({ run, now }: { run: LastRun | null; now: Date }) {
+// A scheduled job's last run, and plainly when it has never run or has not run for over two hours.
+function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: string; run: LastRun | null; now: Date }) {
   return (
     <div className={styles.part}>
-      <h3>Creating Matchdays</h3>
+      <h3>{title}</h3>
       {run ? (
         <>
           <dl className={styles.facts}>
@@ -257,10 +276,7 @@ function CreatingMatchdays({ run, now }: { run: LastRun | null; now: Date }) {
           )}
         </>
       ) : (
-        <Alert>
-          Creating Matchdays has never run. Vercel runs it every hour once the site is deployed with CRON_SECRET set.
-          Until it runs, no Matchday is created.
-        </Alert>
+        <Alert>{neverRun}</Alert>
       )}
     </div>
   );

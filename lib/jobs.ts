@@ -9,6 +9,17 @@ export type Outcome = "done" | "skipped" | "failed";
 // What a run did and why, as a sentence for the Organiser, and the Matchday it concerned, if any.
 export type JobRun = { outcome: Outcome; detail: string; matchdayDate: string | null };
 
+// Vercel runs every job at least once an hour (vercel.json), but delivery is best effort and a refused run records
+// nothing: a last run older than this means runs are not getting through.
+export const OVERDUE_MS = 2 * 3_600_000;
+
+// Lichess may take two minutes a request when it rate-limits; a run gives up on it after 240 s, within its route's
+// maxDuration of 300 s, so that it can still record why.
+export const JOB_DEADLINE_MS = 240_000;
+
+// A reason without its closing full stop, to go inside a sentence.
+export const sentence = (why: string) => why.replace(/\.$/, "");
+
 export const done = (detail: string, matchdayDate: string | null = null): JobRun => ({ outcome: "done", detail, matchdayDate });
 export const skipped = (detail: string, matchdayDate: string | null = null): JobRun => ({ outcome: "skipped", detail, matchdayDate });
 export const failed = (detail: string, matchdayDate: string | null = null): JobRun => ({ outcome: "failed", detail, matchdayDate });

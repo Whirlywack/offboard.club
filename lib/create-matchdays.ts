@@ -13,7 +13,7 @@
 
 import { matchdayOn, registerTournament } from "./matchdays";
 import { createSwiss, teamSwissNamed, timeLimit, type Swiss } from "./lichess";
-import { done, failed, runJob, skipped, type JobRun } from "./jobs";
+import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { organiserToken, refusedPermission } from "./organiser-lichess";
 import { upcomingMatchday, type Matchday } from "./seasons";
 
@@ -24,14 +24,6 @@ const DAY_MS = 86_400_000;
 // When a Matchday starting at `start` becomes due for its tournament: LEAD_DAYS before it. The first run from then on
 // creates it; the Organiser page says when that is.
 export const dueFrom = (start: Date) => new Date(start.getTime() - LEAD_DAYS * DAY_MS);
-
-// Vercel runs the job every hour (vercel.json), but delivery is best effort and a refused run records nothing: a last
-// run older than this means runs are not getting through.
-export const OVERDUE_MS = 2 * 3_600_000;
-
-// Lichess may take two minutes a request when it rate-limits; the run gives up after 240 s, within the route's
-// maxDuration of 300 s, so that it can still record why.
-export const JOB_DEADLINE_MS = 240_000;
 
 // Named for the Club and the date; Lichess allows 2 to 30 letters, digits, spaces and common punctuation, without
 // "Lichess". The name is also how a tournament created but not recorded is found again.
@@ -101,6 +93,3 @@ async function createIfDue(now: Date): Promise<JobRun> {
     deadline.clear();
   }
 }
-
-// A reason without its closing full stop, to go inside a sentence.
-const sentence = (why: string) => why.replace(/\.$/, "");

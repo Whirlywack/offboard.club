@@ -21,6 +21,10 @@ export const JOB = "create-matchdays";
 export const LEAD_DAYS = 6;
 const DAY_MS = 86_400_000;
 
+// When a Matchday starting at `start` becomes due for its tournament: LEAD_DAYS before it. The first run from then on
+// creates it; the Organiser page says when that is.
+export const dueFrom = (start: Date) => new Date(start.getTime() - LEAD_DAYS * DAY_MS);
+
 // Vercel runs the job every hour (vercel.json), but delivery is best effort and a refused run records nothing: a last
 // run older than this means runs are not getting through.
 export const OVERDUE_MS = 2 * 3_600_000;
@@ -57,7 +61,7 @@ async function createIfDue(now: Date): Promise<JobRun> {
   const next = await upcomingMatchday(now);
   if (!next) return skipped("No Matchday is scheduled, so there is nothing to create.");
   const { date, start } = next;
-  if (start.getTime() - now.getTime() > LEAD_DAYS * DAY_MS)
+  if (now < dueFrom(start))
     return skipped(`The next Matchday, ${date}, is more than ${LEAD_DAYS} days away; its tournament is created once it is ${LEAD_DAYS} days away.`, date);
   const known = (await matchdayOn(date))?.lichessTournamentId;
   if (known) return skipped(`The Matchday of ${date} already has its tournament, ${known}.`, date);

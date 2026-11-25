@@ -36,14 +36,14 @@ export const startOrganiserConnection = (userId: string) => startConnection(user
 
 // How each attempt ended, as the plain message the Organiser sees. Only these codes travel in a URL.
 export const ORGANISER_MESSAGES = {
-  connected: "Lichess is connected. Each Matchday's tournament will be created with this account.",
+  connected: "Lichess is connected. Each Matchday will be created on Lichess with this account.",
   stranded:
-    "Lichess is connected, but the permission given before could not be read with the current LICHESS_TOKEN_KEY, so it was not revoked and stays valid on Lichess until it expires. To end it, revoke Offboard by hand under Security in the Lichess settings of the account that gave it; on the same account that also revokes this new permission, so then connect again.",
-  denied: "You did not approve Offboard on Lichess, so nothing has changed.",
-  expired: "That attempt to connect Lichess ran out or was started in another browser. Please start again.",
+    "Lichess is connected, but the permission given before couldn't be read with the current LICHESS_TOKEN_KEY, so it wasn't revoked. It stays valid on Lichess until it expires. To end it, revoke Offboard under Security in the Lichess settings of the account that gave it. If that's the account you just connected, revoking ends the new permission too, so connect again afterwards.",
+  denied: "You didn't approve Offboard on Lichess, so nothing has changed.",
+  expired: "That attempt timed out, or was started in another browser. Please start again from this page.",
   leader:
-    "That Lichess account is not shown as a leader of the Club's Lichess team, so it cannot create Matchdays and has not been connected. Sign in to Lichess as a leader of the team and try again.",
-  unset: "Connecting Lichess is not set up yet: LICHESS_TEAM_ID and LICHESS_TOKEN_KEY must be set.",
+    "That Lichess account isn't shown as a leader of the Club's Lichess team, so it can't create Matchdays and hasn't been connected. Sign in to Lichess as a leader of the team and try again.",
+  unset: "Connecting Lichess isn't set up yet: LICHESS_TEAM_ID and LICHESS_TOKEN_KEY must be set.",
   failed: "Something went wrong while talking to Lichess, so nothing has changed. Please try again in a few minutes.",
 } as const;
 type Code = keyof typeof ORGANISER_MESSAGES;

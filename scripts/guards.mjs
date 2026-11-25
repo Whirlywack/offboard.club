@@ -187,7 +187,10 @@ async function guards(args) {
   const proposed = named.length === 0;
   const changes = proposed ? proposals() : named;
   if (proposed)
-    say(`No places were named, so these ${changes.length} are proposed from the files changed since origin/main. Only a proposal: a guard it does not recognise is not on it, and each guard the change adds or touches still needs naming.`);
+    say(
+      `No places were named, so ${changes.length === 1 ? "1 change is" : `${changes.length} changes are`} proposed for the lines changed since origin/main. ` +
+        "Only a proposal: a guard it does not recognise is not on it, and each guard the branch adds or touches still needs naming.",
+    );
   if (changes.length === 0) return 0;
   const folder = scratch("guards");
   const checkout = join(folder, "checkout");

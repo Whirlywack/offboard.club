@@ -251,7 +251,7 @@ function fakeCheckout() {
     git("status", "--porcelain").stdout,
     readFileSync(join(root, "lib/a.ts"), "utf8"),
   ];
-  return { guards, runs, left };
+  return { root, git, guards, runs, left };
 }
 
 describe("a run of pnpm guards", () => {
@@ -286,17 +286,41 @@ describe("a run of pnpm guards", () => {
     expect(left()).toEqual([[], "", A]);
   }, 60_000);
 
-  it("makes no change that is not in the file once, nor one to SQL that --tests leaves to the fast tests, and needs no database then", () => {
+  it("makes no change that is not in the file once, overlaps or changes nothing, nor one to SQL that --tests leaves to the fast tests, and needs no database then", () => {
     const { guards, runs, left } = fakeCheckout();
     const places = ["lib/a.ts:9", "lib/none.ts:1", "lib/a.ts:3", "--replace", "nothing", "x", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true"];
-    const { status, stdout } = guards([...places, "--tests", "app/a.test.ts"]);
+    const more = ["lib/a.ts:3", "+", "lib/a.ts:3-4", "lib/a.ts:4", "--replace", '"two"', '"two"'];
+    const { status, stdout } = guards([...places, ...more, "--tests", "app/a.test.ts"]);
     expect(stdout).toContain("NOT MADE  lib/a.ts:9\n         lib/a.ts: it has 6 lines\n");
     expect(stdout).toContain("NOT MADE  lib/none.ts:1\n         lib/none.ts: there is no such file\n");
     expect(stdout).toContain('NOT MADE  lib/a.ts:3 --replace nothing x\n         lib/a.ts: "nothing" is there 0 times, not once\n');
     expect(stdout).toContain("a change to SQL is judged by the real-Postgres suites, and none of the --tests is one");
-    expect(stdout).toContain("0 of 4 changes went red.");
+    expect(stdout).toContain("NOT MADE  lib/a.ts:3 + lib/a.ts:3-4\n         lib/a.ts: two of the edits overlap\n");
+    expect(stdout).toContain("lib/a.ts: the edit changes nothing\n");
+    expect(stdout).toContain("0 of 6 changes went red.");
     expect(status).toBe(1);
     expect(runs().map((run) => run.name)).toEqual(["test"]);
     expect(left()).toEqual([[], "", A]);
+  }, 60_000);
+
+  it("refuses --tests that names no file", () => {
+    const { guards, left } = fakeCheckout();
+    const { status, stderr } = guards(["lib/a.ts:3", "--tests", "app/none.test.ts"]);
+    expect(stderr.trim()).toBe("--tests app/none.test.ts: there is no such file.");
+    expect(status).toBe(1);
+    expect(left()).toEqual([[], "", A]);
+  }, 60_000);
+
+  it("proposes changes for the lines changed since origin/main when no place is named, and says it is only a proposal", () => {
+    const { root, git, guards, left } = fakeCheckout();
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    const changed = A.replace("  if (ok === 2)", '  if (ok === 3) return "three";\n  if (ok === 2)');
+    writeFileSync(join(root, "lib/a.ts"), changed);
+    const { status, stdout } = guards([]);
+    expect(stdout).toMatch(/^No places were named, so 1 change is proposed for the lines changed since origin\/main\. Only a proposal: /);
+    expect(stdout).toContain("GREEN     lib/a.ts:4 --replace 'if (ok === 3)' 'if (false)'\n");
+    expect(stdout).toContain("0 of 1 changes went red.");
+    expect(status).toBe(1);
+    expect(left()).toEqual([[], " M lib/a.ts\n", changed]);
   }, 60_000);
 });

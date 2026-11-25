@@ -10,7 +10,7 @@ import { isOrganiser } from "@/lib/organiser";
 export const metadata: Metadata = { title: "Leave the Club" };
 
 // Server Actions run within their page's limit: removing the Member from the Club's Lichess team and revoking the
-// Organiser's token may each take up to 25 s (lib/leaving.ts).
+// Organiser's token may each take up to 25 s, and both end within 45 s of the action's start (lib/leaving.ts).
 export const maxDuration = 60;
 
 // The confirmation step before a Member deletes their own account, reached from the Profile edit page. Nothing is

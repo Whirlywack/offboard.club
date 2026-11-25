@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, db, games, jobFailures, matchdays, organiserLichess, people, resetDb, results, seasons, teamRemovals, type GameRow } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
-import { LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
+import { LEAVING_LICHESS_BY_MS, LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { countSignUps } from "@/lib/signups";
 import { deleteSignUp, leaveClub } from "./actions";
@@ -18,7 +18,7 @@ import AllTimePage from "./all-time/page";
 import LeftPage from "./left/page";
 import { teamRemovalDone } from "./organiser/actions";
 import OrganiserPage from "./organiser/page";
-import LeavePage from "./profile/leave/page";
+import LeavePage, { maxDuration } from "./profile/leave/page";
 import EditProfile from "./profile/page";
 import ProfilePage from "./profiles/[id]/page";
 import RecapPage from "./recaps/[date]/page";
@@ -527,6 +527,28 @@ describe("the Lichess token", () => {
     expect(lichess.calls.map((c) => c.authorization)).toEqual([`Bearer ${token}`, `Bearer ${token}`]);
     expect(lichess.tokens.get(token)!.revoked).toBe(true);
     expect(organiserLichess.size).toBe(0);
+  });
+
+  it("is given up on in time for the Organiser's leaving to end inside the 60 s its page allows", async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date", "setTimeout", "clearTimeout"] });
+    signedIn = "organiser";
+    // Reading the session takes 20 s, as when the database has to be tried twice (lib/db.ts), and Lichess never answers.
+    const read = getSession.getMockImplementation()!;
+    getSession.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(read()), 20_000)));
+    vi.stubGlobal("fetch", (_: unknown, init: RequestInit) => new Promise((__, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
+    let left = false;
+    const leaving = redirectedTo(() => leaveClub()).then((to) => ((left = true), to));
+    await vi.advanceTimersByTimeAsync(LEAVING_LICHESS_BY_MS - 1);
+    const early = left;
+    await vi.advanceTimersByTimeAsync(10); // the revocation, given no time left, gives up at once
+    const inTime = left;
+    await vi.advanceTimersByTimeAsync(60_000); // so that it has ended, whatever happened, before the next test
+    expect(early).toBe(false);
+    expect(inTime).toBe(true);
+    expect(await leaving).toBe("/left");
+    expect(LEAVING_LICHESS_BY_MS).toBeLessThan(maxDuration * 1000 - 10_000); // and 10 s left for the database after
+    expect(teamRemovals.get("boss-plays")?.problem).toBe("Lichess took more than 25 s.");
+    expect(logged.join("\n")).toContain("A Lichess token could not be revoked.");
   });
 
   it("is revoked once when the Organiser is removed twice at once", async () => {

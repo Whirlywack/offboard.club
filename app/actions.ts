@@ -93,8 +93,9 @@ export async function saveProfile(_previous: ProfileFormState, form: FormData): 
 // "Delete my account" on the page that confirms it (app/profile/leave): the caller's own account, and nobody else's,
 // as nothing in the form says whose it is. Their sessions go with it; signing out clears this browser's cookie.
 export async function leaveClub(): Promise<void> {
+  const started = Date.now();
   const { id } = await requireSignedUp();
-  await removeMember(id);
+  await removeMember(id, started);
   await auth.api.signOut({ headers: await headers() });
   redirect("/left");
 }

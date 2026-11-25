@@ -4,9 +4,11 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ExternalLink } from "../../external-link";
 import ui from "../../ui.module.css";
+import { Awards } from "../awards";
 import { longDate } from "../dates";
 import styles from "../recaps.module.css";
 import { viewerIsMember } from "@/lib/auth";
+import { AWARD_GAMES_ARE_PUBLIC } from "@/lib/awards";
 import { companyLabel } from "@/lib/companies";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
@@ -18,9 +20,9 @@ export async function generateMetadata({ params }: PageProps<"/recaps/[date]">):
 }
 
 // The Recap of the Matchday of a Vilnius day, at /recaps/YYYY-MM-DD. Public, like every Leaderboard: names and
-// Companies only. Each name links to the Member's Profile, which only Members can open, and only Members see the link
-// to the tournament on Lichess. An address that cannot be a Matchday's date never gets here: proxy.ts answers it with
-// a 404.
+// Companies only, then the Awards. Each name links to the Member's Profile, which only Members can open, and only
+// Members see the link to the tournament on Lichess and each Award's Game (lib/awards.ts, AWARD_GAMES_ARE_PUBLIC). An
+// address that cannot be a Matchday's date never gets here: proxy.ts answers it with a 404.
 export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
   return (
     <main id="main" className={ui.page}>
@@ -107,6 +109,7 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
           <p className={`${ui.small} ${ui.muted}`}>Names open Profiles, which only signed-in Members can see.</p>
         )}
       </section>
+      <Awards awards={recap.awards} showGames={AWARD_GAMES_ARE_PUBLIC || member} />
     </article>
   );
 }

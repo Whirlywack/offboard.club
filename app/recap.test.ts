@@ -1,11 +1,16 @@
 // The public Recap pages: the list of Recaps and one Matchday's Recap, as a signed-out visitor sees them. Faked: the
 // session and the database (lib/fake-db.ts), filled in as ingestion leaves it. Everything else is the app's own code.
-import type { ReactElement } from "react";
+import { readFileSync } from "node:fs";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addCompany, addPerson, db, matchdays, resetDb, results } from "@/lib/fake-db";
+import type { RecapAward } from "@/lib/awards";
+import { addCompany, addPerson, db, games, matchdays, people, resetDb, results, type GameRow } from "@/lib/fake-db";
+import { ingestMatchday } from "@/lib/matchday";
+import { getRecap } from "@/lib/recaps";
 import Home from "./page";
 import ProfilePage from "./profiles/[id]/page";
+import { GameBoard } from "./recaps/awards";
 import RecapPage from "./recaps/[date]/page";
 import RecapsPage from "./recaps/page";
 
@@ -136,6 +141,209 @@ describe("a Recap", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.query.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
     expect(await open(DATE)).toContain("This Recap can&#x27;t be shown right now.");
+  });
+});
+
+// A decisive Game of the Matchday of DATE, stored as ingestion leaves it. Each one finishes a minute after the last,
+// unless told otherwise; White wins by resignation after 20 moves each, unless told otherwise.
+let minute = 0;
+function played(lichessGameId: string, whiteId: string | null, blackId: string | null, details: Partial<GameRow> = {}) {
+  games.set(lichessGameId, {
+    lichessGameId,
+    matchdayDate: DATE,
+    whiteId,
+    blackId,
+    winner: "white",
+    status: "resign",
+    plies: 40,
+    whiteRating: 1500,
+    blackRating: 1500,
+    winnerClockCentis: 6000,
+    finishedAt: new Date(Date.UTC(2026, 10, 29, 18, ++minute)),
+    ...details,
+  });
+}
+
+const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").trim();
+
+// The board a Member sees on opening an Award's replay.
+const boardOf = (award: RecapAward) => renderToStaticMarkup(createElement(GameBoard, { award }));
+
+// The Awards as shown: what each is for, who won it, what they did, and the Game's address on Lichess if the Game is
+// shown. Null when the Recap has no Awards section.
+function awardsIn(html: string) {
+  const section = html.match(/<section aria-labelledby="awards"[^>]*>(.*?)<\/section>/)?.[1];
+  if (section === undefined) return null;
+  return [...section.matchAll(/<li[^>]*>(.*?)<\/li>/g)].map(([, item]) => {
+    const [winner, feat] = [...item.matchAll(/<p[^>]*>(.*?)<\/p>/g)].map(([, p]) => text(p));
+    const title = text(item.match(/<h3[^>]*>(.*?)<\/h3>/)![1]);
+    return { title, winner, feat, game: item.match(/<a href="(https:\/\/lichess\.org\/[^"]+)"/)?.[1] ?? null };
+  });
+}
+
+const signedInAs = (stage: { publicDisplayConsentAt: Date | null; houseRulesAcceptedAt: Date | null; lichessId: string | null }) =>
+  getSession.mockResolvedValue({ user: { id: "viewer", ...stage } });
+const welcomedAt = new Date("2026-11-24T18:00:00Z");
+const asMember = () => signedInAs({ publicDisplayConsentAt: welcomedAt, houseRulesAcceptedAt: welcomedAt, lichessId: "viewer" });
+
+describe("a Recap's Awards", () => {
+  beforeEach(() => {
+    minute = 0;
+  });
+
+  it("are worked out from the recorded Games as stored, each naming the Member who won it", async () => {
+    // The recorded Lichess exports, ingested as the Matchday of 22 November with four of its players as Members.
+    const fixture = (name: string) => readFileSync(new URL(`../lib/fixtures/${name}`, import.meta.url), "utf8");
+    const players = { gev: ["Gev Sargsyan", "gevorgsargsyan"], iks: ["Iksan Nur", "iksannur"], olw: ["Olwen Erre", "olwerre"], imp: ["Imma Parare", "imparare_official"] };
+    for (const [id, [name, lichessId]] of Object.entries(players)) addPerson(id, { name, lichessId });
+    const ingested = ingestMatchday(
+      fixture("results.ndjson"),
+      fixture("games.ndjson"),
+      Object.entries(players).map(([memberId, [, lichessId]]) => ({ memberId, lichessId })),
+    );
+    const date = "2026-11-22";
+    matchdays.set(date, { date, lichessTournamentId: "PF2C2AUC", ingestedAt: new Date() });
+    for (const s of ingested.scores) results.set(`${date} ${s.memberId}`, { matchdayDate: date, userId: s.memberId, rank: s.rank, points: s.points, rating: s.rating, companyDomain: null });
+    for (const g of ingested.games)
+      games.set(g.lichessGameId, {
+        lichessGameId: g.lichessGameId,
+        matchdayDate: date,
+        whiteId: g.white,
+        blackId: g.black,
+        winner: g.winner,
+        status: g.status,
+        plies: g.plies,
+        whiteRating: g.ratings.white,
+        blackRating: g.ratings.black,
+        winnerClockCentis: g.winnerClockCentis,
+        finishedAt: new Date(g.finishedAt),
+      });
+
+    asMember();
+    const html = await open(date);
+    expect(awardsIn(html)).toEqual([
+      // Olwerre (1579), with Black, beat Imparare_official (1694) on time with 2.78 seconds left: the clock showed 2.7.
+      { title: "Biggest upset", winner: "Olwen Erre", feat: "Beat someone rated 115 points higher.", game: "https://lichess.org/7eeBoh4D/black" },
+      { title: "Closest call", winner: "Olwen Erre", feat: "Won with 2.7 seconds left on the clock.", game: "https://lichess.org/7eeBoh4D/black" },
+      // Mate on White's 40th move, the 79th half-move.
+      { title: "Fastest checkmate", winner: "Iksan Nur", feat: "Checkmated their opponent in 40 moves.", game: "https://lichess.org/wmKSbb6v/white" },
+    ]);
+    // Each winner's name opens their Profile.
+    const section = html.match(/<section aria-labelledby="awards".*?<\/section>/)![0];
+    expect([...section.matchAll(/href="(\/profiles\/[^"]+)"/g)].map(([, href]) => href)).toEqual(["/profiles/olw", "/profiles/olw", "/profiles/iks"]);
+
+    // Each board opens on the Game's last move, from the winner's side: 110 half-moves in, Black at the bottom.
+    const [upset, , checkmate] = (await getRecap(date))!.awards;
+    expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/7eeBoh4D/black?theme=brown&amp;bg=system#110"');
+    expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/wmKSbb6v/white?theme=brown&amp;bg=system#79"');
+  });
+
+  it("gives each Award to the right Game, and counts seconds as the clock does", async () => {
+    played("UPSET001", "ana", "ben", { whiteRating: 1400, blackRating: 1650, winnerClockCentis: 12_345 });
+    played("UPSET002", "ben", "cora", { whiteRating: 1500, blackRating: 1501, winnerClockCentis: 99 });
+    played("MATE0001", "cora", "ana", { winner: "black", status: "mate", plies: 9, whiteRating: 1600, blackRating: 1500 });
+    played("MATE0002", "ben", "cora", { status: "mate", plies: 31 });
+    expect(awardsIn(await open(DATE))).toEqual([
+      { title: "Biggest upset", winner: "Ana Petraitė", feat: "Beat someone rated 250 points higher.", game: null },
+      // 0.99 seconds left is 0.9 on the clock.
+      { title: "Closest call", winner: "Ben Kazlauskas", feat: "Won with 0.9 seconds left on the clock.", game: null },
+      // Black's mate on the ninth half-move is their fourth move.
+      { title: "Fastest checkmate", winner: "Ana Petraitė", feat: "Checkmated their opponent in 4 moves.", game: null },
+    ]);
+  });
+
+  it("says 1 point, not 1 points", async () => {
+    played("UPSET001", "ben", "cora", { whiteRating: 1500, blackRating: 1501 });
+    expect(awardsIn(await open(DATE))?.[0].feat).toBe("Beat someone rated 1 point higher.");
+  });
+
+  it("goes to the Game that finished first when two are level", async () => {
+    played("LATER001", "ana", "ben", { whiteRating: 1400, blackRating: 1500, winnerClockCentis: 500, finishedAt: new Date("2026-11-29T18:40:00Z") });
+    played("FIRST001", "cora", "ben", { whiteRating: 1400, blackRating: 1500, winnerClockCentis: 500, finishedAt: new Date("2026-11-29T18:20:00Z") });
+    expect(awardsIn(await open(DATE))?.map((a) => a.winner)).toEqual(["Cora Jonaitė", "Cora Jonaitė"]);
+  });
+
+  it("leaves out an Award no Game qualified for", async () => {
+    // A favourite's win by resignation: no upset and no checkmate, but a time left.
+    played("FAVOURIT", "ana", "ben", { whiteRating: 1700, blackRating: 1500 });
+    expect(awardsIn(await open(DATE))?.map((a) => a.title)).toEqual(["Closest call"]);
+  });
+
+  it("leaves out the whole section when no Game won anything", async () => {
+    played("DRAWN001", "ana", "ben", { winner: null, status: "draw", winnerClockCentis: null });
+    // A win over an opponent who never moved is a no-show, not an achievement.
+    played("NOSHOW01", "cora", "ben", { status: "outoftime", plies: 1, whiteRating: 1400, blackRating: 1800 });
+    const html = await open(DATE);
+    expect(awardsIn(html)).toBeNull();
+    expect(html).not.toContain("Awards");
+  });
+
+  it("passes over Games with a marked or closed account on either side, and wins by someone who has since left", async () => {
+    addPerson("dan", { name: "Closed Account", lichessClosed: true });
+    results.set(`${DATE} dan`, { matchdayDate: DATE, userId: "dan", rank: 5, points: 0, rating: 1500, companyDomain: null });
+    // Each of these would win every Award.
+    played("BEATMARK", "ana", "cheat", { whiteRating: 1000, blackRating: 2000, status: "mate", plies: 5, winnerClockCentis: 1 });
+    played("CLOSEDWN", "dan", "ben", { whiteRating: 1000, blackRating: 2000, status: "mate", plies: 5, winnerClockCentis: 1 });
+    played("LEFTWINS", null, "ben", { whiteRating: 1000, blackRating: 2000, status: "mate", plies: 5, winnerClockCentis: 1 });
+    // What is left: an upset by cora, and a mate by ben over someone who has left since, which still counts.
+    played("CORAWINS", "cora", "ana", { whiteRating: 1450, blackRating: 1500, winnerClockCentis: 4_000 });
+    played("BENMATES", "ben", null, { status: "mate", plies: 21, winnerClockCentis: 9_000 });
+    expect(awardsIn(await open(DATE))).toEqual([
+      { title: "Biggest upset", winner: "Cora Jonaitė", feat: "Beat someone rated 50 points higher.", game: null },
+      { title: "Closest call", winner: "Cora Jonaitė", feat: "Won with 40.0 seconds left on the clock.", game: null },
+      { title: "Fastest checkmate", winner: "Ben Kazlauskas", feat: "Checkmated their opponent in 11 moves.", game: null },
+    ]);
+  });
+
+  it("is left out when its winner's account is marked after the Matchday", async () => {
+    played("UPSET001", "ana", "ben", { whiteRating: 1400, blackRating: 1650 });
+    expect(awardsIn(await open(DATE))).toHaveLength(2);
+    people.get("ana")!.lichessMarked = true;
+    expect(awardsIn(await open(DATE))).toBeNull();
+  });
+
+  it("shows the Game on Lichess's board to signed-in Members only", async () => {
+    // Ben, the favourite, wins with Black: no upset, so this is the one Award.
+    played("CLOSE001", "ana", "ben", { winner: "black", whiteRating: 1500, blackRating: 1700, plies: 57 });
+    const theGame = /CLOSE001/;
+
+    // Signed out, part-way through signing up, or with a session that cannot be read: the Award, without its Game.
+    const withoutGame = async () => {
+      const html = await open(DATE);
+      expect(awardsIn(html)).toEqual([
+        { title: "Closest call", winner: "Ben Kazlauskas", feat: "Won with 60.0 seconds left on the clock.", game: null },
+      ]);
+      expect(html).not.toMatch(theGame);
+      expect(html).toContain("Signed-in Members can replay each Game.");
+    };
+    await withoutGame();
+    signedInAs({ publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null }); // before the welcome step
+    await withoutGame();
+    signedInAs({ publicDisplayConsentAt: welcomedAt, houseRulesAcceptedAt: welcomedAt, lichessId: null }); // before connecting Lichess
+    await withoutGame();
+    getSession.mockRejectedValue(new Error("connect ETIMEDOUT"));
+    await withoutGame();
+
+    asMember();
+    const html = await open(DATE);
+    expect(html).not.toContain("Signed-in Members can replay each Game.");
+    // Closed until asked for, and named for screen readers; the Game has a plain link too.
+    expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the closest call<\/span><\/summary>/);
+    expect(html).not.toMatch(/<details[^>]* open/);
+    expect(awardsIn(html)?.[0].game).toBe("https://lichess.org/CLOSE001/black");
+    expect(html).toContain('href="https://lichess.org/CLOSE001/black" target="_blank" rel="noopener noreferrer"');
+    // Lichess's board is not in the page until it is opened, so reading the Recap asks nothing of Lichess.
+    expect(html).not.toContain("<iframe");
+    expect(html).not.toContain("lichess.org/embed");
+  });
+
+  it("puts the Game on Lichess's own board, sandboxed, lazy, titled and sending no referrer", async () => {
+    played("CLOSE001", "ana", "ben", { winner: "black", whiteRating: 1500, blackRating: 1700, plies: 57 });
+    const [award] = (await getRecap(DATE))!.awards;
+    // Ben won with Black, so his side is at the bottom, and the board opens on the 57th and last half-move.
+    expect(boardOf(award)).toContain(
+      '<iframe src="https://lichess.org/embed/game/CLOSE001/black?theme=brown&amp;bg=system#57" title="Replay of Ben Kazlauskas&#x27;s closest call, on Lichess" loading="lazy" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads" referrerPolicy="no-referrer"></iframe>',
+    );
   });
 });
 

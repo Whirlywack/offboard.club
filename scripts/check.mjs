@@ -46,6 +46,8 @@ export function environmentProblem() {
 const children = new Set();
 let running = null;
 let temporary = null;
+// pnpm's store, found once at the start: a pnpm run at the clean-up would write its compile cache into TMPDIR.
+let store = "";
 const list = () => running && writeFileSync(running, [...children].map((child) => child.pid).join("\n"));
 
 // A temporary folder for one run, `<folder>/checkout` the copy, `<folder>/db-*` its databases and `<folder>/tmp` every
@@ -57,8 +59,9 @@ export function scratch(name) {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), `offboard-${name}-`)));
   running = join(folder, "running");
   temporary = join(folder, "tmp");
+  store = spawnSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).stdout?.trim() ?? "";
   mkdirSync(temporary);
-  spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder], {
+  spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store], {
     detached: true,
     stdio: "ignore",
   }).unref();
@@ -82,7 +85,7 @@ const stopGroup = (child) => {
 // Stops what the run left running in `folder` and every database db:start made there, takes out of pnpm's store, which
 // links each project it installed, the copy and any project of a run inside it, then removes the folder. Run at the end
 // of a run, and by the watcher, which finds the run's processes running still when only the run itself was killed.
-export function cleanUp(folder) {
+export function cleanUp(folder, storeFolder = store) {
   const checkout = join(folder, "checkout");
   if (existsSync(folder)) {
     const pids = existsSync(join(folder, "running")) ? readFileSync(join(folder, "running"), "utf8").split("\n").filter(Boolean) : [];
@@ -91,14 +94,13 @@ export function cleanUp(folder) {
       if (name.startsWith("db-") && existsSync(join(folder, name, "postmaster.pid")))
         spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: checkout, stdio: "ignore", env: outside() });
   }
-  forget(folder, existsSync(checkout) ? checkout : root);
+  forget(folder, storeFolder);
   rmSync(folder, { recursive: true, force: true });
 }
 
-// Removes the links in pnpm's store (<store>/projects) to projects in `folder`, gone or not.
-function forget(folder, cwd) {
-  const store = spawnSync("pnpm", ["store", "path"], { cwd, encoding: "utf8" }).stdout?.trim();
-  const projects = store && join(store, "projects");
+// Removes the links in pnpm's store `storeFolder` (in its projects folder) to projects in `folder`, gone or not.
+function forget(folder, storeFolder) {
+  const projects = storeFolder && join(storeFolder, "projects");
   for (const name of projects && existsSync(projects) ? readdirSync(projects) : []) {
     const link = join(projects, name);
     let target = "";
@@ -112,14 +114,14 @@ function forget(folder, cwd) {
 }
 
 // The watcher: once the process `pid` has gone, however it ended, cleans up after it.
-function cleanUpAfter(pid, folder) {
+function cleanUpAfter(pid, folder, storeFolder) {
   const timer = setInterval(() => {
     try {
       process.kill(Number(pid), 0);
     } catch (error) {
       if (error.code !== "ESRCH") return;
       clearInterval(timer);
-      cleanUp(folder);
+      cleanUp(folder, storeFolder);
     }
   }, 250);
 }

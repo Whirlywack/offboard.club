@@ -16,7 +16,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync } from "node:fs";
-import { readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,14 +28,17 @@ export const git = (args) => execFileSync("git", args, { cwd: root, encoding: "u
 const say = (line) => console.log(line);
 
 // The processes running now, each the first of a process group of its own, so that it and everything it started can be
-// stopped together.
+// stopped together; listed in <folder>/running too, for the watcher.
 const children = new Set();
+let running = null;
+const list = () => running && writeFileSync(running, [...children].map((child) => child.pid).join("\n"));
 
 // A temporary folder for one run, `<folder>/checkout` the copy and `<folder>/db-*` its databases. The watcher is started
 // through a shell that exits at once, so it belongs to launchd and its own session: stopping this process and every
 // process it started, as an agent's tool does, leaves it running, and it stops the databases and removes the folder.
 export function scratch(name) {
   const folder = mkdtempSync(join(tmpdir(), `offboard-${name}-`));
+  running = join(folder, "running");
   spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder], {
     detached: true,
     stdio: "ignore",
@@ -57,8 +60,11 @@ const stopGroup = (child) => {
   }
 };
 
-// Stops every database db:start made in `folder`, then removes it. Run at the end of a run, and by the watcher.
+// Stops what the run left running in `folder` and every database db:start made there, then removes it. Run at the end of
+// a run, and by the watcher, which finds the run's processes running still when only the run itself was killed.
 export function cleanUp(folder) {
+  const pids = existsSync(join(folder, "running")) ? readFileSync(join(folder, "running"), "utf8").split("\n").filter(Boolean) : [];
+  for (const pid of pids) stopGroup({ pid: Number(pid) });
   for (const name of existsSync(folder) ? readdirSync(folder) : [])
     if (name.startsWith("db-") && existsSync(join(folder, name, "postmaster.pid")))
       spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: join(folder, "checkout"), stdio: "ignore" });
@@ -101,6 +107,7 @@ export function run(command, args, { cwd, env = process.env, log, limit = 20 * 6
     const child = spawn(command, args, { cwd, env, stdio: ["ignore", out, out], detached: true });
     closeSync(out);
     children.add(child);
+    list();
     let stopped = false;
     const timer = setTimeout(() => {
       stopped = true;
@@ -110,6 +117,7 @@ export function run(command, args, { cwd, env = process.env, log, limit = 20 * 6
       clearTimeout(timer);
       stopGroup(child);
       children.delete(child);
+      list();
       done(stopped ? null : code);
     };
     child.on("error", () => end(127));

@@ -1,7 +1,7 @@
 // pnpm check (scripts/check.mjs): it refuses a checkout with real settings before it does anything, fails on a test
 // that failed or was skipped, and seeds as CI does.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +15,7 @@ describe("a checkout whose .env.local holds real settings", () => {
     writeFileSync(join(root, ".env.local"), "DATABASE_URL=postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb\n");
     const before = readdirSync(tmpdir()).filter((name) => name.startsWith("offboard-check-") && !name.startsWith("offboard-check-refused-"));
     const { status, stdout, stderr } = spawnSync(process.execPath, [join(root, "scripts/check.mjs")], { encoding: "utf8" });
+    rmSync(root, { recursive: true });
     expect(stderr.trim()).toMatch(/^This checkout's \.env\.local holds real settings/);
     expect(stdout).toBe("");
     expect(status).toBe(1);

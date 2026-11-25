@@ -20,6 +20,8 @@ export const lichessUrl = (path: string) => new URL(path, base());
 // requests.
 export const lichessProfileUrl = (username: string) => `https://lichess.org/@/${encodeURIComponent(username)}`;
 export const lichessSwissUrl = (id: string) => `https://lichess.org/swiss/${encodeURIComponent(id)}`;
+// A Game's page, with the board turned to one player's side.
+export const lichessGameUrl = (id: string, side: "white" | "black") => `https://lichess.org/${encodeURIComponent(id)}/${side}`;
 
 export class LichessError extends Error {
   constructor(

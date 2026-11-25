@@ -5,18 +5,20 @@ import { Suspense } from "react";
 import { Avatar } from "../../avatar";
 import { ExternalLink } from "../../external-link";
 import ui from "../../ui.module.css";
+import { Attendance, Games } from "./history";
 import styles from "./profile.module.css";
 import { getProfile, requireSignedUp } from "@/lib/auth";
 import { companyLabel } from "@/lib/companies";
+import { getHistory } from "@/lib/history";
 import { lichessProfileUrl } from "@/lib/lichess";
 
 export const metadata: Metadata = { title: "Member Profile" };
 
-export default function ProfilePage({ params }: PageProps<"/profiles/[id]">) {
+export default function ProfilePage({ params, searchParams }: PageProps<"/profiles/[id]">) {
   return (
     <main id="main" className={ui.page}>
       <Suspense>
-        <Profile params={params} />
+        <Profile params={params} searchParams={searchParams} />
       </Suspense>
       <nav aria-label="More" className={ui.backLinks}>
         <Link href="/">Home</Link>
@@ -25,13 +27,20 @@ export default function ProfilePage({ params }: PageProps<"/profiles/[id]">) {
   );
 }
 
-async function Profile({ params }: { params: Promise<{ id: string }> }) {
-  // Signed-out visitors go home before anything about the person is looked up.
+type Search = Promise<Record<string, string | string[] | undefined>>;
+
+async function Profile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Search }) {
+  // Signed-out visitors, and anyone part-way through signing up, go elsewhere before anything about the person is
+  // looked up, their Games and record included.
   const viewer = await requireSignedUp();
   const { id } = await params;
   const profile = await getProfile(id);
   if (!profile) notFound();
   const own = viewer.id === profile.id;
+  // ?games=all lists every Game, up to GAMES_MOST, instead of the latest few.
+  const showingAll = (await searchParams).games === "all";
+  const history = await getHistory(profile.id, viewer.id, { all: showingAll });
+  const firstName = profile.name.split(" ")[0];
   const nothingAdded = !profile.company && !profile.position && !profile.openTo && !profile.linkedInUrl;
   return (
     <article className={`${styles.profile} ${ui.arrive}`}>
@@ -80,12 +89,13 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
             <dd className={styles.number}>{profile.lichessBlitzRating}</dd>
           </div>
         )}
+        <Attendance history={history} />
       </dl>
       {nothingAdded && (
         <p className={ui.muted}>
           {own
             ? "You haven't added where you work, your position or what you're open to yet."
-            : `${profile.name.split(" ")[0]} hasn't added anything else yet.`}
+            : `${firstName} hasn't added anything else yet.`}
         </p>
       )}
       {own && (
@@ -95,6 +105,7 @@ async function Profile({ params }: { params: Promise<{ id: string }> }) {
           </Link>
         </p>
       )}
+      <Games memberId={profile.id} firstName={firstName} own={own} history={history} showingAll={showingAll} />
       <p className={`${ui.small} ${ui.muted}`}>Only signed-in Members can see this Profile.</p>
     </article>
   );

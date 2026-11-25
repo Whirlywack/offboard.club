@@ -68,7 +68,7 @@ export function streak(matchdays: MatchdayResult[], memberId: string): number {
 }
 
 // Record of `me` against `them` across all Games.
-export function headToHead(games: Game[], me: string, them: string) {
+export function headToHead(games: Pick<Game, "white" | "black" | "winner">[], me: string, them: string) {
   const record = { wins: 0, draws: 0, losses: 0 };
   for (const g of games) {
     const mine = g.white === me && g.black === them ? "white" : g.black === me && g.white === them ? "black" : null;

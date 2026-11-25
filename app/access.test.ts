@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getProfile } from "@/lib/auth";
-import { addPerson, db, people, resetDb } from "@/lib/fake-db";
+import { addPerson, db, games, matchdays, people, resetDb, results } from "@/lib/fake-db";
 import { countSignUps } from "@/lib/signups";
 import { saveProfile } from "./actions";
 import ProfilePage from "./profiles/[id]/page";
@@ -119,8 +119,8 @@ describe("getProfile", () => {
 
 describe("the Profile page", () => {
   // The page itself is a static shell; what reads the session and the database is the element inside <Suspense>.
-  async function open(id: string) {
-    const page = ProfilePage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) });
+  async function open(id: string, search: Record<string, string> = {}) {
+    const page = ProfilePage({ params: Promise.resolve({ id }), searchParams: Promise.resolve(search) });
     const inner = page.props.children[0].props.children;
     return inner.type(inner.props);
   }
@@ -140,6 +140,46 @@ describe("the Profile page", () => {
     signedInAs("welcomed", "welcomed");
     await expect(open("member")).rejects.toThrow(/^redirect \/welcome\/lichess$/);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("reads nobody's Games or record for anyone who is not a Member, even when every Game is asked for", async () => {
+    // A Game and a result of the Member's, so that anything read would have something to show.
+    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PF2C2AUC", ingestedAt: at });
+    results.set("2026-11-22 member", { matchdayDate: "2026-11-22", userId: "member", rank: 1, points: 2, rating: 1500, companyDomain: null });
+    games.set("Game0001", {
+      lichessGameId: "Game0001",
+      matchdayDate: "2026-11-22",
+      whiteId: "member",
+      blackId: "another",
+      winner: "white",
+      status: "mate",
+      plies: 40,
+      whiteRating: 1500,
+      blackRating: 1500,
+      winnerClockCentis: 900,
+      finishedAt: at,
+    });
+    const visitors: [Stage | null, RegExp][] = [
+      [null, /^redirect \/$/],
+      ["unwelcomed", /^redirect \/welcome$/],
+      ["welcomed", /^redirect \/welcome\/lichess$/],
+    ];
+    for (const [how, sentTo] of visitors) {
+      if (how) signedInAs(how, how);
+      else getSession.mockResolvedValue(null);
+      db.query.mockClear();
+      await expect(open("member", { games: "all" })).rejects.toThrow(sentTo);
+      expect(db.query).not.toHaveBeenCalled();
+    }
+  });
+
+  it("shows a Member's Games and record to another Member", async () => {
+    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PF2C2AUC", ingestedAt: at });
+    results.set("2026-11-22 member", { matchdayDate: "2026-11-22", userId: "member", rank: 1, points: 2, rating: 1500, companyDomain: null });
+    signedInAs("another");
+    const html = renderToStaticMarkup((await open("member")) as ReactElement);
+    expect(html).toContain("<dt>Matchdays played</dt>");
+    expect(html).toContain('<h2 id="games">Games</h2>');
   });
 
   it("shows a Member to a Member, and nobody else", async () => {

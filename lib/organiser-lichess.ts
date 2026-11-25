@@ -59,11 +59,13 @@ const sealedFor = (userId: string, lichessId: string) => `offboard organiser lic
 // The Organiser is back from Lichess (the caller checks it is them). Returns where to send them: the Organiser page,
 // saying how it went. The token is kept only if its account leads the Club's team; otherwise it is revoked. A token
 // kept before is revoked once the new one is stored, if it can still be read; if not, the Organiser is told to revoke
-// it by hand.
+// it by hand. Tokens are revoked by REVOKED_BY_MS after `started` (in ms), when the callback began, before reading the
+// session.
 export async function finishOrganiserConnection(
   organiser: { id: string },
   query: URLSearchParams,
   pendingCookieValue: string | undefined,
+  started = Date.now(),
 ): Promise<string> {
   const back = (code: Code) => `/organiser?lichess=${code}`;
   const returned = returnedFrom(ORGANISER_FLOW, organiser.id, query, pendingCookieValue);
@@ -72,7 +74,6 @@ export async function finishOrganiserConnection(
   const key = tokenKey();
   if (!teamId || !key) return back("unset");
 
-  const started = Date.now();
   const deadline = timeLimit(CONNECTION_DEADLINE_MS, `Connecting Lichess took more than ${CONNECTION_DEADLINE_MS / 1000} s`);
   const signal = deadline.signal;
   let token: string | null = null;

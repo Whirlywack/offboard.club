@@ -1,3 +1,5 @@
+import { getSessionCookie } from "better-auth/cookies";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -8,7 +10,7 @@ import styles from "./home.module.css";
 import leaderboards from "./leaderboards.module.css";
 import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
-import { getSession, viewerIsMember } from "@/lib/auth";
+import { getSession, SIGN_IN_FAILED, viewerIsMember } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
 import { newChampions } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
@@ -19,7 +21,7 @@ import { nextMatchdayIn, readSchedule, type Schedule } from "@/lib/seasons";
 import { countSignUps } from "@/lib/signups";
 import { inviteLink } from "@/lib/telegram";
 
-export default function Home() {
+export default function Home({ searchParams }: PageProps<"/">) {
   return (
     <main id="main" className={`${ui.wide} ${styles.home}`}>
       <section className={styles.hero} aria-labelledby="title">
@@ -38,7 +40,7 @@ export default function Home() {
             <NextMatchday />
           </Suspense>
           <Suspense>
-            <You />
+            <You searchParams={searchParams} />
           </Suspense>
         </div>
       </section>
@@ -250,10 +252,15 @@ async function SeasonChampions() {
 }
 
 // Who is signed in, or the way to sign in. A Member also gets the Telegram group's invite link, which nobody else is
-// given. Exported for app/home.test.ts.
-export async function You() {
-  const session = await getSession().catch(() => null);
-  if (!session) return <SignIn />;
+// given. When the session cannot be read, someone with a session cookie is told so rather than shown as signed out;
+// anyone else is offered to sign in, since Better Auth reads the database for them too until it has checked its
+// tables there once. Someone sent here because signing in failed coming back from LinkedIn (?signin=failed, from
+// app/api/auth/[...all]/route.ts) is told so beside the button. Exported for app/home.test.ts.
+export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
+  const session = await getSession().catch(() => undefined);
+  if (session === undefined && getSessionCookie(await headers()))
+    return <p className={ui.alert}>Your sign-in can&apos;t be checked right now. Please try again in a minute.</p>;
+  if (!session) return <SignIn problem={(await searchParams).signin === "failed" ? SIGN_IN_FAILED : ""} />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);
   const invite = unfinished ? null : inviteLink();

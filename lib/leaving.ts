@@ -22,28 +22,36 @@ import { organiserToken, refusedPermission, tokenConnectedBy } from "./organiser
 import { inTransaction } from "./transaction";
 
 // Removing someone from the team, and revoking the Organiser's token, each give up on Lichess after this, so that
-// leaving never waits on Lichess for long: a rate-limited request alone would wait a minute. Both fit in the 60 s that
-// app/profile/leave allows its action (its maxDuration). The deletion from app/welcome/leave asks Lichess nothing and
-// has no such limit: it deletes only someone who has not connected Lichess (deleteSignUp in app/actions.ts), so has no
-// account in the team, and cannot have connected the Organiser's permission, which only a Member can.
+// leaving never waits on Lichess for long: a rate-limited request alone would wait a minute.
 export const LICHESS_DEADLINE_MS = 25_000;
 
-// Deletes the person `memberId`, after removing their Lichess account from the Club's team. False if there was nobody
-// to delete. Throws if the database fails, having deleted nothing; removing them from the team again on a retry is
-// harmless.
-export async function removeMember(memberId: string): Promise<boolean> {
+// Both together also end this long after the action that removes someone began, so that the action ends inside the
+// 60 s its page allows (its maxDuration) when the Organiser leaves (app/profile/leave), who is removed from the team and
+// has their token revoked: reading the session before may take up to 20 s when the database has to be tried twice
+// (lib/db.ts), and the deletion and signing out after keep the rest. Anyone else is asked of Lichess one of the two
+// only, as only the Organiser's own permission removes from the team, so removing them from the Organiser page
+// (app/organiser/remove) fits as it is. The deletion from app/welcome/leave asks Lichess nothing: it deletes only
+// someone who has not connected Lichess (deleteSignUp in app/actions.ts), so has no account in the team, and cannot
+// have connected the Organiser's permission, which only a Member can.
+export const LEAVING_LICHESS_BY_MS = 45_000;
+
+// Deletes the person `memberId`, after removing their Lichess account from the Club's team, for an action that began
+// at `started` (in ms). False if there was nobody to delete. Throws if the database fails, having deleted nothing;
+// removing them from the team again on a retry is harmless.
+export async function removeMember(memberId: string, started = Date.now()): Promise<boolean> {
+  const by = started + LEAVING_LICHESS_BY_MS;
   const now = new Date();
   const { rows } = await db.query<{ lichessId: string | null }>(`select "lichessId" from "user" where id = $1`, [memberId]);
   if (!rows[0]) return false;
   const { lichessId } = rows[0];
   const ownToken = await tokenConnectedBy(memberId, now);
-  const problem = lichessId === null ? null : await leaveTeam(lichessId, now);
+  const problem = lichessId === null ? null : await leaveTeam(lichessId, now, by);
   const deleted = await inTransaction(async (q) => {
     const { rowCount } = await q.query(`delete from "user" where id = $1`, [memberId]);
     if (problem) await keepForOrganiser(q, lichessId!, problem);
     return !!rowCount;
   });
-  if (deleted && ownToken) await revoke(ownToken, LICHESS_DEADLINE_MS);
+  if (deleted && ownToken) await revoke(ownToken, Math.min(LICHESS_DEADLINE_MS, by - Date.now()));
   return deleted;
 }
 
@@ -73,7 +81,7 @@ const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);
 // LICHESS_DEADLINE_MS, or at `by` (a time, in ms) if that comes first: null once Lichess has answered that it did, or
 // why not as a sentence for the Organiser. Lichess answers the same when it keeps the account because it leads the team
 // (kickFromTeam), so a leader who leaves stays in the team with nothing kept.
-async function leaveTeam(lichessId: string, now: Date, by = Infinity): Promise<string | null> {
+async function leaveTeam(lichessId: string, now: Date, by: number): Promise<string | null> {
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.";
   const permission = await organiserToken(now);

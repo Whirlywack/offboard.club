@@ -61,7 +61,7 @@ async function homeChampion() {
     if (typeof node.type === "function" && node.type.name === "SeasonChampions") return node;
     return find((node.props as { children?: ReactNode }).children);
   };
-  const element = find(Home())!;
+  const element = find(Home({ params: Promise.resolve({}), searchParams: Promise.resolve({}) }))!;
   const shown = await (element.type as () => Promise<ReactNode>)();
   return shown ? renderToStaticMarkup(shown as ReactElement) : "";
 }
@@ -273,7 +273,7 @@ describe("the Season champion on the home page", () => {
 
 describe("links to the Leaderboards", () => {
   it("are on the home page and in the site header", () => {
-    const home = renderToStaticMarkup(Home());
+    const home = renderToStaticMarkup(Home({ params: Promise.resolve({}), searchParams: Promise.resolve({}) }));
     const header = renderToStaticMarkup(RootLayout({ children: null, params: Promise.resolve({}) }) as ReactElement);
     for (const html of [home, header]) for (const href of ['href="/seasons"', 'href="/all-time"']) expect(html).toContain(href);
   });

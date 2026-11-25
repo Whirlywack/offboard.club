@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
+import { REVOKED_BY_MS } from "@/lib/connect-lichess";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/organiser-callback/route";
@@ -38,6 +39,10 @@ vi.mock("next/navigation", () => ({
   },
   notFound: () => {
     throw new Error("not found");
+  },
+  // As Next.js's: passes on what redirect and notFound throw, and nothing else.
+  unstable_rethrow: (error: unknown) => {
+    if (error instanceof Error && /^(redirect |not found$)/.test(error.message)) throw error;
   },
 }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
@@ -181,6 +186,15 @@ describe("who the Organiser is", () => {
     await expect(openPage()).rejects.toThrow("not found");
     await expect(connectOrganiserLichess()).rejects.toThrow("not found");
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("is sent back to the Organiser page, told it didn't work, when the session cannot be read at the callback", async () => {
+    const back = await approveOnLichess(await pressConnect(), "boss");
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    expect(await arrive(back)).toBe("/organiser?lichess=failed");
+    expect(lichess.calls).toEqual([]);
+    expect(jar.values.size).toBe(0);
+    expect(logged).toContain("Coming back from Lichess, the session could not be read: Connection terminated due to connection timeout");
   });
 
   it("is not found at the callback by anyone else, who cannot finish an attempt there", async () => {
@@ -373,6 +387,38 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(await arrive(later)).toBe("/organiser?lichess=expired");
     vi.useRealTimers();
     expect(lichess.calls).toEqual([]);
+  });
+
+  it("revokes a token it does not keep within 295 s of the callback's start, however long reading the session took", async () => {
+    vi.useFakeTimers();
+    const back = await approveOnLichess(await pressConnect(), "boss");
+    // Reading the session takes 20 s, as when the database has to be tried twice (lib/db.ts). Each Lichess request, its
+    // revocation included, answers 429 after 25 s, then, after the minute's wait, properly after another 25 s.
+    const read = getSession.getMockImplementation()!;
+    getSession.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(read()), 20_000)));
+    const slowed = new Set<string>();
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, 25_000);
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      });
+      const key = `${request.method} ${new URL(request.url).pathname}`;
+      if (!slowed.has(key)) {
+        slowed.add(key);
+        return new Response(null, { status: 429 });
+      }
+      return lichess.fetch(input, init);
+    });
+    const started = Date.now();
+    let finished = 0;
+    const arrived = arrive(back).finally(() => (finished = Date.now()));
+    await vi.advanceTimersByTimeAsync(330_000);
+    vi.useRealTimers();
+    expect(await arrived).toBe("/organiser?lichess=failed");
+    expect(finished - started).toBeGreaterThanOrEqual(260_000); // the connection gave up 240 s after the session was read
+    expect(finished - started).toBeLessThanOrEqual(REVOKED_BY_MS);
+    expect(organiserLichess.size).toBe(0);
   });
 
   it("replaces the permission when the Organiser connects again, revoking the old token", async () => {

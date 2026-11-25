@@ -1,15 +1,16 @@
 // The next Matchday on the home page: its time for everyone, and its Lichess tournament for Members once the site has
-// created it. Faked: the session and the database (lib/fake-db.ts). Everything else is the app's own code.
+// created it; and who is signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts).
+// Everything else is the app's own code.
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, matchdays, people, resetDb, seasons } from "@/lib/fake-db";
-import { NextMatchday } from "./page";
+import { NextMatchday, You } from "./page";
 
-const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
+const { getSession, request } = vi.hoisted(() => ({ getSession: vi.fn(), request: { headers: new Headers() } }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+vi.mock("next/headers", () => ({ headers: async () => request.headers }));
 vi.mock("next/server", () => ({ connection: async () => {} }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   addPerson("newcomer", { lichessId: null, lichessUsername: null });
   seasons.set(1, { number: 1, start: DATE });
   signedIn = null;
+  request.headers = new Headers();
   getSession.mockReset().mockImplementation(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;
     return person ? { user: { ...person } } : null;
@@ -135,5 +137,37 @@ describe("the Matchday under way on the home page", () => {
         expect(html).not.toContain("lichess.org/swiss");
       }
     }
+  });
+});
+
+// Who is signed in, when the database cannot be reached (#55). Until Better Auth has once checked its tables in the
+// database, every call reads it, so a session cannot be read for a visitor with no session cookie either: only someone
+// with the cookie is signed in, and must not be offered to sign in again.
+describe("the signed-in panel on the home page", () => {
+  const you = async (query: Record<string, string> = {}) =>
+    renderToStaticMarkup((await You({ searchParams: Promise.resolve(query) })) as ReactElement);
+  const unreadable = () => getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+
+  it("says plainly that the sign-in cannot be checked when a signed-in person's session cannot be read", async () => {
+    request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
+    unreadable();
+    const html = await you();
+    expect(html).toContain("Your sign-in can&#x27;t be checked right now. Please try again in a minute.");
+    expect(html).not.toContain("Sign in with LinkedIn");
+  });
+
+  it("offers to sign in to a visitor with no session cookie, whether or not the database can be read", async () => {
+    expect(await you()).toContain("Sign in with LinkedIn");
+    unreadable();
+    const html = await you();
+    expect(html).toContain("Sign in with LinkedIn");
+    expect(html).not.toContain("can&#x27;t be checked");
+  });
+
+  it("says that signing in isn't working, beside the button, to someone Better Auth failed coming back from LinkedIn", async () => {
+    expect(await you()).not.toContain("isn&#x27;t working");
+    const html = await you({ signin: "failed" });
+    expect(html).toContain("LinkedIn sign-in isn&#x27;t working right now. Please try again in a few minutes.");
+    expect(html).toContain("Sign in with LinkedIn");
   });
 });

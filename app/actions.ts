@@ -2,7 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed } from "@/lib/auth";
+import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed, SIGN_IN_FAILED } from "@/lib/auth";
 import { companyForWebsite } from "@/lib/companies";
 import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect-lichess";
 import { consentProblem, mustWelcome } from "@/lib/consent";
@@ -23,7 +23,7 @@ export async function signIn(): Promise<string> {
   } catch (error) {
     console.error("LinkedIn sign-in could not start", error);
   }
-  if (!url) return "LinkedIn sign-in isn't working right now. Please try again in a few minutes.";
+  if (!url) return SIGN_IN_FAILED;
   redirect(url);
 }
 
@@ -93,8 +93,9 @@ export async function saveProfile(_previous: ProfileFormState, form: FormData): 
 // "Delete my account" on the page that confirms it (app/profile/leave): the caller's own account, and nobody else's,
 // as nothing in the form says whose it is. Their sessions go with it; signing out clears this browser's cookie.
 export async function leaveClub(): Promise<void> {
+  const started = Date.now();
   const { id } = await requireSignedUp();
-  await removeMember(id);
+  await removeMember(id, started);
   await auth.api.signOut({ headers: await headers() });
   redirect("/left");
 }

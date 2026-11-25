@@ -143,11 +143,13 @@ export const lichessProblem = (code: unknown): string | null =>
 
 // The person must already be signed in and past the welcome step (the caller checks). Returns where to send them:
 // on to the next step, or back to where they started with a problem code; and, once the connection is saved, the
-// Lichess account it replaced, if they had one, for the caller to remove from the Club's team.
+// Lichess account it replaced, if they had one, for the caller to remove from the Club's team. The token is revoked
+// by REVOKED_BY_MS after `started` (in ms), when the callback began, before reading the session.
 export async function finishConnection(
   person: { id: string; lichessId?: string | null },
   query: URLSearchParams,
   pendingCookieValue: string | undefined,
+  started = Date.now(),
 ): Promise<{ to: string; replaced?: string | null }> {
   const swap = !mustConnectLichess(person);
   const problem = (code: Problem) => ({ to: `${swap ? "/profile" : "/welcome/lichess"}?lichess=${code}` });
@@ -156,7 +158,6 @@ export async function finishConnection(
   if ("problem" in returned) return problem(returned.problem);
   if (!lichessConfigured()) return problem("failed");
 
-  const started = Date.now();
   const deadline = timeLimit(CONNECTION_DEADLINE_MS, `Connecting Lichess took more than ${CONNECTION_DEADLINE_MS / 1000} s`);
   const signal = deadline.signal;
   let token: string | null = null;

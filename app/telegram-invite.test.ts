@@ -25,6 +25,8 @@ const INVITE = "https://t.me/+a-pretend-invite";
 let signedIn: string | null;
 
 const render = async (component: () => Promise<unknown>) => renderToStaticMarkup((await component()) as ReactElement);
+const withNoQuery = { params: Promise.resolve({}), searchParams: Promise.resolve({}) };
+const you = () => You(withNoQuery);
 
 beforeEach(() => {
   vi.stubEnv("TELEGRAM_INVITE_LINK", INVITE);
@@ -45,7 +47,7 @@ describe("the Telegram group's invite link", () => {
   it("is on a Member's home page and on the step after signing up", async () => {
     signedIn = "member";
     const link = `<a href="${INVITE}" target="_blank" rel="noopener noreferrer">`;
-    expect(await render(You)).toContain(`${link}Join the Club&#x27;s Telegram group`);
+    expect(await render(you)).toContain(`${link}Join the Club&#x27;s Telegram group`);
     expect(await render(AfterSignUp)).toContain(`${link}Join the Telegram group`);
   });
 
@@ -63,14 +65,14 @@ describe("the Telegram group's invite link", () => {
   it("is given to nobody else: not a visitor, nor anyone part-way through signing up", async () => {
     for (const who of [null, "unwelcomed", "unconnected"]) {
       signedIn = who;
-      expect(await render(You)).not.toContain("t.me");
+      expect(await render(you)).not.toContain("t.me");
       await expect(render(AfterSignUp)).rejects.toThrow(/^redirect \//);
     }
   });
 
   it("is not in the home page as it is built ahead of any request", async () => {
     signedIn = "member";
-    const shell = renderToStaticMarkup(Home());
+    const shell = renderToStaticMarkup(Home(withNoQuery));
     expect(shell).toContain("Members also talk in a Telegram group.");
     expect(shell).not.toContain("t.me");
   });
@@ -81,8 +83,8 @@ describe("the Telegram group's invite link", () => {
   ])("is shown nowhere while TELEGRAM_INVITE_LINK is %s, and the home page says the group is still to come", async (_, value) => {
     vi.stubEnv("TELEGRAM_INVITE_LINK", value);
     signedIn = "member";
-    expect(await render(You)).not.toContain("Telegram");
+    expect(await render(you)).not.toContain("Telegram");
     expect(await render(AfterSignUp)).not.toContain("Telegram");
-    expect(renderToStaticMarkup(Home())).toContain("Still to come: a Telegram group for Members.");
+    expect(renderToStaticMarkup(Home(withNoQuery))).toContain("Still to come: a Telegram group for Members.");
   });
 });

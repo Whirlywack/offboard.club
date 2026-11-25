@@ -28,7 +28,7 @@ import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { GAMES_SHOWN, getHistory } from "@/lib/history";
 import { lastFailure, lastRun } from "@/lib/jobs";
 import { getAllTime, getSeason, newChampions, readLeaderboards, seasonOfMatchday } from "@/lib/leaderboards";
-import { JOB as LEAVING_JOB, removeMember } from "@/lib/leaving";
+import { removeMember, teamRemovals } from "@/lib/leaving";
 import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
 import { finishOrganiserConnection, organiserPermission, startOrganiserConnection } from "@/lib/organiser-lichess";
@@ -249,7 +249,7 @@ async function seed(name: string) {
     await client.query("begin");
     await client.query(
       `truncate "game", "matchdayResult", "matchday", "skippedSunday", "season", "session", "account", "verification", "user",
-         "company", "organiserLichess", "scheduledJob", "jobFailure" cascade`,
+         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval" cascade`,
     );
     await client.query(
       `insert into "company" ("domain", "name", "fetchedAt", "fetchAttempts") values
@@ -319,7 +319,7 @@ async function seed(name: string) {
 // the job runs once, and then the one who left leaves (lib/leaving.ts), which removes them from the team. In
 // season-over the permission has since expired, and the job runs at the next Matchday's due time at the latest, so that
 // it reaches the permission and records the failure; leaving after it, the one who left cannot be removed from the team,
-// and that is the failure the Organiser page shows.
+// so the Organiser page lists their account to remove by hand.
 async function organiser(name: string) {
   const org = PEOPLE.find((p) => p.id === ORGANISER)!;
   const lichess = createFakeLichess({ teamId: process.env.LICHESS_TEAM_ID!, teamPassword: "", accounts: [{ id: lichessId(org), username: lichessName(org) }] });
@@ -361,7 +361,7 @@ async function check(name: string) {
   const played = (s: Awaited<ReturnType<typeof season>>) => s?.matchdays?.filter((m) => m.ingested).length ?? 0;
   const recaps = (await Promise.all((await recapDates()).map(getRecap))).filter((r) => r !== null);
   const allTime = await getAllTime();
-  const [permission, run, failure] = await Promise.all([organiserPermission(), lastRun(JOB), lastFailure()]);
+  const [permission, run, failure, removals] = await Promise.all([organiserPermission(), lastRun(JOB), lastFailure(), teamRemovals()]);
   const promises: [string, boolean][] = [
     ["every seeded person signs in with their cookie, as Better Auth reads it",
       people.every((p) => sessions.get(p.id)?.id === p.id)],
@@ -374,7 +374,8 @@ async function check(name: string) {
       ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(await countSignUps()) === 2],
       ["no Season scheduled, so no next Matchday", (await upcomingMatchday(now)) === null && (await season(1))?.matchdays === null],
       ["no Recaps and an empty all-time Leaderboard", recaps.length === 0 && allTime.length === 0],
-      ["nothing on the Organiser page: no permission, no run, no failure", permission === null && run === null && failure === null],
+      ["nothing on the Organiser page: no permission, no run, no failure, nobody to remove from the Lichess team",
+        permission === null && run === null && failure === null && removals.length === 0],
     );
   } else {
     const gone = PEOPLE.find((p) => p.id === GONE)!;
@@ -418,9 +419,9 @@ async function check(name: string) {
         ["Season 2's first Matchday started, its results not in yet",
           !!s2?.matchdays && played(s2) === 0 && !s2.over && matchdayStart(s2.matchdays[0].date) <= now],
         ["the Organiser's permission has expired, and the job's failure is recorded",
-          !!permission && permission.expiresAt <= now && run?.outcome === "failed" && run.detail.includes("expired")],
-        ["the one who left could not be removed from the Lichess team, the last failure, naming the account to remove by hand",
-          failure?.job === LEAVING_JOB && failure.problem.includes(lichessId(gone)) && failure.problem.includes("expired")],
+          !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
+        ["the one who left could not be removed from the Lichess team, so the Organiser page lists their account to remove by hand",
+          removals.length === 1 && removals[0].lichessId === lichessId(gone) && removals[0].problem.includes("expired")],
       );
     else {
       const ana = histories.get("ana")!;
@@ -443,6 +444,7 @@ async function check(name: string) {
           recaps.some((r) => !!company("mover", r.leaderboard) && company("mover", r.leaderboard) !== company("mover", allTime))],
         ["the Organiser's permission connected and readable, and the job last ran without failing",
           !!permission?.readable && permission.expiresAt > now && !!run && run.outcome !== "failed" && failure === null],
+        ["the one who left was removed from the Lichess team, so nobody is left to remove by hand", removals.length === 0],
       );
     }
   }

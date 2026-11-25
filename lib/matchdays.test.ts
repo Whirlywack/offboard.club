@@ -235,6 +235,25 @@ describe("a redo", () => {
     expect([...results.values()].filter((r) => r.matchdayDate === DATE).map((r) => r.userId)).toEqual(["ana", "ben", "cora", "dan", "fay"]);
   });
 
+  it("keeps the Games of someone who has left since, once, even if they come back with the same Lichess account", async () => {
+    await ingestTournament(TOURNAMENT);
+    // cora deletes her account (#15), as the site deletes it: her side of her two Games empties.
+    await db.query(`delete from "user" where id = $1`, ["cora"]);
+    const kept = [...games.values()].filter((g) => g.whiteId === null || g.blackId === null);
+    expect(kept.map((g) => g.lichessGameId).sort()).toEqual(["Pretend066", "Pretend119"]);
+
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 5, games: 1, redone: true });
+    expect(games.size).toBe(3);
+    for (const game of kept) expect(games.get(game.lichessGameId)).toEqual(game);
+
+    // She signs up again with the same Lichess account, and the Matchday is redone once more: her old Games stay
+    // against a former member, stored once, and the redo goes through.
+    addPerson("cora-again", { lichessId: MEMBERS.cora });
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 6, games: 3, redone: true });
+    expect(games.size).toBe(3);
+    for (const game of kept) expect(games.get(game.lichessGameId)).toEqual(game);
+  });
+
   it("leaves the Matchday as it was when it is refused or fails", async () => {
     await ingestTournament(TOURNAMENT);
     const before = tables();

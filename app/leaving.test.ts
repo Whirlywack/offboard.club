@@ -7,14 +7,15 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, db, games, jobFailures, matchdays, organiserLichess, people, resetDb, results, seasons, type GameRow } from "@/lib/fake-db";
+import { addPerson, db, games, jobFailures, matchdays, organiserLichess, people, resetDb, results, seasons, teamRemovals, type GameRow } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
-import { JOB, LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
+import { LICHESS_DEADLINE_MS, removeMember } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { countSignUps } from "@/lib/signups";
 import { leaveClub } from "./actions";
 import AllTimePage from "./all-time/page";
 import LeftPage from "./left/page";
+import { teamRemovalDone } from "./organiser/actions";
 import OrganiserPage from "./organiser/page";
 import LeavePage from "./profile/leave/page";
 import EditProfile from "./profile/page";
@@ -22,7 +23,7 @@ import ProfilePage from "./profiles/[id]/page";
 import RecapPage from "./recaps/[date]/page";
 import SeasonPage from "./seasons/[number]/page";
 
-const { getSession, signOut } = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
+const { getSession, signOut, formStatus } = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn(), formStatus: { pending: false } }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession, signOut } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ cookie: "the browser's session cookie" }) }));
@@ -36,6 +37,8 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
+// The confirmation page's buttons ask React whether their form is being sent; the tests say.
+vi.mock("react-dom", async (original) => ({ ...(await original<typeof import("react-dom")>()), useFormStatus: () => formStatus }));
 
 const TEAM = "offboard-team";
 const KEY = randomBytes(32).toString("base64");
@@ -159,6 +162,7 @@ beforeEach(async () => {
   played("BENCID08", SECOND, "ben", "cid", null);
 
   signedIn = "ana";
+  formStatus.pending = false;
   getSession.mockReset().mockImplementation(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;
     return person ? { user: { ...person } } : null;
@@ -192,7 +196,9 @@ describe("deleting your own account", () => {
     expect(confirm).not.toMatch(/aria-disabled|disabled=""/);
     expect(text(confirm)).toContain("You disappear from every Leaderboard and Recap, including past ones.");
     expect(text(confirm)).toContain("Other Members keep their Games against you, with you shown as “a former member”.");
-    expect(text(confirm)).toContain("If the site can't remove you from it, your Lichess username is kept so the Organiser can do it by hand.");
+    expect(text(confirm)).toContain("Your Lichess account is disconnected, and the site asks Lichess to remove it from the Club's team.");
+    expect(text(confirm)).toContain("If the site can't remove you from the team, your Lichess username is kept until the Organiser has done it by hand.");
+    expect(text(confirm)).not.toContain("Nothing changes on Lichess");
     expect(people.has("ana")).toBe(true);
     expect(lichess.calls).toEqual([]);
   });
@@ -208,8 +214,17 @@ describe("deleting your own account", () => {
     expect(text(await leavePage())).not.toContain("You're the Organiser");
     signedIn = "organiser";
     expect(text(await leavePage())).toContain(
-      "You're the Organiser. Deleting your account revokes your Lichess permission, so Matchdays stop being created on Lichess",
+      "You're the Organiser. Once you leave, Matchdays stop being created and nobody is removed from the Lichess team until someone else is made Organiser.",
     );
+  });
+
+  it("while the account is being deleted, says so, cannot be pressed again, and no longer offers to keep it", async () => {
+    formStatus.pending = true;
+    const confirm = await leavePage();
+    expect(confirm).toMatch(/<button[^>]* disabled="">Deleting…<\/button>/);
+    const keep = confirm.match(/<a[^>]*>Keep my account<\/a>/)![0];
+    expect(keep).toContain('aria-disabled="true"');
+    expect(keep).toContain('tabindex="-1"');
   });
 
   it("deletes the caller's account at the press of the button, signs them out and says so", async () => {
@@ -246,7 +261,7 @@ describe("the Club's Lichess team", () => {
     expect(kicks()[0].authorization).toBe(`Bearer ${token}`);
     expect(lichess.team.members.has("lichess-ana")).toBe(false);
     expect(lichess.team.members).toContain("lichess-ben");
-    expect(jobFailures.size).toBe(0);
+    expect(teamRemovals.size).toBe(0);
   });
 
   // Each way removing them from the team can fail, set up, and what the Organiser is told about it.
@@ -272,6 +287,11 @@ describe("the Club's Lichess team", () => {
       () => void (lichess.tokens.get(token)!.scope = "tournament:write"),
       "Lichess answered POST /api/team/{teamId}/kick/{userId} with 403: Missing scope: team:lead.",
     ],
+    [
+      "the Organiser's account no longer leads the team",
+      () => lichess.team.leaders.delete("boss"),
+      "Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions. The likely cause: boss leads the Club's team but without the team's permission to remove members, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it.",
+    ],
     ["Lichess has no such team", () => vi.stubEnv("LICHESS_TEAM_ID", "another-team"), "Lichess answered POST /api/team/{teamId}/kick/{userId} with 404: Not found."],
     [
       "Lichess is down",
@@ -281,21 +301,14 @@ describe("the Club's Lichess team", () => {
     ["the Club's team is not configured", () => vi.stubEnv("LICHESS_TEAM_ID", ""), "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known."],
   ];
 
-  it.each(failures)("cannot keep anyone from leaving when %s: the failure is recorded, with the account to remove by hand", async (_, problem, why) => {
+  it.each(failures)("cannot keep anyone from leaving when %s: the account is kept to remove by hand, with why", async (_, problem, why) => {
     problem();
     expect(await redirectedTo(() => leaveClub())).toBe("/left");
     expect(people.has("ana")).toBe(false);
-    expect([...jobFailures.values()]).toEqual([
-      {
-        id: 1,
-        job: JOB,
-        at: NOW,
-        matchdayDate: null,
-        problem: `Remove lichess-ana from the Lichess team by hand. They left the Club, but the site couldn't: ${why}`,
-      },
-    ]);
-    // The account is the only thing about them kept.
-    expect(JSON.stringify([...jobFailures.values()])).not.toContain("Ana");
+    expect([...teamRemovals.values()]).toEqual([{ lichessId: "lichess-ana", at: NOW, problem: why }]);
+    // The account is the only thing about them kept, and it is not a scheduled job's failure.
+    expect(JSON.stringify([...teamRemovals.values()])).not.toContain("Ana");
+    expect(jobFailures.size).toBe(0);
   });
 
   it("does not wait on Lichess for more than 25 seconds", async () => {
@@ -308,37 +321,83 @@ describe("the Club's Lichess team", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await leaving).toBe("/left");
     expect(people.has("ana")).toBe(false);
-    expect([...jobFailures.values()][0].problem).toContain("the site couldn't: Lichess took more than 25 s.");
+    expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 25 s.");
   });
 
-  it("shows the Organiser the failure on their page", async () => {
-    lichess.team.withoutRemoving.add("boss");
-    await redirectedTo(() => leaveClub());
-    signedIn = "organiser";
-    // What to do comes first, with the account to do it to.
-    expect(text(await organiserPage())).toContain("Remove lichess-ana from the Lichess team by hand.");
-  });
-
-  it("records one failure when the same person is removed twice at once", async () => {
+  it("keeps the account once when the same person is removed twice at once", async () => {
     lichess.team.withoutRemoving.add("boss");
     expect((await Promise.all([removeMember("ana"), removeMember("ana")])).sort()).toEqual([false, true]);
     expect(kicks()).toHaveLength(2);
-    expect(jobFailures.size).toBe(1);
+    expect(teamRemovals.size).toBe(1);
   });
 
-  it("keeps a leader of the team in it, as Lichess does while answering that all went well, and so records nothing", async () => {
+  it("keeps a leader of the team in it, as Lichess does while answering that all went well, and so keeps nothing", async () => {
     lichess.team.leaders.add("lichess-ana");
     await redirectedTo(() => leaveClub());
     expect(people.has("ana")).toBe(false);
     expect(lichess.team.members).toContain("lichess-ana");
-    expect(jobFailures.size).toBe(0);
+    expect(teamRemovals.size).toBe(0);
   });
 
   it("leaves alone a person who never connected Lichess", async () => {
     expect(await removeMember("half")).toBe(true);
     expect(people.has("half")).toBe(false);
     expect(lichess.calls).toEqual([]);
-    expect(jobFailures.size).toBe(0);
+    expect(teamRemovals.size).toBe(0);
+  });
+});
+
+describe("the Organiser's list of people to remove from the Lichess team by hand", () => {
+  // ana and ben leave while the Organiser's account may not remove members.
+  beforeEach(async () => {
+    lichess.team.withoutRemoving.add("boss");
+    await removeMember("ana");
+    await removeMember("ben");
+    signedIn = "organiser";
+  });
+
+  const listed = (html: string) => {
+    const section = html.match(/<section aria-labelledby="removals"[^>]*>(.*?)<\/section>/)?.[1];
+    return section === undefined ? null : [...section.matchAll(/<h3>(.*?)<\/h3>/g)].map(([, id]) => id);
+  };
+  const done = (lichessId: string) => {
+    const form = new FormData();
+    form.set("lichessId", lichessId);
+    return redirectedTo(() => teamRemovalDone(form));
+  };
+
+  it("names every account, each with why, apart from the scheduled jobs and whatever fails after", async () => {
+    // A scheduled job failing later does not hide them.
+    jobFailures.set("1", { id: 1, job: "create-matchdays", at: NOW, matchdayDate: null, problem: "The Matchday could not be created: oops." });
+    const html = await organiserPage();
+    expect(listed(html)).toEqual(["lichess-ana", "lichess-ben"]);
+    expect(text(html)).toContain("Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions.");
+    expect(html).toContain(`href="https://lichess.org/team/${TEAM}/kick"`);
+    expect(html.match(/<section aria-labelledby="jobs".*?<\/section>/)![0]).not.toContain("lichess-ana");
+  });
+
+  it("forgets only the account the Organiser says is done", async () => {
+    expect(await done("lichess-ana")).toBe("/organiser");
+    expect([...teamRemovals.keys()]).toEqual(["lichess-ben"]);
+    expect(listed(await organiserPage())).toEqual(["lichess-ben"]);
+    await done("lichess-ben");
+    expect(listed(await organiserPage())).toBeNull();
+  });
+
+  it("is shown to nobody else, and nobody else can mark one done", async () => {
+    for (const who of ["cid", null]) {
+      signedIn = who;
+      await expect(organiserPage()).rejects.toThrow("not found");
+      await expect(done("lichess-ana")).rejects.toThrow("not found");
+    }
+    expect(teamRemovals.size).toBe(2);
+  });
+
+  it("ignores a value no Lichess id could be", async () => {
+    const long = `lichess-ana${"x".repeat(20)}`;
+    teamRemovals.set(long, { lichessId: long, at: NOW, problem: "kept" });
+    await done(long);
+    expect(teamRemovals.has(long)).toBe(true);
   });
 });
 
@@ -372,7 +431,7 @@ describe("the same removal, for any Member the system names", () => {
     });
     await expect(removeMember("ana")).rejects.toThrow("Connection terminated unexpectedly");
     expect(people.has("ana")).toBe(true);
-    expect(jobFailures.size).toBe(0);
+    expect(teamRemovals.size).toBe(0);
   });
 });
 

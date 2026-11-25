@@ -171,6 +171,19 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`)).toEqual([
       { whiteId: "ingest-test-ben", blackId: null },
     ]);
+
+    // A redo keeps that Game; and once she is back with the same Lichess account, another redo goes through and keeps
+    // it as it is, once.
+    const kept = async () => ({
+      games: await select(`select count(*)::int as n from "game"`),
+      game: await select(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'Pretend119'`),
+    });
+    const before = await kept();
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 3, games: 2, redone: true });
+    expect(await kept()).toEqual(before);
+    await addPerson("ingest-test-cora-again", "pretend--ines");
+    expect(await ingestTournament(TOURNAMENT, { redo: true })).toMatchObject({ outcome: "ingested", members: 4, games: 3, redone: true });
+    expect(await kept()).toEqual(before);
   }, 60_000);
 
   it("rolls back everything an ingestion wrote when a later write fails", async () => {

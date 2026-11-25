@@ -6,10 +6,12 @@ import ui from "../ui.module.css";
 import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
+import { TeamRemovals } from "./team-removals";
 import { getSession, requireOrganiser } from "@/lib/auth";
 import { dueFrom, JOB, OVERDUE_MS } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
 import { lastFailure, lastRun, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
+import { teamRemovals } from "@/lib/leaving";
 import { lichessProfileUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
@@ -69,6 +71,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
   // and a secret every scheduled request is refused with.
   const usable = permission !== null && permission.readable && permission.expiresAt > now;
   const blockers = Number(!usable) + Number(secretProblem !== null);
+  const removals = await teamRemovals();
   return (
     <main id="main" className={`${ui.page} ${ui.arrive}`}>
       <div className={ui.intro}>
@@ -99,6 +102,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
         </form>
       </section>
+
+      <TeamRemovals removals={removals} />
 
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>

@@ -9,8 +9,8 @@
 // of it, in a backup say, is still worth anything.
 //
 // Their Lichess account is removed from the Club's Lichess team first, with the Organiser's permission. If that cannot
-// be done the deletion goes ahead all the same, and why is recorded as a failure for the Organiser, naming the account
-// to remove by hand, which is the one thing about them that record keeps.
+// be done the deletion goes ahead all the same, and the account is kept in "teamRemoval" with why, for the Organiser to
+// remove by hand; the Organiser page lists every one until the Organiser says it is done, which forgets it.
 
 import { revoke } from "./connect-lichess";
 import { db } from "./db";
@@ -18,19 +18,16 @@ import { kickFromTeam, timeLimit } from "./lichess";
 import { organiserToken, refusedPermission, tokenConnectedBy } from "./organiser-lichess";
 import { inTransaction } from "./transaction";
 
-// The name its failures are recorded under in "jobFailure", beside the scheduled jobs', where the Organiser page shows
-// the latest (#16) and alerts are sent from (#17).
-export const JOB = "remove-from-lichess-team";
-
 // Removing someone from the team, and revoking the Organiser's token, each give up on Lichess after this, so that
 // leaving never waits on Lichess for long: a rate-limited request alone would wait a minute. Both fit in the 60 s the
 // page whose action leaves allows (its maxDuration).
 export const LICHESS_DEADLINE_MS = 25_000;
 
-// Deletes the person `memberId` as of `now`, after removing their Lichess account from the Club's team. False if there
-// was nobody to delete. Throws if the database fails, having deleted nothing; removing them from the team again on a
-// retry is harmless.
-export async function removeMember(memberId: string, now = new Date()): Promise<boolean> {
+// Deletes the person `memberId`, after removing their Lichess account from the Club's team. False if there was nobody
+// to delete. Throws if the database fails, having deleted nothing; removing them from the team again on a retry is
+// harmless.
+export async function removeMember(memberId: string): Promise<boolean> {
+  const now = new Date();
   const { rows } = await db.query<{ lichessId: string | null }>(`select "lichessId" from "user" where id = $1`, [memberId]);
   if (!rows[0]) return false;
   const { lichessId } = rows[0];
@@ -38,9 +35,13 @@ export async function removeMember(memberId: string, now = new Date()): Promise<
   const problem = lichessId === null ? null : await leaveTeam(lichessId, now);
   const deleted = await inTransaction(async (q) => {
     const { rowCount } = await q.query(`delete from "user" where id = $1`, [memberId]);
-    // Only by the call that deleted them, so that two at once record one failure.
-    if (rowCount && problem)
-      await q.query(`insert into "jobFailure" ("job", "matchdayDate", "problem") values ($1, $2, $3)`, [JOB, null, problem]);
+    // Kept once per account, however many removals of the same person ran at once.
+    if (problem)
+      await q.query(
+        `insert into "teamRemoval" ("lichessId", "problem") values ($1, $2)
+         on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`,
+        [lichessId, problem],
+      );
     return !!rowCount;
   });
   if (deleted && ownToken) await revoke(ownToken, LICHESS_DEADLINE_MS);
@@ -51,22 +52,33 @@ const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);
 
 // Removes the account from the Club's Lichess team with the Organiser's permission: null once Lichess has answered that
 // it did, or why not as a sentence for the Organiser. Lichess answers the same when it keeps the account because it
-// leads the team (kickFromTeam), so a leader who leaves stays in the team with nothing recorded. The sentence opens
-// with what the Organiser must do and the account to do it to; each one is recorded, as it names its own account.
+// leads the team (kickFromTeam), so a leader who leaves stays in the team with nothing kept.
 async function leaveTeam(lichessId: string, now: Date): Promise<string | null> {
-  const cannot = (why: string) =>
-    `Remove ${lichessId} from the Lichess team by hand. They left the Club, but the site couldn't: ${ended(why)}`;
   const teamId = process.env.LICHESS_TEAM_ID;
-  if (!teamId) return cannot("LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.");
+  if (!teamId) return "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.";
   const permission = await organiserToken(now);
-  if ("problem" in permission) return cannot(permission.problem);
+  if ("problem" in permission) return permission.problem;
   const deadline = timeLimit(LICHESS_DEADLINE_MS, `Lichess took more than ${LICHESS_DEADLINE_MS / 1000} s`);
   try {
     await kickFromTeam(permission.token, teamId, lichessId, deadline.signal);
     return null;
   } catch (error) {
-    return cannot(refusedPermission(error, permission.lichessId) ?? (error instanceof Error ? error.message : "unknown error"));
+    return ended(refusedPermission(error, permission.lichessId) ?? (error instanceof Error ? error.message : "unknown error"));
   } finally {
     deadline.clear();
   }
+}
+
+// An account still to remove from the Club's Lichess team by hand, with why the site could not.
+export type TeamRemoval = { lichessId: string; problem: string };
+
+// Every account still to remove from the team by hand, the oldest first.
+export async function teamRemovals(): Promise<TeamRemoval[]> {
+  const { rows } = await db.query<TeamRemoval>(`select "lichessId", "problem" from "teamRemoval" order by "at", "lichessId"`);
+  return rows;
+}
+
+// The Organiser has removed the account on Lichess: the site forgets it.
+export async function forgetTeamRemoval(lichessId: string): Promise<void> {
+  await db.query(`delete from "teamRemoval" where "lichessId" = $1`, [lichessId]);
 }

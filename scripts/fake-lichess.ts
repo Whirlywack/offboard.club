@@ -9,7 +9,7 @@
 //
 // The Organiser's permission the seed stores was issued by a fake inside the seed, which this one does not know: until
 // the Organiser connects Lichess again on /organiser, removing someone who leaves (/profile/leave) from the team is
-// refused, and the Organiser page shows that failure.
+// refused, and the Organiser page lists their account to remove by hand.
 import { createServer } from "node:http";
 import { notLocal } from "./local-db.mjs";
 import { db } from "@/lib/db";

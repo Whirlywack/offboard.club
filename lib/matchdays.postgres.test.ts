@@ -8,9 +8,10 @@ import { getRecap, recapDates } from "./recaps";
 
 // Ingestion's and the Recap's real SQL against the database in DATABASE_URL, inside one transaction that is always
 // rolled back, so nothing it does is kept; Lichess is the fake. The app's database is one connection holding that
-// transaction, and the ingestion's own transaction a savepoint within it. Skipped when DATABASE_URL is not set, as in a
-// plain `pnpm test`. To run it:
-// node --env-file=.env.local node_modules/vitest/vitest.mjs run lib/matchdays.postgres.test.ts
+// transaction, and the ingestion's own transaction a savepoint within it. Inside it, it empties the Matchday tables, so
+// point it only at a development database with the migrations applied, never the live one: it runs only when
+// ALLOW_DB_TESTS=1 is set as well as DATABASE_URL, and a plain `pnpm test` skips it. To run it:
+// ALLOW_DB_TESTS=1 DATABASE_URL=postgres://…/a-development-database pnpm vitest run lib/matchdays.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -36,15 +37,15 @@ const TOURNAMENT = "PF2C2AUC";
 // The recorded exports, standing for the Matchday of Sunday 22 November.
 const DATE = "2026-11-22";
 
-describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres", () => {
+describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("ingestion and the Recap in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
   const lichess = createFakeLichess({
     teamId: "offboard-team",
     teamPassword: "pw",
     accounts: [
       { id: "gevorgsargsyan", username: "GEVorgSaRgSyAn", perfs: { blitz: { games: 900, rating: 1930, rd: 60, prog: 12 } } },
-      { id: "iksannur", username: "iksannur", tosViolation: true },
-      { id: "olwerre", username: "Olwerre", perfs: { blitz: { games: 9, rating: 1590, rd: 60, prog: 1 } } },
+      { id: "iksannur", username: "iksannur", perfs: { blitz: { games: 9, rating: 1810, rd: 60, prog: 1 } } },
+      { id: "olwerre", username: "Olwerre", tosViolation: true },
     ],
     tournaments: [
       {
@@ -123,12 +124,13 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
     ]);
     expect(await select(`select id, "lichessBlitzRating", "lichessMarked", "lichessClosed" from "user" where id like 'ingest-test-%' order by id`)).toEqual([
       { id: "ingest-test-ana", lichessBlitzRating: 1930, lichessMarked: false, lichessClosed: false },
-      { id: "ingest-test-ben", lichessBlitzRating: 1500, lichessMarked: true, lichessClosed: false },
-      { id: "ingest-test-cora", lichessBlitzRating: 1590, lichessMarked: false, lichessClosed: false },
+      { id: "ingest-test-ben", lichessBlitzRating: 1810, lichessMarked: false, lichessClosed: false },
+      { id: "ingest-test-cora", lichessBlitzRating: 1500, lichessMarked: true, lichessClosed: false },
       { id: "ingest-test-gil", lichessBlitzRating: 1500, lichessMarked: false, lichessClosed: false },
     ]);
 
-    // ana changes Company; the Recap keeps the one she had that night. ben's account is marked, so he is left out.
+    // ana changes Company; the Recap keeps the one she had that night. cora's account is marked, so she is left out,
+    // and so is her Game against ben, which would otherwise have been the fastest checkmate (his 40th move).
     await client.query(`update "user" set "companyDomain" = null where id = 'ingest-test-ana'`);
     expect(await recapDates()).toEqual([DATE]);
     expect(await getRecap(DATE)).toEqual({
@@ -136,10 +138,13 @@ describe.skipIf(!process.env.DATABASE_URL)("ingestion and the Recap in Postgres"
       lichessTournamentId: TOURNAMENT,
       leaderboard: [
         { memberId: "ingest-test-ana", rank: 1, points: 9.5, rating: 1917, name: "ingest-test-ana", company: { domain: "ingest-test.example", name: "Ingest Test" } },
-        { memberId: "ingest-test-cora", rank: 2, points: 5, rating: 1584, name: "ingest-test-cora", company: null },
+        { memberId: "ingest-test-ben", rank: 2, points: 8, rating: 1803, name: "ingest-test-ben", company: null },
       ],
-      // Both Games were ben's, and his account is marked.
-      awards: [],
+      // ana, with Black, mated ben on her 74th move (148 half-moves) with 5.30 seconds on her clock.
+      awards: [
+        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
+      ],
     });
     expect(await getRecap("2026-11-23")).toBeNull();
 

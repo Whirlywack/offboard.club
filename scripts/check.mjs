@@ -118,18 +118,18 @@ export function run(command, args, { cwd, env = process.env, log, limit = 20 * 6
 }
 
 // A fresh, empty, migrated database from `pnpm db:start --dir <folder>/db-<name>`, run in the copy, and its address; null
-// if it could not be started. db:start chooses ports that are free when it looks, so of two runs starting at once one
-// can lose them; that one tries again in another folder. A failure with the server running, such as a migration that
-// does not apply, is not tried again. The .env.local db:start gives the copy is removed: CI has none, and the build
-// and the seeds would read it.
+// if it could not be started. db:start chooses ports that are free when it looks, so of runs starting at once all but
+// one can lose them, and the losers then race for the next ones; each tries again in another folder, after a pause of
+// its own. A failure with the server running, such as a migration that does not apply, is not tried again. The
+// .env.local db:start gives the copy is removed: CI has none, and the build and the seeds would read it.
 export async function startDatabase(folder, name, log) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 8; attempt++) {
     const dir = join(folder, `db-${name}-${attempt}`);
     const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log });
     rmSync(join(folder, "checkout", ".env.local"), { force: true });
     if (code === 0) return /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1];
     if (existsSync(join(dir, "postmaster.pid"))) return null;
-    await new Promise((resume) => setTimeout(resume, 200 + Math.random() * 800));
+    await new Promise((resume) => setTimeout(resume, Math.random() * 3000));
   }
   return null;
 }

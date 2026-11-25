@@ -41,8 +41,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# agent worktrees
+# agent worktrees, and each person's own Claude Code settings
 /.claude/worktrees/
+/.claude/settings.local.json
+
+# browser automation leftovers
+/.playwright-mcp/
 
 # the throwaway local database (scripts/local-db.mjs)
 /.local-db*/

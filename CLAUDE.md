@@ -2,13 +2,11 @@
 
 This is Next.js 16, which has breaking changes from older versions: APIs, conventions and file structure may differ from what you know. Read the relevant guide in `node_modules/next/dist/docs/` before writing any Next.js code.
 
-## Commands
+## Working here
 
-- `pnpm dev`: run the site locally
-- `pnpm test`: run the tests once (vitest)
-- `pnpm typecheck`: generate Next.js route types, then run `tsc --noEmit`
-- `pnpm lint`: run ESLint
-- `pnpm build`: production build
+- **Running, testing, databases**, and the traps no config file shows: `docs/agents/dev-environment.md`. Read it before the first command.
+- **Taking a ticket from issue to merged pull request** (stages, agents, hand-offs): `docs/agents/ticket-workflow.md`. For the session that orchestrates; an agent given one stage has its own definition in `.claude/agents/`.
+- **Reviewing**: `CODING_STANDARDS.md`.
 
 ## Agent skills
 

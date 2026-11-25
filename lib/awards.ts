@@ -4,10 +4,9 @@
 
 import { awards, type Award, type Colour, type Game } from "./matchday";
 
-// PRIVACY DECISION PENDING WITH THE OWNER. An Award's name, value and winner are public, like the rest of a Recap. Its
-// Game, replayed on Lichess's board, shows both players' Lichess usernames, which the site otherwise shows to Members
-// only, so until the owner decides, only signed-in Members are shown it. Making the Games public is this one line: set
-// it to true.
+// An Award's name, value and winner are public, like the rest of a Recap. Its Game, replayed on Lichess's board, shows
+// both players' Lichess usernames, which the site shows to Members only, so only signed-in Members are shown it: the
+// Organiser's decision of 2026-11-25 (docs/adr/0002). Making the Games public would be this one line.
 export const AWARD_GAMES_ARE_PUBLIC = false;
 
 // A decisive Game of the Matchday as stored. A side is null once that player has left the Club (#15).

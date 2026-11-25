@@ -154,6 +154,18 @@ function random() {
 }
 const between = (low: number, high: number) => low + Math.floor(random() * (high - low + 1));
 
+// The items in an order drawn from that sequence (Fisher-Yates), the same on every JavaScript engine. A sort with a
+// random comparator is not: how often, and on which pairs, an engine calls the comparator is the engine's own choice, so
+// another Node.js draws other pairings and seeds another history.
+function shuffled<T>(items: T[]): T[] {
+  const order = [...items];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
 // A drawn face on a coloured square, as LinkedIn's photo would sit there: plainly not anyone's photo.
 const face = (background: string) =>
   `data:image/svg+xml,${encodeURIComponent(
@@ -166,11 +178,14 @@ type Game = [id: string, date: string, white: string, black: string, winner: "wh
 // A Swiss-like evening: five rounds of pairings by the circle method, a bye (a point, no Game) for an odd one out.
 // Games follow ratings, except that the Season 1 champion beats everyone in Season 1 and the two who share Season 2
 // beat everyone else in Season 2 and draw with each other. The warm-up is all draws, so it has no Awards; Season 2's
-// last has no win with under a minute left, so its closest call reads in minutes.
+// last has no win with under a minute left, so its closest call reads in minutes. In Season 1's first, the first
+// opponent in good standing of the one who leaves mates them in a few moves, far faster than any other mate, so that
+// a Recap has an Award won against someone who has since left, whatever the draw.
 function evening(tag: string, date: string, players: Person[], games: Game[]) {
   const ratings = new Map(players.map((p) => [p.id, (p.rating ?? 1500) + between(-15, 15)]));
   const points = new Map(players.map((p) => [p.id, 0]));
-  const seats: (Person | null)[] = players.filter((p) => !p.noGames).sort(() => random() - 0.5);
+  const seats: (Person | null)[] = shuffled(players.filter((p) => !p.noGames));
+  let quickMate = tag === "s1m1";
   if (seats.length % 2) seats.push(null);
   for (let round = 0; round < Math.min(5, seats.length - 1); round++) {
     for (let i = 0; i < seats.length / 2; i++) {
@@ -183,18 +198,22 @@ function evening(tag: string, date: string, players: Person[], games: Game[]) {
       const [rw, rb] = [ratings.get(white.id)!, ratings.get(black.id)!];
       const forced = (id: string) =>
         (/^s1/.test(tag) && id === "champ") || (/^s2/.test(tag) && (id === "twin1" || id === "twin2"));
-      const winner =
+      let winner: "white" | "black" | null =
         tag === "warmup" || (forced(white.id) && forced(black.id)) ? null
         : forced(white.id) ? "white"
         : forced(black.id) ? "black"
         : random() < 0.12 ? null
         : random() < 1 / (1 + 10 ** ((rb - rw) / 400)) ? "white"
         : "black";
-      const status = winner ? ["mate", "resign", "resign", "outoftime"][between(0, 3)] : "draw";
+      let status = winner ? ["mate", "resign", "resign", "outoftime"][between(0, 3)] : "draw";
       let plies = between(24, 110);
       if (status === "mate" && plies % 2 !== (winner === "white" ? 1 : 0)) plies++; // the mating move is the winner's
-      const clock = !winner ? null : tag === "s2m6" ? between(6000, 24000) : status === "outoftime" ? between(150, 4000) : between(300, 24000);
+      let clock = !winner ? null : tag === "s2m6" ? between(6000, 24000) : status === "outoftime" ? between(150, 4000) : between(300, 24000);
       const finished = new Date(matchdayStart(date).getTime() + (round * 14 + between(4, 12)) * 60_000);
+      // After every draw for this Game, so that the rest of the sequence, and of the history, stays as it was.
+      if (quickMate && (white.leaves || black.leaves) && ![white, black].some((p) => p.marked || p.closed)) {
+        [winner, status, plies, clock, quickMate] = [white.leaves ? "black" : "white", "mate", white.leaves ? 4 : 5, clock ?? 18_000, false];
+      }
       games.push([`pretend${String(games.length + 1).padStart(4, "0")}`, date, white.id, black.id, winner, status, plies, rw, rb, clock, finished]);
       for (const [id, colour] of [[white.id, "white"], [black.id, "black"]] as const)
         points.set(id, points.get(id)! + (winner === colour ? 1 : winner === null ? 0.5 : 0));

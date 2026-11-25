@@ -321,18 +321,20 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     const blob = createFakeBlob({ token: TOKEN, storeId: "pretendstore" });
     let server: Server;
     let logged: string[];
-    // How the store answers: as it should; never, taking each request; at once with 503, which the SDK tries again with
-    // waits growing from a second; or refusing to delete.
-    let store: "answers" | "silent" | "unavailable" | "keeps everything" = "answers";
+    // How the store answers: as it should; never, taking each request; never but to a put, or never to a delete; at once
+    // with 503, which the SDK tries again with waits growing from a second; or refusing to delete.
+    let store: "answers" | "silent" | "silent but to a put" | "silent to a delete" | "unavailable" | "keeps everything" = "answers";
 
     beforeAll(async () => {
       server = createServer(async (request, reply) => {
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(chunk);
-        if (store === "silent") return void blob.calls.push({ method: request.method ?? "", pathname: null, headers: {} });
+        const deleting = request.url?.endsWith("/delete");
+        if (store === "silent" || (store === "silent but to a put" && request.method !== "PUT") || (store === "silent to a delete" && deleting))
+          return void blob.calls.push({ method: request.method ?? "", pathname: null, headers: {} });
         const refused = (status: number, code: string) => reply.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: { code } }));
         if (store === "unavailable") return refused(503, "service_unavailable");
-        if (store === "keeps everything" && request.url?.endsWith("/delete")) return refused(400, "bad_request");
+        if (store === "keeps everything" && deleting) return refused(400, "bad_request");
         const headers = Object.entries(request.headers).flatMap(([name, value]) => (typeof value === "string" ? [[name, value] as [string, string]] : []));
         const body = chunks.length ? Buffer.concat(chunks) : undefined;
         const response = await blob.handle(new Request(new URL(request.url ?? "/", "http://127.0.0.1"), { method: request.method, headers, body }));
@@ -360,6 +362,13 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
 
     const lastRun = async () =>
       (await on(source, (c) => c.query(`select "lastOutcome", "lastDetail" from "scheduledJob" where "job" = 'backup'`))).rows[0];
+    // When the job last did its work, which the alert that no backup has been made counts from (lib/alerts.ts): set back
+    // to a day long past before a run, and whether the run moved it on. Compared in SQL, as this database's sessions
+    // write a time in a style pg does not read.
+    const LONG_AGO = new Date("2026-01-01T00:00:00Z");
+    const setBack = () => on(source, (c) => c.query(`update "scheduledJob" set "lastDoneAt" = $1 where "job" = 'backup'`, [LONG_AGO]));
+    const madeSince = async () =>
+      (await on(source, (c) => c.query(`select "lastDoneAt" > $1 as "made" from "scheduledJob" where "job" = 'backup'`, [LONG_AGO]))).rows[0].made as boolean;
 
     it("stores the whole dump, compressed, as a private file named by its date and time, deleted by the store after 12 days", async () => {
       const run = await backUp(NOW);
@@ -391,6 +400,7 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     it("fails plainly when the store refuses it, storing nothing and saying nothing of what the dump holds", async () => {
       vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_pretendstore_not-the-store-token");
       const count = blob.blobs.size;
+      await setBack();
       const run = await backUp(new Date(NOW.getTime() + 2 * 86_400_000));
       expect(run).toEqual({
         outcome: "failed",
@@ -399,6 +409,8 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
       });
       expect(blob.blobs.size).toBe(count);
       expect(await lastRun()).toEqual({ lastOutcome: "failed", lastDetail: run.detail });
+      // No backup has been made since.
+      expect(await madeSince()).toBe(false);
       vi.stubEnv("BLOB_READ_WRITE_TOKEN", TOKEN);
     });
 
@@ -460,21 +472,25 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
         expect([...blob.blobs.keys()]).toEqual([dumpPathname(LATER)]);
       });
 
-      it("leaves a name it doesn't give alone, and says so as a failure", async () => {
+      // A run that stored its dump has made a backup, though it fails at what comes after (lib/alerts.ts).
+      it("leaves a name it doesn't give alone, and says so as a failure, the backup made", async () => {
         blob.blobs.clear();
         blob.add("backups/by-hand.sql");
         blob.add("backups/2026-13-45T99-99-99Z.json.gz");
+        await setBack();
         const run = await backUp(LATER);
         expect(run.outcome).toBe("failed");
         expect(run.detail).toMatch(
           /^Backed up the database \(\d+ kB\), but left backups\/2026-13-45T99-99-99Z\.json\.gz and 1 more alone: its name isn't one this job gives, so it isn't deleted after 13 days\. Delete it in the store if it isn't wanted\.$/,
         );
         expect(blob.blobs.has("backups/by-hand.sql") && blob.blobs.has(dumpPathname(LATER))).toBe(true);
+        expect(await madeSince()).toBe(true);
       });
 
-      it("records a failure to delete as the run's, once the new dump is stored", async () => {
+      it("records a failure to delete as the run's, once the new dump is stored, the backup made", async () => {
         blob.blobs.clear();
         blob.add(ago(20));
+        await setBack();
         store = "keeps everything";
         try {
           const run = await backUp(LATER);
@@ -484,9 +500,37 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
             matchdayDate: null,
           });
           expect(blob.blobs.has(dumpPathname(LATER)) && blob.blobs.has(ago(20))).toBe(true);
+          expect(await madeSince()).toBe(true);
         } finally {
           store = "answers";
         }
+      });
+
+      describe.each([
+        ["lists the dumps", "silent but to a put"],
+        ["deletes the old ones", "silent to a delete"],
+      ] as const)("with a store that never answers as the run %s", (_, answering) => {
+        it("ends at the run's deadline, recorded as failed, the backup made", async () => {
+          blob.blobs.clear();
+          blob.add(ago(20));
+          await setBack();
+          store = answering;
+          try {
+            const started = Date.now();
+            const run = await backUp(LATER);
+            expect(Date.now() - started).toBeLessThan(DEADLINE_MS + 400);
+            expect(run).toEqual({
+              outcome: "failed",
+              detail: expect.stringMatching(/^Backed up the database \(\d+ kB\), but couldn't delete the backups over 13 days old: it took more than 0\.5 s\.$/),
+              matchdayDate: null,
+            });
+            expect(await lastRun()).toEqual({ lastOutcome: "failed", lastDetail: run.detail });
+            expect(blob.blobs.has(dumpPathname(LATER)) && blob.blobs.has(ago(20))).toBe(true);
+            expect(await madeSince()).toBe(true);
+          } finally {
+            store = "answers";
+          }
+        });
       });
     });
 

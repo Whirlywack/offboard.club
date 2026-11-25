@@ -12,8 +12,8 @@
 // - Whatever is still waiting: a notice of the schedule (lib/seasons.ts), or a post Telegram refused, which the hourly
 //   run tries again. The hourly run shares its minute with the other jobs', so that they wake the database together.
 // A post that may have gone out without Telegram saying so is never sent again. It is one failure of this job, from the
-// run that sent it, or from the first run to find it 15 minutes on when it went out from elsewhere or its run died, and
-// one alert (lib/alerts.ts), so that the Organiser looks at the group once; a day after it was sent it is let go
+// run that sent it, or from the first run to find it 15 minutes on or later when it went out from elsewhere or its run
+// died, and one alert in the day after it was sent (lib/alerts.ts), so that the Organiser looks at the group once
 // (lib/telegram.ts, stuckPosts). Each run records only what it did itself.
 //
 // The group is only as private as its invite link, and holds people who have left: posts say less than the public
@@ -52,7 +52,8 @@ async function post(now: Date): Promise<JobRun> {
   const note = await reminders(now);
   await queueRecap(latestSunday(now));
   const run = outcome(await deliverPosts(now), note);
-  for (const { text, claimedAt } of await stuckPosts(now)) await recordFailure(JOB, lostPost(text), claimedAt);
+  // However long ago each was sent, so that a run after a gap still finds it: once since its claim, it is one failure.
+  for (const { text, claimedAt } of await stuckPosts(now, null)) await recordFailure(JOB, lostPost(text), claimedAt);
   return run;
 }
 

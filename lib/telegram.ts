@@ -211,19 +211,16 @@ export async function forgetReminders(keep: string | null) {
 // How long a delivery may hold one post, its 10 s request included, before the post counts as stuck.
 const STUCK_MS = 15 * 60_000;
 
-// How long after its claim a stuck post is looked for.
-const DAY = 86_400_000;
-
-// The posts for the group claimed more than 15 minutes and less than a day before `now` and never sent, oldest first:
-// Telegram may have posted each without saying so, or its delivery died while sending it. None is sent again, so each
-// is one failure of Posting to Telegram and one alert, for the Organiser to look at the group (lib/post-to-telegram.ts,
-// lib/alerts.ts). A day after its claim it is let go: it stays as it is, claimed and never sent, so that nothing sends
-// or queues it again, until its "until" (forgetPastPosts).
-export async function stuckPosts(now: Date): Promise<{ text: string; claimedAt: Date }[]> {
+// The posts for the group claimed more than 15 minutes before `now`, and after `since` if it is given, and never sent,
+// oldest first: Telegram may have posted each without saying so, or its delivery died while sending it. None is sent
+// again: each stays as it is, claimed and never sent, so that nothing sends or queues it again, until its "until"
+// (forgetPastPosts). It is one failure of Posting to Telegram whenever a run finds it, and one alert in the day after
+// its claim, for the Organiser to look at the group (lib/post-to-telegram.ts, lib/alerts.ts).
+export async function stuckPosts(now: Date, since: Date | null): Promise<{ text: string; claimedAt: Date }[]> {
   const { rows } = await db.query<{ text: string; claimedAt: Date }>(
-    `select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "claimedAt" > $2
-     and "key" not like 'alert:%' order by "claimedAt", "key"`,
-    [new Date(now.getTime() - STUCK_MS), new Date(now.getTime() - DAY)],
+    `select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1
+     and ($2::timestamptz is null or "claimedAt" > $2) and "key" not like 'alert:%' order by "claimedAt", "key"`,
+    [new Date(now.getTime() - STUCK_MS), since],
   );
   return rows;
 }

@@ -128,7 +128,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await client.query(`insert into "telegramPost" ("key", "text", "until", "claimedAt", "sentAt") values ('alert:sent', 'alert:sent', $1, $2, $2)`, [LATER, claimed]);
     expect(await deliverPosts(NOW)).toEqual({ posted: 1, failed: null });
     expect(sent()).toEqual([`${GROUP} recap:2026-11-29`]);
-    expect(await stuckPosts(NOW)).toEqual([]);
+    expect(await stuckPosts(NOW, null)).toEqual([]);
     // The alert claimed half an hour ago and never sent is sent again, oldest first, and the one sent is not; the one
     // claimed ten minutes ago is left to the delivery that may still be sending it.
     expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 3, failed: null });
@@ -139,6 +139,6 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await add("notice:stuck", 20, 30);
     expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 0, failed: null });
     expect(await deliverPosts(NOW)).toEqual({ posted: 0, failed: null });
-    expect((await stuckPosts(NOW)).map((post) => post.text)).toEqual(["notice:stuck"]);
+    expect((await stuckPosts(NOW, null)).map((post) => post.text)).toEqual(["notice:stuck"]);
   });
 });

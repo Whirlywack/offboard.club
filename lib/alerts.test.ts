@@ -92,6 +92,16 @@ describe("a scheduled job's failure", () => {
     expect(dms()).toEqual([`Collecting results: ${COULD_NOT}`]);
   });
 
+  it("is alerted again a day later though each failed run ends just after the alerts' run begins", async () => {
+    const alerted: number[] = [];
+    for (let hour = 0; hour <= 48; hour++) {
+      await jobRun(COLLECT, new Date(SUNDAY.getTime() + hour * HOUR + 2000), failed(COULD_NOT));
+      await alertAt(new Date(SUNDAY.getTime() + hour * HOUR));
+      if (dms().length > alerted.length) alerted.push(hour);
+    }
+    expect(alerted).toEqual([0, 24, 48]);
+  });
+
   it("is alerted again a day later while it stands, and at once when it changes", async () => {
     await jobRun(COLLECT, SUNDAY, failed(COULD_NOT));
     await alertAt(SUNDAY);
@@ -158,7 +168,18 @@ describe("a post to the group Telegram may have posted", () => {
       await alertAt(at(hour));
       if (!(hour % 2)) await postAt(at(hour));
     }
-    for (const days of [7, 30, 365]) await alertAt(at(hours + days * 24));
+    for (const days of [7, 30, 365]) {
+      await postAt(at(hours + days * 24));
+      await alertAt(at(hours + days * 24));
+    }
+  };
+  const failures = () => [...jobFailures.values()].map((f) => `${f.job} ${f.problem}`);
+  // The notice is sent by the change that made it, and Telegram's answer does not say whether it was posted.
+  const sentByTheChange = async () => {
+    telegram.override = badGateway;
+    vi.setSystemTime(at(0));
+    await postNotice(at(0));
+    telegram.override = undefined;
   };
 
   beforeEach(async () => {
@@ -175,15 +196,33 @@ describe("a post to the group Telegram may have posted", () => {
   });
 
   it("reaches the Organiser once when it went out from elsewhere, as a change's notice does, in one failure", async () => {
-    telegram.override = badGateway;
-    vi.setSystemTime(at(0));
-    await postNotice(at(0));
-    telegram.override = undefined;
+    await sentByTheChange();
     await alertAt(new Date(at(0).getTime() + 14 * MINUTE));
     expect(dms()).toEqual([]);
     await later(1);
     expect(dms()).toEqual([ALERTED]);
-    expect([...jobFailures.values()].map((f) => `${f.job} ${f.problem}`)).toEqual([`post-to-telegram ${lost(NOTICE)}`]);
+    expect(failures()).toEqual([`post-to-telegram ${lost(NOTICE)}`]);
+  });
+
+  it("is one failure all the same when Posting to Telegram next runs more than a day after it was sent", async () => {
+    await sentByTheChange();
+    for (let hour = 1; hour <= 25; hour++) await alertAt(at(hour));
+    await later(26);
+    expect(dms()).toEqual([ALERTED]);
+    expect(failures()).toEqual([`post-to-telegram ${lost(NOTICE)}`]);
+  });
+
+  it("is one failure all the same, but no alert, when Telegram was switched off for more than a day after it was sent", async () => {
+    await sentByTheChange();
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    for (let hour = 1; hour <= 25; hour++) {
+      await postAt(at(hour));
+      await alertAt(at(hour));
+    }
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    await later(26);
+    expect(dms()).toEqual([]);
+    expect(failures()).toEqual([`post-to-telegram ${lost(NOTICE)}`]);
   });
 
   it("reaches the Organiser once though the run that sent it ended after the alerts' run began", async () => {

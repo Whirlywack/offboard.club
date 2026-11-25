@@ -640,8 +640,9 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], gone.length);
   },
 
-  // stuckPosts: the posts for the group claimed at or before $1 and after $2 and never sent, oldest first.
-  [`select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "claimedAt" > $2 and "key" not like 'alert:%' order by "claimedAt", "key"`]:
+  // stuckPosts: the posts for the group claimed at or before $1, and after $2 unless it is null, and never sent, oldest
+  // first.
+  [`select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and ($2::timestamptz is null or "claimedAt" > $2) and "key" not like 'alert:%' order by "claimedAt", "key"`]:
     (before, after) => {
       const posts = [...telegramPosts.values()]
         .filter(
@@ -649,7 +650,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
             p.sentAt === null &&
             p.claimedAt !== null &&
             p.claimedAt <= new Date(before as unknown as Date) &&
-            p.claimedAt > new Date(after as unknown as Date) &&
+            (after === null || p.claimedAt > new Date(after as unknown as Date)) &&
             !likePrefix(p.key, "alert:%"),
         )
         .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1));

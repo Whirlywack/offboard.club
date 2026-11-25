@@ -10,6 +10,7 @@ import { GET as cronRequest } from "@/app/api/jobs/post-to-telegram/route";
 import { addCompany, addPerson, db, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
+import { alertOrganiser } from "./alerts";
 import { collectResults, SETTLE_MS } from "./collect-results";
 import type { JobRun } from "./jobs";
 import { removeMember } from "./leaving";
@@ -418,6 +419,27 @@ describe("a post Telegram may have posted, wherever it was sent from", () => {
     expect(await runAt(vilnius("10:15"))).toMatchObject({ outcome: "skipped", detail: "Nothing to post." });
     expect(failures()).toEqual([`${JOB}: ${unsure(MORNING)}`]);
     expect(posted()).toEqual([]);
+  });
+
+  it("is a failure each time, though the same reminder was lost the Sunday before", async () => {
+    for (const date of [DATE, "2026-12-06"]) {
+      await queuePost({ key: `reminder:${date}:10`, text: MORNING, until: vilnius("19:00", date) });
+      telegramPosts.get(`reminder:${date}:10`)!.claimedAt = vilnius("10:00", date); // and then nothing
+      await runAt(vilnius("11:07", date));
+    }
+    expect(failures()).toEqual([`${JOB}: ${unsure(MORNING)}`, `${JOB}: ${unsure(MORNING)}`]);
+  });
+
+  it("is none of the posts Telegram took: a Sunday of posts is no failure, and nothing for the Organiser", async () => {
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
+    telegram = createFakeTelegram({ token: TOKEN, chats: [GROUP, "123456789"] });
+    for (const time of ["10:00", "19:00"]) await runAt(vilnius(time));
+    await collectAt(OVER);
+    const later = at("2026-11-29T21:07:00Z");
+    await runAt(later);
+    expect(await alertOrganiser(later)).toMatchObject({ outcome: "skipped", detail: "Nothing to tell you." });
+    expect(posted()).toEqual([MORNING, HOUR_BEFORE, RECAP]);
+    expect(failures()).toEqual([]);
   });
 
   it("is let go a day after it was sent, though it is kept, never sent, until its Sunday: a notice a year ahead", async () => {

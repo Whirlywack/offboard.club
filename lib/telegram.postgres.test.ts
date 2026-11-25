@@ -230,18 +230,21 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await client.query("rollback to savepoint unclaimed");
   });
 
-  it("finds the posts claimed more than 15 minutes and less than a day ago and never sent, oldest first, and no other", async () => {
+  it("finds the posts claimed more than 15 minutes ago, and after a time when given one, never sent, oldest first, and no other", async () => {
     await client.query(`delete from "telegramPost"`);
+    const claimed = (minutesAgo: number) => new Date(NOW.getTime() - minutesAgo * MINUTE);
     await add("sent long ago", { claimedMinutesAgo: 30, sent: true });
     await add("stuck", { claimedMinutesAgo: 20 });
     await add("stuck all day", { claimedMinutesAgo: 24 * 60 - 1 });
-    await add("let go", { claimedMinutesAgo: 24 * 60 });
+    await add("a day ago", { claimedMinutesAgo: 24 * 60 });
     await add("being sent", { claimedMinutesAgo: 15 - 1 / 60 });
     await add("waiting");
-    expect(await stuckPosts(NOW)).toEqual([
-      { text: "stuck all day", claimedAt: new Date(NOW.getTime() - (24 * 60 - 1) * MINUTE) },
-      { text: "stuck", claimedAt: new Date(NOW.getTime() - 20 * MINUTE) },
-    ]);
+    const day = [
+      { text: "stuck all day", claimedAt: claimed(24 * 60 - 1) },
+      { text: "stuck", claimedAt: claimed(20) },
+    ];
+    expect(await stuckPosts(NOW, claimed(24 * 60))).toEqual(day);
+    expect(await stuckPosts(NOW, null)).toEqual([{ text: "a day ago", claimedAt: claimed(24 * 60) }, ...day]);
   });
 
   it("forgets the posts whose until has passed, and no other", async () => {

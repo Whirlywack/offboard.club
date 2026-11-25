@@ -116,11 +116,13 @@ async function alert(now: Date): Promise<JobRun> {
   const chat = organiserChat();
   if (!botSetUp() || !chat) return skipped(alertsProblem()!);
   const aDay = new Date(now.getTime() + DAY);
-  // A failure's alert is worth sending for a day from now, or from the failed run's end if that came after: the alert of
-  // a lost post must outlast the day in which the post is looked for (stuckPosts), or it would be queued again.
+  // A failure's alert is worth sending for a day from now. Posting to Telegram's, from its failed run's end if that came
+  // after: the alert of a post it lost must outlast the day in which the post is looked for below, or it would be queued
+  // again.
   for (const { job, detail, at } of await failingJobs())
-    if (job !== JOB) await queueAlert(`${JOB_TITLES[job] ?? job}: ${detail}`, new Date(Math.max(aDay.getTime(), at.getTime() + DAY)));
-  for (const { text } of await stuckPosts(now)) await queueAlert(`${JOB_TITLES[POST]}: ${lostPost(text)}`, aDay);
+    if (job !== JOB)
+      await queueAlert(`${JOB_TITLES[job] ?? job}: ${detail}`, job === POST ? new Date(Math.max(aDay.getTime(), at.getTime() + DAY)) : aDay);
+  for (const { text } of await stuckPosts(now, new Date(now.getTime() - DAY))) await queueAlert(`${JOB_TITLES[POST]}: ${lostPost(text)}`, aDay);
   const since = await doneSince(BACKUP);
   if (!backupProblem() && since && now.getTime() - since.getTime() > 2 * DAY)
     await queueAlert(`Backing up: no backup of the database has been made since ${day(since)}.`, aDay);

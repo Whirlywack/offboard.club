@@ -48,6 +48,10 @@ let running = null;
 let temporary = null;
 // pnpm's store, found once at the start: a pnpm run at the clean-up would write its compile cache into TMPDIR.
 let store = "";
+// Where db:start and db:stop record what they start in the copy: the repository's own registry (ticket #58), so that
+// `pnpm local:list` and `pnpm local:stop --all` there find it too. Given to those two alone: a test of them that was
+// given it would list and stop every server the repository's worktrees have started.
+let registry = "";
 const list = () => running && writeFileSync(running, [...children].map((child) => child.pid).join("\n"));
 
 // A temporary folder for one run, `<folder>/checkout` the copy, `<folder>/db-*` its databases and `<folder>/tmp` every
@@ -59,12 +63,10 @@ export function scratch(name) {
   const folder = realpathSync(mkdtempSync(join(tmpdir(), `offboard-${name}-`)));
   running = join(folder, "running");
   temporary = join(folder, "tmp");
-  // What db:start starts in the copy is recorded where the repository's own are, so that `pnpm local:list` and
-  // `pnpm local:stop --all` there find it too (ticket #58); the steps and the watcher inherit it.
-  process.env.OFFBOARD_LOCAL_REGISTRY ||= `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
+  registry = process.env.OFFBOARD_LOCAL_REGISTRY || `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
   store = spawnSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).stdout?.trim() ?? "";
   mkdirSync(temporary);
-  spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store], {
+  spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" "$5" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store, registry], {
     detached: true,
     stdio: "ignore",
   }).unref();
@@ -88,14 +90,14 @@ const stopGroup = (child) => {
 // Stops what the run left running in `folder` and every database db:start made there, takes out of pnpm's store, which
 // links each project it installed, the copy and any project of a run inside it, then removes the folder. Run at the end
 // of a run, and by the watcher, which finds the run's processes running still when only the run itself was killed.
-export function cleanUp(folder, storeFolder = store) {
+export function cleanUp(folder, storeFolder = store, registryFolder = registry) {
   const checkout = join(folder, "checkout");
   if (existsSync(folder)) {
     const pids = existsSync(join(folder, "running")) ? readFileSync(join(folder, "running"), "utf8").split("\n").filter(Boolean) : [];
     for (const pid of pids) stopGroup({ pid: Number(pid) });
     for (const name of readdirSync(folder))
       if (name.startsWith("db-") && existsSync(join(folder, name, "postmaster.pid")))
-        spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: checkout, stdio: "ignore", env: outside() });
+        spawnSync("pnpm", ["db:stop", "--dir", join(folder, name)], { cwd: checkout, stdio: "ignore", env: { ...outside(), ...recording(registryFolder) } });
   }
   forget(folder, storeFolder);
   rmSync(folder, { recursive: true, force: true });
@@ -117,14 +119,14 @@ function forget(folder, storeFolder) {
 }
 
 // The watcher: once the process `pid` has gone, however it ended, cleans up after it.
-function cleanUpAfter(pid, folder, storeFolder) {
+function cleanUpAfter(pid, folder, storeFolder, registryFolder) {
   const timer = setInterval(() => {
     try {
       process.kill(Number(pid), 0);
     } catch (error) {
       if (error.code !== "ESRCH") return;
       clearInterval(timer);
-      cleanUp(folder, storeFolder);
+      cleanUp(folder, storeFolder, registryFolder);
     }
   }, 250);
 }
@@ -148,15 +150,17 @@ export function copyCheckout(into) {
   return copied;
 }
 
-// This process's environment without DATABASE_URL and ALLOW_DB_TESTS, and with TMPDIR in the run's folder.
+// This process's environment without DATABASE_URL, ALLOW_DB_TESTS and OFFBOARD_LOCAL_REGISTRY, and with TMPDIR in the
+// run's folder.
 function outside() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { DATABASE_URL, ALLOW_DB_TESTS, ...rest } = process.env;
+  const { DATABASE_URL, ALLOW_DB_TESTS, OFFBOARD_LOCAL_REGISTRY, ...rest } = process.env;
   return { ...rest, ...(temporary ? { TMPDIR: temporary } : {}) };
 }
+const recording = (folder) => (folder ? { OFFBOARD_LOCAL_REGISTRY: folder } : {});
 
 // Runs `command` in a process group of its own, its output added to `log`, with this process's environment but for
-// DATABASE_URL and ALLOW_DB_TESTS, which only `env` may give, and TMPDIR in the run's folder. Resolves to its exit code,
+// DATABASE_URL, ALLOW_DB_TESTS and OFFBOARD_LOCAL_REGISTRY, which only `env` may give, and TMPDIR in the run's folder. Resolves to its exit code,
 // or null if it was stopped after `limit` ms. Anything it leaves running in its group is stopped when it ends.
 export function run(command, args, { cwd, env = {}, log, limit = 20 * 60_000 }) {
   const environment = { ...outside(), ...env };
@@ -188,13 +192,13 @@ export function run(command, args, { cwd, env = {}, log, limit = 20 * 60_000 }) 
 // The .env.local db:start gives the copy is removed: CI has none, and the build and the seeds would read it.
 export async function startDatabase(folder, name, log) {
   const dir = join(folder, `db-${name}`);
-  const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log });
+  const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log, env: recording(registry) });
   rmSync(join(folder, "checkout", ".env.local"), { force: true });
   return code === 0 ? { url: /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1], dir } : null;
 }
 
 // Stops the database db:start made in `dir`.
-export const stopDatabase = (folder, dir, log) => run("pnpm", ["db:stop", "--dir", dir], { cwd: join(folder, "checkout"), log });
+export const stopDatabase = (folder, dir, log) => run("pnpm", ["db:stop", "--dir", dir], { cwd: join(folder, "checkout"), log, env: recording(registry) });
 
 // The version of the Postgres server running in `dir`, from the command line it was started with.
 function serverVersion(dir) {

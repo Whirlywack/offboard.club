@@ -411,8 +411,15 @@ describe.concurrent("a run of pnpm guards", () => {
   }, 60_000);
 
   it("runs the real-Postgres suites for every change with --pg, puts each file back before the next change, and exits 0 when every change went red", async ({ onTestFinished }) => {
-    const { guards, tests, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { root, guards, runs, tests, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const { status, stdout } = await guards(["lib/b.ts:2", "--pg"]);
+    // What db:start starts in the copy is recorded in the repository's own registry (ticket #58), and the tests are not given it.
+    const starts = runs().filter((run) => run.name.startsWith("db:"));
+    expect(starts.map((run) => [run.name, realpathSync(join(run.registry, "../..")) === realpathSync(root), run.registry.endsWith("/.git/offboard-local")])).toEqual([
+      ["db:start", true, true],
+      ["db:stop", true, true],
+    ]);
+    expect(tests().every((run) => run.registry === undefined)).toBe(true);
     expect(stdout).toContain(`GREEN     lib/b.ts:2\n         - if (n > 9) return 9;\n         no test noticed: 5 passed, ${POSTGRES}\n`);
     expect(status).toBe(1);
     expect(tests().every((run) => run.postgres)).toBe(true);
@@ -434,9 +441,8 @@ describe.concurrent("a run of pnpm guards", () => {
       [false, null],
     ]);
     expect(tests().every((run) => run.tmp.startsWith(join(realpathSync(join(root, "tmp")), "offboard-guards-")))).toBe(true);
-    // What db:start starts in the copy is recorded in the repository's own registry (ticket #58).
-    const registries = new Set(tests().map((run) => run.registry));
-    expect([...registries].map((registry) => [realpathSync(join(registry, "../..")), registry.endsWith("/.git/offboard-local")])).toEqual([[realpathSync(root), true]]);
+    // Only db:start and db:stop are given the repository's registry (ticket #58); the tests never.
+    expect(tests().every((run) => run.registry === undefined)).toBe(true);
     const real = await guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toBe(
       "Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123.eu-central-1.aws.neon.tech, not this machine (localhost, 127.0.0.1 or ::1). Unset it first.",

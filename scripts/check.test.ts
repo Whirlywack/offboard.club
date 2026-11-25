@@ -206,12 +206,16 @@ describe.concurrent("a check", () => {
     const { root, log } = fakeCheckout(onTestFinished);
     await check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://offboard@127.0.0.1:1/somebody_else", ALLOW_DB_TESTS: "1" });
     const ran = runs(log);
+    for (const run of ran.filter((run) => run.name === "test" || run.name === "seed")) expect(run.env.OFFBOARD_LOCAL_REGISTRY).toBeUndefined();
     for (const run of ran.filter((run) => !["test", "seed"].includes(run.name))) {
       expect([run.name, run.env.DATABASE_URL, run.env.ALLOW_DB_TESTS]).toEqual([run.name, undefined, undefined]);
       expect(run.env.TMPDIR.startsWith(join(realpathSync(join(root, "tmp")), "offboard-check-"))).toBe(true);
-      // What db:start starts in the copy is recorded in the repository's own registry (ticket #58).
-      expect(realpathSync(join(run.env.OFFBOARD_LOCAL_REGISTRY, "../.."))).toBe(realpathSync(root));
-      expect(run.env.OFFBOARD_LOCAL_REGISTRY.endsWith("/.git/offboard-local")).toBe(true);
+      // What db:start starts in the copy is recorded in the repository's own registry (ticket #58), and only db:start
+      // and db:stop are given it: a test of them that was given it would list and stop the repository's servers.
+      if (run.name.startsWith("db:")) {
+        expect(realpathSync(join(run.env.OFFBOARD_LOCAL_REGISTRY, "../.."))).toBe(realpathSync(root));
+        expect(run.env.OFFBOARD_LOCAL_REGISTRY.endsWith("/.git/offboard-local")).toBe(true);
+      } else expect(run.env.OFFBOARD_LOCAL_REGISTRY).toBeUndefined();
     }
     const real = await check(root, { FAKE_LOG: log, DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
     expect(real.stderr.trim()).toMatch(/^Refusing to run beside a real DATABASE_URL in the environment: DATABASE_URL's host is ep-pretend-123/);

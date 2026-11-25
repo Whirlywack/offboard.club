@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { ConnectLichess } from "../../connect-lichess";
@@ -43,17 +44,22 @@ async function Step({ searchParams }: Pick<PageProps<"/welcome/lichess">, "searc
   if (!mustConnectLichess(person)) redirect("/");
   const problem = lichessProblem((await searchParams).lichess);
   return (
-    <div className={`${ui.panel} ${ui.prose} ${ui.arrive}`}>
-      {problem && (
-        <p role="alert" className={ui.alert}>
-          {problem}
+    <>
+      <div className={`${ui.panel} ${ui.prose} ${ui.arrive}`}>
+        {problem && (
+          <p role="alert" className={ui.alert}>
+            {problem}
+          </p>
+        )}
+        <ConnectLichess label="Connect Lichess" />
+        <p className={`${ui.small} ${ui.muted}`}>
+          No Lichess account yet? <a href="https://lichess.org/signup">Make one on Lichess</a> (it&apos;s free), then
+          come back here and connect it.
         </p>
-      )}
-      <ConnectLichess label="Connect Lichess" />
+      </div>
       <p className={`${ui.small} ${ui.muted}`}>
-        No Lichess account yet? <a href="https://lichess.org/signup">Make one on Lichess</a> (it&apos;s free), then come
-        back here and connect it.
+        Rather not join? <Link href="/welcome/leave">Delete your account</Link>.
       </p>
-    </div>
+    </>
   );
 }

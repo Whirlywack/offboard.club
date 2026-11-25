@@ -89,11 +89,13 @@ export async function saveProfile(_previous: ProfileFormState, form: FormData): 
   redirect(form.get("next") === "home" ? "/" : `/profiles/${id}`);
 }
 
-// "Delete my account" on the page that confirms it (app/profile/leave): the caller's own account, and nobody else's,
-// as nothing in the form says whose it is. Their sessions go with it; signing out clears this browser's cookie.
+// "Delete my account" on the pages that confirm it, a Member's (app/profile/leave) and that of someone part-way through
+// signing up (app/welcome/leave): the caller's own account, and nobody else's, as nothing in the form says whose it is.
+// Their sessions go with it; signing out clears this browser's cookie.
 export async function leaveClub(): Promise<void> {
-  const { id } = await requireSignedUp();
-  await removeMember(id);
+  const session = await getSession();
+  if (!session) redirect("/");
+  await removeMember(session.user.id);
   await auth.api.signOut({ headers: await headers() });
   redirect("/left");
 }

@@ -167,6 +167,63 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       ]);
     },
 
+  // --- A Profile's history (lib/history.ts) ---
+
+  // matchdaysOf: every ingested Matchday, oldest first, with the Member's points if they played it.
+  [`select r."points" from "matchday" m left join "matchdayResult" r on r."matchdayDate" = m."date" and r."userId" = $1 where m."ingestedAt" is not null order by m."date"`]:
+    (memberId) =>
+      answer(
+        [...matchdays.values()]
+          .filter((m) => m.ingestedAt !== null)
+          .sort((a, b) => (a.date < b.date ? -1 : 1))
+          .map((m) => ({ points: results.get(`${m.date} ${memberId}`)?.points ?? null })),
+      ),
+
+  // gamesOf: the Member's latest Games, $2 of them, each with the opponent if they are a Member, and how many there are
+  // in all. A side whose player has left is null, so it joins nobody.
+  [`select g."lichessGameId", to_char(g."matchdayDate", 'YYYY-MM-DD') as "date", g."whiteId", g."blackId", g."winner", o.id as "opponentId", o.name as "opponentName", (count(*) over ())::int as "total" from "game" g left join "user" o on o.id = case when g."whiteId" = $1 then g."blackId" else g."whiteId" end and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null where g."whiteId" = $1 or g."blackId" = $1 order by g."finishedAt" desc, g."lichessGameId" desc limit $2`]:
+    (memberId, limit) => {
+      const theirs = [...games.values()]
+        .filter((g) => g.whiteId === memberId || g.blackId === memberId)
+        .sort((a, b) => b.finishedAt.getTime() - a.finishedAt.getTime() || (a.lichessGameId < b.lichessGameId ? 1 : -1));
+      return answer(
+        theirs.slice(0, Number(limit)).map((g) => {
+          const opponentId = g.whiteId === memberId ? g.blackId : g.whiteId;
+          const opponent = opponentId === null ? undefined : people.get(opponentId);
+          return {
+            lichessGameId: g.lichessGameId,
+            date: g.matchdayDate,
+            whiteId: g.whiteId,
+            blackId: g.blackId,
+            winner: g.winner,
+            opponentId: isMember(opponent) ? opponent.id : null,
+            opponentName: isMember(opponent) ? opponent.name : null,
+            total: theirs.length,
+          };
+        }),
+      );
+    },
+
+  // gamesBetween: every Game between two Members, either way round.
+  [`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt" from "game" where ("whiteId" = $1 and "blackId" = $2) or ("whiteId" = $2 and "blackId" = $1)`]:
+    (one, other) =>
+      answer(
+        [...games.values()]
+          .filter((g) => (g.whiteId === one && g.blackId === other) || (g.whiteId === other && g.blackId === one))
+          .map((g) => ({
+            lichessGameId: g.lichessGameId,
+            whiteId: g.whiteId,
+            blackId: g.blackId,
+            winner: g.winner,
+            status: g.status,
+            plies: g.plies,
+            whiteRating: g.whiteRating,
+            blackRating: g.blackRating,
+            winnerClockCentis: g.winnerClockCentis,
+            finishedAt: new Date(g.finishedAt),
+          })),
+      ),
+
   // countSignUps
   [`select count(*)::int as n from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
     () => answer([{ n: [...people.values()].filter(isMember).length }]),

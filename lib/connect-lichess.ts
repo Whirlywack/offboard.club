@@ -101,13 +101,13 @@ export function startConnection(userId: string): { url: string; cookie: string }
 
 // Each way a connection can fail, as the plain message the person sees. Only these codes travel in a URL.
 export const PROBLEMS = {
-  denied: "You did not approve Offboard on Lichess, so nothing has changed. You can try again whenever you like.",
-  expired: "That attempt to connect Lichess ran out or was started in another browser. Please start again.",
+  denied: "You didn't approve Offboard on Lichess, so nothing has changed. Try again whenever you're ready.",
+  expired: "That attempt timed out, or was started in another browser. Please start again from this page.",
   // No message for a closed account: Lichess refuses a closed account's token, so that ends as "failed".
-  marked: "Lichess has marked that account for breaking its terms of service, so it cannot be connected.",
+  marked: "Lichess has marked that account for breaking its terms of service, so it can't be connected.",
   taken:
-    "That Lichess account is already connected to another Member, and a Lichess account can belong to one Member only. If you have another Lichess account, sign in to Lichess with it and try again.",
-  team: "Lichess would not add that account to the Club's Lichess team, so it has not been connected. Please try again later, and tell the Organiser if it keeps happening.",
+    "That Lichess account is already connected to another Member, and each account can belong to only one. If you have another Lichess account, sign in to Lichess with it and try again.",
+  team: "Lichess wouldn't add that account to the Club's Lichess team, so it isn't connected. Please try again later.",
   failed: "Something went wrong while talking to Lichess, so nothing has changed. Please try again in a few minutes.",
 } as const;
 export type Problem = keyof typeof PROBLEMS;

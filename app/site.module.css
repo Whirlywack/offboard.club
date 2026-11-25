@@ -1,0 +1,101 @@
+/* The frame around every page: header, then the page, then the footer. */
+
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100dvh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: min(100% - 2 * var(--gutter), var(--page));
+  margin-inline: auto;
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+}
+
+.mark {
+  flex: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--logo-ring); /* keeps the dark tile visible on a dark page */
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding-inline: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* On a phone the links lose their side padding, which keeps the name and all three on one row down to 375px. On a
+   narrower screen the links move to a row of their own under the name. */
+@media (max-width: 29.99rem) {
+  .header {
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+  }
+
+  .nav {
+    gap: var(--space-3);
+  }
+
+  .nav a {
+    padding-inline: 0;
+  }
+}
+
+.footer {
+  width: min(100% - 2 * var(--gutter), var(--page));
+  margin-inline: auto;
+  padding-block: var(--space-5) var(--space-7);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The contact link keeps to one line; the two sentences take the rest of the row */
+.contact {
+  flex: none;
+  white-space: nowrap;
+}
+
+.contact a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
+@media (min-width: 48rem) {
+  .footer {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-5);
+  }
+}

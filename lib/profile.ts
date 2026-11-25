@@ -74,10 +74,12 @@ export function readProfileForm(form: { get(name: string): unknown }): Submitted
   const position = tidy(form.get("position"));
   const link = tidy(form.get("linkedInUrl"));
   const openTo = tidy(form.get("openTo"));
-  if (characters(position) > POSITION_MAX) return `Please keep your position to ${POSITION_MAX} characters or fewer.`;
-  if (characters(openTo) > OPEN_TO_MAX) return `Please keep your “open to” line to ${OPEN_TO_MAX} characters or fewer.`;
+  if (characters(position) > POSITION_MAX)
+    return `Your position is longer than ${POSITION_MAX} characters. Please shorten it.`;
+  if (characters(openTo) > OPEN_TO_MAX)
+    return `Your “open to” line is longer than ${OPEN_TO_MAX} characters. Please shorten it.`;
   const linkedInUrl = link ? linkedInProfileUrl(link) : null;
   if (link && !linkedInUrl)
-    return "The LinkedIn link must be the address of your LinkedIn profile, such as https://www.linkedin.com/in/your-name.";
+    return "That isn't a LinkedIn profile address. It should look like linkedin.com/in/your-name.";
   return { companyWebsite: companyWebsite || null, position: position || null, linkedInUrl, openTo: openTo || null };
 }

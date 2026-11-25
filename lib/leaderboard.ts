@@ -49,15 +49,21 @@ export function seasonLeaderboard(matchdays: MatchdayResult[], excluded = new Se
   })));
 }
 
-// Named once the sixth Matchday is in. More than one Member if they finish level.
+// Whoever is first on the Season Leaderboard of the Matchdays played: more than one Member if they finish level, and
+// nobody if nobody is on it. For a Season that is over, which lib/leaderboards.ts decides, since one whose last
+// Matchday was never played ends without six.
 export function seasonChampions(matchdays: MatchdayResult[], excluded = new Set<string>()): string[] {
-  if (matchdays.length < SEASON_LENGTH) return [];
   return seasonLeaderboard(matchdays, excluded).filter((r) => r.rank === 1).map((r) => r.memberId);
 }
 
 // All-time: ranked by Matchdays played, so showing up is what counts.
 export function allTimeLeaderboard(matchdays: MatchdayResult[], excluded = new Set<string>()): Row[] {
-  return rank([...tally(matchdays, excluded)].map(([memberId, ps]) => ({ memberId, played: ps.length, score: ps.length })));
+  return rankByPlayed([...tally(matchdays, excluded)].map(([memberId, ps]) => ({ memberId, played: ps.length })));
+}
+
+// The all-time Leaderboard from each Member's count of Matchdays played, as the database counts them.
+export function rankByPlayed(counts: { memberId: string; played: number }[], excluded = new Set<string>()): Row[] {
+  return rank(counts.filter((c) => !excluded.has(c.memberId)).map(({ memberId, played }) => ({ memberId, played, score: played })));
 }
 
 // Consecutive Matchdays played up to the most recent one. `matchdays` is oldest first.
@@ -68,7 +74,7 @@ export function streak(matchdays: MatchdayResult[], memberId: string): number {
 }
 
 // Record of `me` against `them` across all Games.
-export function headToHead(games: Game[], me: string, them: string) {
+export function headToHead(games: Pick<Game, "white" | "black" | "winner">[], me: string, them: string) {
   const record = { wins: 0, draws: 0, losses: 0 };
   for (const g of games) {
     const mine = g.white === me && g.black === them ? "white" : g.black === me && g.white === them ? "black" : null;

@@ -1,0 +1,180 @@
+/* A Member's Profile, as other Members see it. */
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+@media (min-width: 30rem) {
+  .header {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-5);
+  }
+}
+
+.names {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.names h1 {
+  overflow-wrap: anywhere;
+}
+
+.position {
+  color: var(--muted);
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+}
+
+/* Label above value on a phone, side by side when there is room */
+.facts {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.facts > div {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (min-width: 36rem) {
+  .facts > div {
+    grid-template-columns: 9rem minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: baseline;
+  }
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.facts dd {
+  overflow-wrap: anywhere;
+}
+
+/* What they would welcome is what starts a conversation, so it reads a size up */
+.openTo dd {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+}
+
+.number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The Member's Games, grouped under the date of each Matchday, newest first. A record of evenings: every result is
+   written the same way, in the same colour, whichever way it went. */
+.games {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The viewer's record against the Member is something to talk about, so it reads a size up, like "Open to" */
+.together {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+  text-wrap: balance;
+}
+
+.evenings {
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.evenings > li {
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The date opens that Matchday's Recap */
+.evening a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  text-decoration: none;
+}
+
+.evening a::after {
+  content: "→" / "";
+  font-family: var(--font-text);
+  font-size: var(--text-base);
+  color: var(--muted);
+  transition:
+    transform var(--duration-hover) var(--ease-out),
+    color var(--duration-hover) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .evening a:hover::after {
+    transform: translateX(3px);
+    color: var(--ink);
+  }
+}
+
+.played {
+  list-style: none;
+}
+
+/* What happened on the left, the Game on Lichess on the right; a long name wraps under itself. Results are set like
+   the rest of the line: the names are what stand out. */
+.played li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--tap);
+  padding-block: var(--space-2);
+}
+
+/* "Show all" lands on the first Game not shown before, with the Game and the date above it still in view */
+.played li[id] {
+  scroll-margin-top: var(--space-9);
+}
+
+.played p {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.played li > a {
+  flex: none;
+  position: relative;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* A thumb-sized target around the small link, as tall as its row */
+.played li > a::before {
+  content: "";
+  position: absolute;
+  inset: calc(50% - var(--tap) / 2) calc(-1 * var(--space-2));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evening a:hover::after {
+    transform: none;
+  }
+}

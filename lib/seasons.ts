@@ -4,13 +4,14 @@
 // The Club's Telegram group is told of each change a Member would notice (#13): a Sunday skipped, or given back its
 // Matchday, and a Season's start, set by the Organiser or by the sixteenth sign-up. The notice is queued by the
 // statement that makes the change, and only when it changes something, so it is queued once however the change comes
-// about and however often it is asked for (lib/telegram.ts). Skipping a Sunday also takes back its reminders, in the
-// same statement, unless one is already being sent.
+// about and however often it is asked for, and kept or lost with the change, as in the transaction of lib/reschedule.ts.
+// Nothing here sends it: whoever made the change posts it once the change is kept (postNotice, lib/telegram.ts), and
+// failing that the next run of Posting to Telegram does.
 
 import { db, type Queryable } from "./db";
 import { addDays, firstSeasonStart, isSunday, MAX_SEASONS, matchdayStart, nextSeasonStart, seasonMatchdays, sundayAWeekAfter, vilniusDate } from "./schedule";
 import { signUpTimes } from "./signups";
-import { deliverNotice, NOTICE, postDay, postingSetUp } from "./telegram";
+import { NOTICE, postDay, postingSetUp } from "./telegram";
 
 // A post for the Telegram group, worth posting until `until`; null when Telegram is not set up or there is nothing to say.
 type Notice = { text: string; until: Date } | null;
@@ -32,19 +33,18 @@ export type Store = {
   // Leaves a Season that is already stored as it is, so of several racing callers only the first is kept.
   addSeason(season: StoredSeason, notice: Notice): Promise<void>;
   setStart(season: StoredSeason, notice: Notice): Promise<void>;
-  setSkipped(date: string, skipped: boolean, notice: Notice): Promise<void>;
+  // False when the Sunday already was so, as when another request got there first: then no notice is queued either.
+  setSkipped(date: string, skipped: boolean, notice: Notice): Promise<boolean>;
   // The dates of the Matchdays ingested so far, whose Season no change to the schedule may alter.
   ingestedDates(): Promise<string[]>;
 };
 
-// `changed` is a statement that returns a row when it changes something; the notice, its text and until the parameters
-// after the statement's own, is queued from that row. `first` is another part of the same statement, ending in a comma.
-const withNotice = (changed: string, n: number, first = "") =>
-  `with ${first}changed as (${changed} returning 1)
-   insert into "telegramPost" ("key", "text", "until") select '${NOTICE}' || gen_random_uuid()::text, $${n}, $${n + 1} from changed where $${n}::text is not null`;
-
-// The reminders of the Sunday $1 not yet claimed by a delivery (lib/post-to-telegram.ts keys them by date).
-const TAKE_BACK_REMINDERS = `reminders as (delete from "telegramPost" where "key" like 'reminder:' || to_char($1::date, 'YYYY-MM-DD') || ':%' and "claimedAt" is null), `;
+// One statement: `changed`, which returns a row when it changes something; the notice, its text and until the
+// parameters after the statement's own, queued from that row; and how many rows it changed, 0 or 1.
+const withNotice = (changed: string, n: number) =>
+  `with changed as (${changed} returning 1),
+     queued as (insert into "telegramPost" ("key", "text", "until") select '${NOTICE}' || gen_random_uuid()::text, $${n}, $${n + 1} from changed where $${n}::text is not null)
+   select count(*)::int as "changed" from changed`;
 const noticeParams = (notice: Notice) => [notice?.text ?? null, notice?.until ?? null];
 
 export const postgresStore = (q: Queryable): Store => ({
@@ -75,12 +75,11 @@ export const postgresStore = (q: Queryable): Store => ({
     );
   },
   async setSkipped(date, skipped, notice) {
-    await q.query(
-      skipped
-        ? withNotice(`insert into "skippedSunday" ("date") values ($1) on conflict do nothing`, 2, TAKE_BACK_REMINDERS)
-        : withNotice(`delete from "skippedSunday" where "date" = $1`, 2),
+    const { rows } = await q.query<{ changed: number }>(
+      withNotice(skipped ? `insert into "skippedSunday" ("date") values ($1) on conflict do nothing` : `delete from "skippedSunday" where "date" = $1`, 2),
       [date, ...noticeParams(notice)],
     );
+    return rows[0].changed === 1;
   },
   async ingestedDates() {
     const { rows } = await q.query<{ date: string }>(
@@ -215,12 +214,6 @@ const notice = (text: string, date: string): Notice => (postingSetUp() ? { text,
 const seasonNotice = (number: number, first: string) => notice(`Season ${number} starts on ${postDay(first)} at 20:00.`, first);
 const isMatchday = (schedule: Schedule, date: string) => placesIn(schedule, [date]).has(date);
 
-// Posts the notice just queued, or an older one still waiting, and nothing else: at most one request to Telegram, cut
-// off at 10 s, and three statements. It never throws: a failure leaves the change made, and the notice for the next
-// run of Posting to Telegram, which tries a refused one again and reports one Telegram may have posted.
-const announce = (now: Date) =>
-  deliverNotice(now).catch((error: Error) => void console.error("Posting a notice to Telegram failed:", error.message));
-
 async function setSkipped(date: string, skipped: boolean, now: Date, store: Store): Promise<string | null> {
   const problem = sundayProblem(date, now);
   if (problem) return problem;
@@ -233,8 +226,8 @@ async function setSkipped(date: string, skipped: boolean, now: Date, store: Stor
   const told = skipped
     ? isMatchday(before, date) && notice(`No Matchday on ${postDay(date)}.${next ? ` The next one is on ${postDay(next.date)} at 20:00.` : ""}`, date)
     : isMatchday(after, date) && notice(`${postDay(date)} has a Matchday after all, at 20:00.`, date);
-  await store.setSkipped(date, skipped, told || null);
-  if (told) await announce(now);
+  // Of two requests at once, only the first changes it, and queues its notice; the other is told so.
+  if (!(await store.setSkipped(date, skipped, told || null))) return skipped ? `${date} is already skipped.` : `${date} is not skipped.`;
   return null;
 }
 
@@ -259,6 +252,5 @@ export async function setSeasonStart(number: number, start: string, now: Date, s
   const first = findSeason(after, number)?.matchdays[0];
   const told = first !== undefined && first !== findSeason(before, number)?.matchdays[0] && seasonNotice(number, first);
   await store.setStart({ number, start }, told || null);
-  if (told) await announce(now);
   return null;
 }

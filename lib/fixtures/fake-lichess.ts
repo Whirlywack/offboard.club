@@ -1,6 +1,6 @@
 // A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, public users one at
 // a time and in bulk, joining a team and removing a member from it, revoking a token, and Swiss tournaments with their
-// results and Games, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org's
+// results and Games, created and cancelled, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org's
 // source (lila) does:
 // - a wrong team password is a 400 there, a 403 in the spec;
 // - "tosViolation" is shown to everyone except the account itself, so never on /api/account;
@@ -14,6 +14,10 @@
 //   tournaments, else 404 "You're not a leader of that team", whatever the team's page shows; its form is checked as
 //   lila's SwissForm checks it, and it must start after `now()`;
 // - a team's tournaments can be listed by exact name, creator and status;
+// - cancelling a Swiss tournament (Swiss.apiTerminate) needs a token with tournament:write, else 403 "Missing scope:
+//   tournament:write", and a tournament Lichess has, else 404; its account must be the one that created it and the
+//   tournament not finished, else 401 "This user cannot edit this swiss". One that has not started is then deleted,
+//   one under way finished (SwissApi.kill);
 // - removing a member from a team (TeamApi.kickUser) needs a token with team:lead, else 403 "Missing scope: team:lead",
 //   and a team Lichess has, else 404; its account must lead the team with the team's permission to remove members, else
 //   400 "Insufficient team permissions". Then it answers { ok: true } whoever it names, removing them only if they are
@@ -147,6 +151,17 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
       if (!token) return json({ error: "No such token" }, 401);
       const newSwiss = /^\/api\/swiss\/new\/([^/]+)$/.exec(call.path);
       if (call.method === "POST" && newSwiss) return createSwiss(call, token, decodeURIComponent(newSwiss[1]));
+      const terminate = /^\/api\/swiss\/([^/]+)\/terminate$/.exec(call.path);
+      if (call.method === "POST" && terminate) {
+        if (!token.scope.split(" ").includes("tournament:write")) return json({ error: "Missing scope: tournament:write" }, 403);
+        const swiss = fake.tournaments.get(decodeURIComponent(terminate[1]));
+        if (!swiss) return json({ error: "Not found" }, 404);
+        if (swissJson(swiss).createdBy !== token.accountId || swiss.status === "finished")
+          return json({ error: "This user cannot edit this swiss" }, 401);
+        if (swiss.status === "created") fake.tournaments.delete(swiss.id);
+        else swiss.status = "finished";
+        return json({ ok: true });
+      }
       if (call.method === "DELETE" && call.path === "/api/token") {
         token.revoked = true;
         return new Response(null, { status: 204 });

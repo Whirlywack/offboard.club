@@ -1,6 +1,6 @@
 // The Organiser's Lichess permission: the Organiser approves Offboard on Lichess with an account that leads the Club's
 // team, and the site keeps the token, sealed (lib/token-box.ts), to create each Matchday's tournament (#11), to remove
-// someone who leaves the Club from the team (#15) and, later, to cancel a tournament (#16).
+// someone who leaves the Club from the team (#15) and to cancel a tournament whose Sunday is no longer a Matchday (#16).
 //
 // The same authorization code flow with PKCE as a Member's connection (lib/connect-lichess.ts), with its own callback,
 // cookie and signature. The token is never logged, put in a URL or a cookie, or sent to the browser: the page sees
@@ -14,7 +14,7 @@ import { organiserId } from "./organiser";
 import { vilniusDate } from "./schedule";
 import { openToken, sealToken, tokenKey } from "./token-box";
 
-// tournament:write creates each Matchday's tournament, and lets #16 cancel one; team:lead removes someone who leaves the
+// tournament:write creates each Matchday's tournament, and cancels one (lib/reschedule.ts); team:lead removes someone who leaves the
 // Club from the team (lib/leaving.ts). Both were asked for from the start because a token cannot gain a scope later:
 // that would mean approving again. Lichess warns about team:lead on its approval page.
 export const ORGANISER_SCOPES = "tournament:write team:lead";
@@ -171,6 +171,9 @@ export async function tokenConnectedBy(userId: string, now: Date): Promise<strin
 // (TeamApi.kickUser: isGranted(teamId, _.Kick)), saying "Insufficient team permissions".
 export function refusedPermission(error: unknown, lichessId: string): string | null {
   if (!(error instanceof LichessError)) return null;
+  // Not the token refused, but the tournament: only the account that created a Swiss tournament may cancel it.
+  if (error.request === "POST /api/swiss/{id}/terminate" && error.detail === "This user cannot edit this swiss")
+    return `${error.message}. The likely cause: it was created with another Lichess account than ${lichessId}, and only the account that created a tournament can cancel it`;
   if (error.status === 401) return `Lichess refused the Organiser's permission, which may have been revoked on Lichess; ${RECONNECT}.`;
   const lacking = (permission: string) =>
     `${error.message}. The likely cause: ${lichessId} leads the Club's team but without the team's permission to ${permission}, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it`;

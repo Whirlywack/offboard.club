@@ -20,8 +20,8 @@ describe("the Recap addresses Proxy answers", () => {
     expect(visit("/recaps/2026-01-04")).toBeUndefined();
   });
 
-  it("runs only for a single Recap, a single Season, and the Organiser page", () => {
-    expect(config.matcher).toEqual(["/recaps/:date", "/seasons/:number", "/organiser"]);
+  it("runs only for a single Recap, a single Season, and the Organiser's pages", () => {
+    expect(config.matcher).toEqual(["/recaps/:date", "/seasons/:number", "/organiser", "/organiser/remove"]);
   });
 });
 
@@ -44,9 +44,8 @@ describe("the Season Leaderboard addresses Proxy answers", () => {
   });
 });
 
-describe("the Organiser page Proxy answers", () => {
-  const visitWith = (cookie?: string) =>
-    proxy(new NextRequest("https://offboard.test/organiser?lichess=connected", { headers: cookie ? { cookie } : {} }));
+describe.each(["/organiser?lichess=connected", "/organiser/remove?member=ana"])("the Organiser's page %s, as Proxy answers it", (path) => {
+  const visitWith = (cookie?: string) => proxy(new NextRequest(`https://offboard.test${path}`, { headers: cookie ? { cookie } : {} }));
 
   it("answers a visitor with no session cookie with Next.js's not-found page and a 404", () => {
     for (const response of [visitWith(), visitWith("theme=dark; offboard-lichess=x")]) {

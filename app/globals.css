@@ -256,9 +256,10 @@ button:disabled {
   cursor: progress;
 }
 
-/* Text fields: a plain box with a border strong enough to find */
+/* Text fields, and choices from a list: a plain box with a border strong enough to find */
 
-input:not([type="checkbox"], [type="radio"], [type="hidden"]) {
+input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+select {
   display: block;
   width: 100%;
   min-height: var(--tap);
@@ -272,7 +273,8 @@ input:not([type="checkbox"], [type="radio"], [type="hidden"]) {
   transition: border-color var(--duration-hover) ease;
 }
 
-input:not([type="checkbox"], [type="radio"], [type="hidden"]):focus-visible {
+input:not([type="checkbox"], [type="radio"], [type="hidden"]):focus-visible,
+select:focus-visible {
   outline-offset: 1px;
   border-color: var(--ink);
 }

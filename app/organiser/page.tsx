@@ -19,9 +19,11 @@ import { lichessProfileUrl, lichessSwissEditUrl, lichessSwissUrl } from "@/lib/l
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
 import { LICHESS_SECURITY_URL, organiserMessage, organiserPermission, type OrganiserPermission } from "@/lib/organiser-lichess";
+import { JOB as POST } from "@/lib/post-to-telegram";
 import { tournamentCancellations, type Cancellation } from "@/lib/reschedule";
 import { addDays, latestSunday, matchdayStart, ZONE } from "@/lib/schedule";
 import { MAX_SEASONS, nextMatchdayIn, placesIn, readSchedule, seasonDates, type Matchday, type Schedule } from "@/lib/seasons";
+import { telegramProblem } from "@/lib/telegram";
 
 // To anyone but the Organiser the page does not exist, so their tab says so, as app/not-found.tsx does.
 export async function generateMetadata(): Promise<Metadata> {
@@ -74,10 +76,11 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
   const { id } = await requireOrganiser();
   const now = new Date();
   const params = await searchParams;
-  const [permission, creating, collecting, notIn, failure, schedule, removals, cancellations, members] = await Promise.all([
+  const [permission, creating, collecting, posting, notIn, failure, schedule, removals, cancellations, members] = await Promise.all([
     organiserPermission(),
     lastRun(CREATE),
     lastRun(COLLECT),
+    lastRun(POST),
     uncollected(now),
     lastFailure(),
     readSchedule(now),
@@ -85,6 +88,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
     tournamentCancellations(),
     membersToRemove(id),
   ]);
+  const telegram = telegramProblem();
   const next = nextMatchdayIn(schedule, now);
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage(params.lichess);
@@ -100,8 +104,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <p className={ui.eyebrow}>Only you can see this page</p>
         <h1>Organiser</h1>
         <p className={ui.lede}>
-          This page shows whether the site is creating Matchdays on Lichess and collecting their results. Here you can
-          also skip a Sunday, set when a Season starts and remove a Member.
+          This page shows whether the site is creating Matchdays on Lichess, collecting their results and posting to
+          the Telegram group. Here you can also skip a Sunday, set when a Season starts and remove a Member.
         </p>
       </div>
 
@@ -139,6 +143,18 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
 
       <RemoveMember members={members} />
 
+      <section aria-labelledby="telegram" className={styles.section}>
+        <h2 id="telegram">Telegram</h2>
+        {telegram ? (
+          <Alert>{telegram}</Alert>
+        ) : (
+          <p>
+            The bot posts reminders, Recaps and notices to the group, and Members see the group&apos;s invite link on the
+            home page.
+          </p>
+        )}
+      </section>
+
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
@@ -149,6 +165,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
           run={collecting}
           now={now}
         />
+        <JobStatus title={JOBS[POST]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={posting} now={now} />
         <ResultsNotIn matchdays={notIn} now={now} />
         <LastFailure failure={failure} />
       </section>
@@ -280,7 +297,7 @@ function Unreadable({ lichessId }: { lichessId: string }) {
 const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Nothing to do", failed: "Failed" };
 
 // Each scheduled job by its name on the page, over its own part and in the last failure.
-const JOBS: Record<string, string> = { [CREATE]: "Creating Matchdays", [COLLECT]: "Collecting results" };
+const JOBS: Record<string, string> = { [CREATE]: "Creating Matchdays", [COLLECT]: "Collecting results", [POST]: "Posting to Telegram" };
 
 // A scheduled job's last run, and plainly when it has never run or has not run for over two hours. The outcome comes
 // first, in the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome

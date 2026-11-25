@@ -1,7 +1,8 @@
 // The scheduled job that collects each Matchday's results (#12), run by Vercel every five minutes on Sunday evenings and
 // every hour otherwise (vercel.json, app/api/jobs/collect-results). It looks after the latest Sunday whose 20:00 has
 // come, from then until the next Sunday's: once that Matchday's tournament has finished on Lichess, it ingests it
-// (ingestTournament), which publishes its Recap. A tournament still being played is left for a later run. A run that
+// (ingestTournament), which publishes its Recap, then posts the Recap to the Telegram group (lib/post-to-telegram.ts).
+// A tournament still being played is left for a later run. A run that
 // could not collect it records why (runJob), and the next run tries again; one Matchday is looked after for a week,
 // after which `pnpm ingest` is the way in, and the Organiser page keeps it in sight for a few weeks more (uncollected).
 //
@@ -21,6 +22,7 @@ import { db } from "./db";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { getSwiss, timeLimit } from "./lichess";
 import { ingestTournament, matchdayOn } from "./matchdays";
+import { postRecap } from "./post-to-telegram";
 import { addDays, latestSunday, matchdayStart, ZONE } from "./schedule";
 
 export const JOB = "collect-results";
@@ -94,6 +96,8 @@ async function collect(now: Date): Promise<JobRun> {
     const ingestion = await ingestTournament(id, { signal: deadline.signal });
     if (ingestion.outcome === "unchanged") return collected; // by `pnpm ingest`, in the meantime
     if (ingestion.outcome === "refused") return refusal(ingestion.problem);
+    // To the Telegram group; how that went is Posting to Telegram's to report, which tries again what failed.
+    await postRecap(date, now);
     return done(
       `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
       date,

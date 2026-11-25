@@ -527,7 +527,8 @@ describe("skipping a Sunday", () => {
     let saved = false;
     onStatement((sql) => {
       if (saved) stop();
-      saved = sql.startsWith('insert into "skippedSunday"');
+      // The skip is the statement that also queues its notice for the Telegram group (lib/seasons.ts).
+      saved = sql.includes('insert into "skippedSunday"');
     });
     await expect(skip(FIRST)).rejects.toThrow("Connection terminated unexpectedly");
     expect(skippedSundays.size).toBe(0);

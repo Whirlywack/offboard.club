@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons } from "@/lib/fake-db";
+import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
@@ -411,6 +411,7 @@ describe("the scheduled jobs on the Organiser page", () => {
   describe.each([
     ["create-matchdays", "Creating Matchdays", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
     ["collect-results", "Collecting results", "Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."],
+    ["post-to-telegram", "Posting to Telegram", "Not run yet: Vercel runs it hourly once CRON_SECRET is set."],
   ])("%s", (job, title, neverRun) => {
     const part = async () => {
       const html = await openPage();
@@ -482,6 +483,59 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-29T20:05:00.000Z">29 November 2026 at 22:05</time></dd>');
     expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
     expect(html).not.toContain("The job stopped");
+  });
+});
+
+describe("the Organiser page as a whole", () => {
+  it("has each of its parts once: the lists to act on by hand, the forms, Telegram's set-up and every scheduled job", async () => {
+    seasons.set(1, { number: 1, start: "2026-12-13" });
+    tournamentCancellations.set("PreTend9", { lichessTournamentId: "PreTend9", date: "2026-12-06", problem: "Lichess refused." });
+    teamRemovals.set("pretend--left", { lichessId: "pretend--left", at: new Date(), problem: "Lichess refused." });
+    const html = await openPage();
+    const parts = ["lichess", "cancellations", "removals", "schedule", "remove", "telegram", "jobs"].map((id) => `<h2 id="${id}">`);
+    const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure"].map((title) => `<h3>${title}</h3>`);
+    for (const part of [...parts, ...jobs]) expect([part, html.split(part).length - 1]).toEqual([part, 1]);
+  });
+});
+
+describe("Telegram on the Organiser page", () => {
+  const telegram = async () => {
+    const html = await openPage();
+    const from = html.indexOf('<h2 id="telegram">');
+    expect(from).toBeGreaterThan(0);
+    return html.slice(from, html.indexOf("</section>", from));
+  };
+  const set = { TELEGRAM_BOT_TOKEN: "a-pretend-telegram-token", TELEGRAM_GROUP_ID: "@pretend_group", TELEGRAM_INVITE_LINK: "https://t.me/+a-pretend" };
+
+  it.each([
+    [
+      "none of its settings",
+      { TELEGRAM_BOT_TOKEN: "", TELEGRAM_GROUP_ID: "", TELEGRAM_INVITE_LINK: "" },
+      "Telegram isn't set up: TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_ID and TELEGRAM_INVITE_LINK are missing or not in the form .env.example gives, so the bot posts nothing and Members aren't shown the group's invite link.",
+    ],
+    [
+      "no group",
+      { ...set, TELEGRAM_GROUP_ID: "" },
+      "Telegram isn't set up: TELEGRAM_GROUP_ID is missing or not in the form .env.example gives, so the bot posts nothing.",
+    ],
+    [
+      "an invite link that is not one",
+      { ...set, TELEGRAM_INVITE_LINK: "https://example.com/join" },
+      "Telegram isn't set up: TELEGRAM_INVITE_LINK is missing or not in the form .env.example gives, so Members aren't shown the group's invite link.",
+    ],
+  ])("says plainly what is off, and which settings are missing, with %s", async (_, settings, line) => {
+    for (const [name, value] of Object.entries(settings)) vi.stubEnv(name, value);
+    const html = await telegram();
+    expect(html).toMatch(alertSaying(line));
+    if (settings.TELEGRAM_BOT_TOKEN) expect(html).not.toContain(settings.TELEGRAM_BOT_TOKEN);
+  });
+
+  it("says what the bot does once every setting is in place, and shows none of them", async () => {
+    for (const [name, value] of Object.entries(set)) vi.stubEnv(name, value);
+    const html = await telegram();
+    expect(html).toContain("The bot posts reminders, Recaps and notices to the group");
+    expect(html).not.toContain('role="alert"');
+    for (const value of Object.values(set)) expect(html).not.toContain(value);
   });
 });
 

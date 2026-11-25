@@ -1,11 +1,12 @@
 // For tests only: the database's "user", "company", "matchday", "matchdayResult", "game", "season", "skippedSunday",
-// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval" and "tournamentCancellation" tables in memory, standing
-// in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement the app sends by its
-// full text, written out again below, and throws on any other: a condition dropped from a query in the app fails the
-// tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
+// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation" and "telegramPost" tables in
+// memory, standing in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement
+// the app sends by its full text, written out again below, and throws on any other: a condition dropped from a query in
+// the app fails the tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
 // and then runs whole, as one Postgres statement does, enforcing the keys and foreign keys of migrations/ as Postgres
 // would. A transaction (inTransaction) holds every other transaction back until it ends, and a rollback restores every
 // table as it was at its start; statements outside a transaction are not held back.
+import { randomUUID } from "node:crypto";
 import { vi } from "vitest";
 import type { Queryable } from "./db";
 
@@ -80,6 +81,17 @@ export type ScheduledJobRow = {
 export type JobFailureRow = { id: number; job: string; at: Date; matchdayDate: string | null; problem: string };
 export type TeamRemovalRow = { lichessId: string; at: Date; problem: string };
 export type TournamentCancellationRow = { lichessTournamentId: string; date: string; problem: string };
+// `order` stands for the moment it was queued: each statement here is its own transaction, and Postgres's now() is
+// later in each, even within one millisecond.
+export type TelegramPostRow = {
+  key: string;
+  text: string;
+  until: Date;
+  createdAt: Date;
+  claimedAt: Date | null;
+  sentAt: Date | null;
+  order: number;
+};
 
 export const people = new Map<string, Person>();
 export const companies = new Map<string, CompanyRow>();
@@ -93,6 +105,7 @@ export const scheduledJobs = new Map<string, ScheduledJobRow>(); // by job
 export const jobFailures = new Map<string, JobFailureRow>(); // by String(id)
 export const teamRemovals = new Map<string, TeamRemovalRow>(); // by lichessId
 export const tournamentCancellations = new Map<string, TournamentCancellationRow>(); // by lichessTournamentId
+export const telegramPosts = new Map<string, TelegramPostRow>(); // by key
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -129,12 +142,28 @@ export function addCompany(domain: string, name: string, logoUrl: string | null 
   return company;
 }
 
-const tables = { people, companies, matchdays, results, games, seasons, skippedSundays, organiserLichess, scheduledJobs, jobFailures, teamRemovals, tournamentCancellations };
+const tables = {
+  people,
+  companies,
+  matchdays,
+  results,
+  games,
+  seasons,
+  skippedSundays,
+  organiserLichess,
+  scheduledJobs,
+  jobFailures,
+  teamRemovals,
+  tournamentCancellations,
+  telegramPosts,
+};
 let lastFailureId = 0;
+let lastPostOrder = 0;
 
 export function resetDb() {
   for (const table of Object.values(tables)) table.clear();
   lastFailureId = 0;
+  lastPostOrder = 0;
   ended = Promise.resolve();
   db.query.mockClear();
   db.connect.mockClear();
@@ -179,6 +208,26 @@ function upsertMatchday(date: string, lichessTournamentId: string, ingestedAt: D
 }
 
 const sameTournamentOrNone = (row: MatchdayRow, id: string) => row.lichessTournamentId === null || row.lichessTournamentId === id;
+
+// A post queued for the Telegram group, unless its key is taken, as the primary key has it.
+function addPost(key: string, text: unknown, until: unknown) {
+  if (telegramPosts.has(key)) return answer([], 0);
+  const row = { key, text: String(text), until: new Date(until as Date), createdAt: new Date(), claimedAt: null, sentAt: null, order: ++lastPostOrder };
+  telegramPosts.set(key, row);
+  return answer([], 1);
+}
+
+// What a change to the schedule answers: how many rows it changed.
+const changedRows = (changed: 0 | 1) => answer([{ changed }]);
+
+// A change made, and its notice queued under "notice:" and a random id unless the notice is null.
+function notice(text: unknown, until: unknown) {
+  if (text !== null) addPost(`notice:${randomUUID()}`, text, until);
+  return changedRows(1);
+}
+
+// A string's match for a LIKE pattern whose only wildcard is a "%" at its end, as the app's are.
+const likePrefix = (value: string, pattern: string) => value.startsWith(pattern.replace(/%$/, ""));
 const statements: Record<string, (...params: Params) => ReturnType<typeof answer>> = {
   // getProfile
   [`select u.id, u.name, u.image, u."position", u."linkedInUrl", u."openTo", u."lichessUsername", u."lichessBlitzRating", c."domain" as "companyDomain", c."name" as "companyName", c."logoUrl" as "companyLogoUrl" from "user" u left join "company" c on c."domain" = u."companyDomain" where u.id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
@@ -532,27 +581,106 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   [`select "lichessConnectedAt" as at from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
     () => answer([...people.values()].filter(isMember).map((p) => ({ at: p.lichessConnectedAt }))),
 
-  // addSeason
-  [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing`]: (number, start) => {
-    if (seasons.has(Number(number))) return answer([], 0);
-    seasons.set(Number(number), { number: Number(number), start: sundayOnly(start, "season") });
-    return answer([], 1);
-  },
+  // --- Changes to the schedule, each queueing its notice for the Telegram group when it changes something ---
 
-  // setStart: the Organiser's start for a Season, in place of any stored before.
-  [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do update set "start" = excluded."start"`]:
-    (number, start) => {
+  // addSeason
+// --- Changes to the schedule, each queueing its notice for the Telegram group when it changes something, in the same
+  // statement, which answers how many rows it changed ---
+
+  // addSeason
+  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing returning 1), queued as (insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $3, $4 from changed where $3::text is not null) select count(*)::int as "changed" from changed`]:
+    (number, start, text, until) => {
+      if (seasons.has(Number(number))) return changedRows(0);
       seasons.set(Number(number), { number: Number(number), start: sundayOnly(start, "season") });
-      return answer([], 1);
+      return notice(text, until);
+    },
+
+  // setStart: a Season's row is changed only when its start is another.
+  [`with changed as (insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do update set "start" = excluded."start" where "season"."start" is distinct from excluded."start" returning 1), queued as (insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $3, $4 from changed where $3::text is not null) select count(*)::int as "changed" from changed`]:
+    (number, start, text, until) => {
+      if (seasons.get(Number(number))?.start === start) return changedRows(0);
+      seasons.set(Number(number), { number: Number(number), start: sundayOnly(start, "season") });
+      return notice(text, until);
     },
 
   // setSkipped
-  [`insert into "skippedSunday" ("date") values ($1) on conflict do nothing`]: (date) => {
-    if (skippedSundays.has(date)) return answer([], 0);
-    skippedSundays.set(date, { date: sundayOnly(date, "skippedSunday") });
+  [`with changed as (insert into "skippedSunday" ("date") values ($1) on conflict do nothing returning 1), queued as (insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $2, $3 from changed where $2::text is not null) select count(*)::int as "changed" from changed`]:
+    (date, text, until) => {
+      if (skippedSundays.has(date)) return changedRows(0);
+      skippedSundays.set(date, { date: sundayOnly(date, "skippedSunday") });
+      return notice(text, until);
+    },
+  [`with changed as (delete from "skippedSunday" where "date" = $1 returning 1), queued as (insert into "telegramPost" ("key", "text", "until") select 'notice:' || gen_random_uuid()::text, $2, $3 from changed where $2::text is not null) select count(*)::int as "changed" from changed`]:
+    (date, text, until) => {
+      if (!skippedSundays.delete(date)) return changedRows(0);
+      return notice(text, until);
+    },
+
+  // --- Posts to the Telegram group (lib/telegram.ts) ---
+
+  // queuePost: queued again, a post takes the new text while no delivery has claimed it.
+  [`insert into "telegramPost" ("key", "text", "until") values ($1, $2, $3) on conflict ("key") do update set "text" = excluded."text" where "telegramPost"."claimedAt" is null`]:
+    (key, text, until) => {
+      const post = telegramPosts.get(key);
+      if (!post) return addPost(key, text, until);
+      if (post.claimedAt !== null) return answer([], 0);
+      post.text = String(text);
+      return answer([], 1);
+    },
+
+  // forgetReminders: every reminder no delivery has claimed, but those like $1 when it is given.
+  [`delete from "telegramPost" where "key" like 'reminder:%' and "claimedAt" is null and ($1::text is null or "key" not like $1)`]: (keep) => {
+    const gone = [...telegramPosts.values()].filter(
+      (p) => likePrefix(p.key, "reminder:%") && p.claimedAt === null && (keep === null || !likePrefix(p.key, keep)),
+    );
+    for (const post of gone) telegramPosts.delete(post.key);
+    return answer([], gone.length);
+  },
+
+  // stuckPost: the oldest post claimed at or before $1 and never sent.
+  [`select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 order by "claimedAt", "key" limit 1`]: (before) => {
+    const post = [...telegramPosts.values()]
+      .filter((p) => p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date))
+      .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1))[0];
+    return answer(post ? [{ text: post.text }] : []);
+  },
+
+  // forgetPastPosts
+  [`delete from "telegramPost" where "until" <= $1`]: (now) => {
+    const gone = [...telegramPosts.values()].filter((p) => p.until <= new Date(now as unknown as Date));
+    for (const post of gone) telegramPosts.delete(post.key);
+    return answer([], gone.length);
+  },
+
+  // A delivery's claim: the oldest post nobody has claimed whose "until" is after $1 and whose key is like $2. Each
+  // statement here runs whole, so none can take a post another is claiming: lib/telegram.postgres.test.ts shows that of
+  // Postgres, with two connections.
+  [`update "telegramPost" set "claimedAt" = now() where "key" = (select "key" from "telegramPost" where "claimedAt" is null and "until" > $1 and "key" like $2 order by "createdAt", "key" limit 1 for update skip locked) returning "key", "text"`]:
+    (now, pattern) => {
+      const post = [...telegramPosts.values()]
+        .filter((p) => p.claimedAt === null && p.until > new Date(now as unknown as Date) && likePrefix(p.key, pattern))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.order - b.order)[0];
+      if (!post) return answer();
+      post.claimedAt = new Date();
+      return answer([{ key: post.key, text: post.text }]);
+    },
+
+  // deliverPosts, once Telegram has posted it. Only a claimed post can be sent, as the table's check has it.
+  [`update "telegramPost" set "sentAt" = now() where "key" = $1`]: (key) => {
+    const post = telegramPosts.get(key);
+    if (!post) return answer();
+    if (post.claimedAt === null) throw new Error('new row for relation "telegramPost" violates check constraint "telegramPost_check"');
+    post.sentAt = new Date();
     return answer([], 1);
   },
-  [`delete from "skippedSunday" where "date" = $1`]: (date) => answer([], skippedSundays.delete(date) ? 1 : 0),
+
+  // deliverPosts, giving back a post Telegram did not post
+  [`update "telegramPost" set "claimedAt" = null where "key" = $1`]: (key) => {
+    const post = telegramPosts.get(key);
+    if (!post) return answer();
+    post.claimedAt = null;
+    return answer([], 1);
+  },
 
   // --- The Organiser's Lichess permission (lib/organiser-lichess.ts) ---
 

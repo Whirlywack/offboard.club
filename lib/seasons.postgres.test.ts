@@ -46,17 +46,17 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await upcomingMatchday(now, store)).toEqual({ season: 1, number: 1, date: "2026-01-25", start: new Date("2026-01-25T18:00:00Z") });
     expect(await store.seasons()).toEqual([{ number: 1, start: "2026-01-25" }]);
     // A racing request's insert changes nothing.
-    await store.addSeason({ number: 1, start: "2026-02-01" });
+    await store.addSeason({ number: 1, start: "2026-02-01" }, null);
     expect(await store.seasons()).toEqual([{ number: 1, start: "2026-01-25" }]);
 
     expect(await skipSunday("2026-02-01", now, store)).toBeNull();
     // A second request finds the Sunday already skipped, by what the insert changed.
-    expect(await store.setSkipped("2026-02-01", true)).toBe(false);
+    expect(await store.setSkipped("2026-02-01", true, null)).toBe(false);
     expect(await skipSunday("2026-02-01", now, store)).toBe("2026-02-01 is already skipped.");
     expect(await store.skippedSundays()).toEqual(["2026-02-01"]);
     expect(await matchdaysOfSeason(1, now, store)).toEqual(["2026-01-25", "2026-02-08", "2026-02-15", "2026-02-22", "2026-03-01", "2026-03-08"]);
     expect(await unskipSunday("2026-02-01", now, store)).toBeNull();
-    expect(await store.setSkipped("2026-02-01", false)).toBe(false);
+    expect(await store.setSkipped("2026-02-01", false, null)).toBe(false);
     expect(await unskipSunday("2026-02-01", now, store)).toBe("2026-02-01 is not skipped.");
     expect(await store.skippedSundays()).toEqual([]);
 

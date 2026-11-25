@@ -54,6 +54,10 @@ export default function PrivacyPage() {
             links to them on Lichess.
           </li>
           <li>
+            <strong>The Club&apos;s Telegram group,</strong> whose invite link only Members see: the names of each
+            Recap&apos;s top three and Award winners, as the site&apos;s bot posts them.
+          </li>
+          <li>
             <strong>Only the Organiser,</strong> who can read everything the site keeps: your email address, IP address
             and browser, and whether Lichess has marked or closed your account.
           </li>
@@ -73,7 +77,7 @@ export default function PrivacyPage() {
         <p>
           Your Games stay in your opponents&apos; histories, against &ldquo;a former member&rdquo;, with the Game&apos;s id
           on Lichess and both ratings. An Award someone won against you stays theirs, and its Game is no longer shown. Your
-          Lichess account and its Games stay as they are.
+          Lichess account and its Games stay as they are, and so do Recaps already posted to the Telegram group.
         </p>
       </section>
 
@@ -153,6 +157,10 @@ export default function PrivacyPage() {
             <strong>Lichess</strong>, a French non-profit with servers in the EU, hosts the Matchdays, their Games and the
             Club&apos;s private team. Opening an Award&apos;s Game loads Lichess&apos;s board from lichess.org.
           </li>
+          <li>
+            <strong>Telegram</strong> runs the Club&apos;s group, which Members join if they want to, and keeps what the bot
+            posts there.
+          </li>
         </ul>
         <p>
           Vercel and Databricks are US companies, so some data may be handled in the USA. Both are certified under the
@@ -178,6 +186,7 @@ export default function PrivacyPage() {
             If you signed in but didn&apos;t finish joining: what came from LinkedIn, your sign-in records and any
             acceptances, until you choose &ldquo;Delete your account&rdquo; on the sign-up step you stopped at.
           </li>
+          <li>The site&apos;s copy of a Recap&apos;s post to the Telegram group: until the next Matchday starts.</li>
           <li>Deleted data stays in the database provider&apos;s restore history for up to 6 hours.</li>
           <li>The hosting provider&apos;s logs of requests and errors: 1 day.</li>
         </ul>

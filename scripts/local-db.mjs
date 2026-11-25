@@ -5,10 +5,12 @@
 //   pnpm db:start [--dir <dir>] [--port <port>]  Postgres in <dir> (default .local-db/, git-ignored) on 127.0.0.1, with a
 //     database named for <dir> alone, marked and migrated, and the env block in <dir>/offboard.env, from which a missing
 //     .env.local is created; an existing one is never changed. The ports come as a set, Postgres 55432 + n, the site
-//     3100 + n and the fake Lichess 8089 + n, for the first n whose three are free (or the n of --port).
+//     3100 + n, the fake Lichess 8089 + n and the fake Telegram 8189 + n, for the first n whose four are free (or the n
+//     of --port).
 //   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
 //   pnpm dev:local [--dir <dir>]  `next dev` on 127.0.0.1 at the block's site port, in the foreground, once .env.local is
-//     <dir>'s block; beside it `pnpm fake-lichess`, also in the foreground; then `pnpm seed` and `pnpm seed:cookies`.
+//     <dir>'s block; beside it `pnpm fake-lichess` and `pnpm fake-telegram`, also in the foreground; then `pnpm seed`
+//     and `pnpm seed:cookies`.
 // A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
 // `pnpm db:start --dir .local-db-tests`, which prints its address. Uses initdb and pg_ctl from PATH or /opt/homebrew/bin.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -88,23 +90,25 @@ const takenAt = (port, host) =>
   });
 const taken = async (port) => (await takenAt(port, "127.0.0.1")) || (await takenAt(port, "::1")) || (await takenAt(port));
 
-const BASE = { postgres: 55432, site: 3100, lichess: 8089 };
+const BASE = { postgres: 55432, site: 3100, lichess: 8089, telegram: 8189 };
 const SETS = 100;
 
-// The first set of ports from `port` (Postgres's) or from the first, whose three are all free.
+// The first set of ports from `port` (Postgres's) or from the first, whose four are all free.
 async function freeSet(port) {
   const first = port === undefined ? 0 : Number(port) - BASE.postgres;
   if (!Number.isInteger(first) || first < 0 || first >= SETS)
-    throw new Error(`--port must be from ${BASE.postgres} to ${BASE.postgres + SETS - 1}: the site and the fake Lichess take the ports that go with it.`);
+    throw new Error(`--port must be from ${BASE.postgres} to ${BASE.postgres + SETS - 1}: the site and the fakes take the ports that go with it.`);
   for (let n = first; n < (port === undefined ? SETS : first + 1); n++) {
-    const set = { postgres: BASE.postgres + n, site: BASE.site + n, lichess: BASE.lichess + n };
-    if (!(await taken(set.postgres)) && !(await taken(set.site)) && !(await taken(set.lichess))) return set;
+    const set = { postgres: BASE.postgres + n, site: BASE.site + n, lichess: BASE.lichess + n, telegram: BASE.telegram + n };
+    if (!(await taken(set.postgres)) && !(await taken(set.site)) && !(await taken(set.lichess)) && !(await taken(set.telegram))) return set;
   }
-  throw new Error(port === undefined ? "No set of free ports was found." : `Port ${port}, ${BASE.site + first} or ${BASE.lichess + first} is taken.`);
+  throw new Error(
+    port === undefined ? "No set of free ports was found." : `Port ${port}, ${BASE.site + first}, ${BASE.lichess + first} or ${BASE.telegram + first} is taken.`,
+  );
 }
 
 // A database name of the directory's own, so that another checkout's stale .env.local on the same ports finds nothing.
-const block = ({ postgres, site, lichess }) =>
+const block = ({ postgres, site, lichess, telegram }) =>
   [
     HEADER,
     `DATABASE_URL=postgres://offboard@127.0.0.1:${postgres}/offboard_${randomBytes(6).toString("hex")}`,
@@ -122,6 +126,12 @@ const block = ({ postgres, site, lichess }) =>
     `LICHESS_TOKEN_KEY=${randomBytes(32).toString("base64")}`,
     `CRON_SECRET=${randomBytes(32).toString("hex")}`,
     "ORGANISER_CONTACT_EMAIL=organiser@pretend.invalid",
+    "# Pretend: the bot posts to the fake Telegram, pnpm fake-telegram, which prints each post. The invite link leads to",
+    "# t.me, which has no such group.",
+    "TELEGRAM_BOT_TOKEN=pretend-telegram-bot-token",
+    "TELEGRAM_GROUP_ID=@pretend_offboard_group",
+    "TELEGRAM_INVITE_LINK=https://t.me/+pretend-invite-link",
+    `TELEGRAM_URL=http://127.0.0.1:${telegram}`,
     "NEXT_TELEMETRY_DISABLED=1",
     "",
   ].join("\n");
@@ -190,8 +200,9 @@ async function start(dir, port) {
     return say(`For the opt-in suites: ALLOW_DB_TESTS=1 DATABASE_URL=${env.DATABASE_URL} pnpm test`);
   }
   say(created ? `.env.local was created from ${dir}/offboard.env.` : ".env.local is this block already.");
-  say(`Next, each in the foreground, as a background task of your own: pnpm dev:local (${env.BETTER_AUTH_URL}) and pnpm fake-lichess (${env.LICHESS_URL}).`);
-  say("Then pnpm seed, and pnpm seed:cookies to sign in as a seeded person. pnpm db:stop stops Postgres; stop the other two yourself.");
+  const telegram = env.TELEGRAM_URL ? ` and pnpm fake-telegram (${env.TELEGRAM_URL})` : "";
+  say(`Next, each in the foreground, as a background task of your own: pnpm dev:local (${env.BETTER_AUTH_URL}), pnpm fake-lichess (${env.LICHESS_URL})${telegram}.`);
+  say("Then pnpm seed, and pnpm seed:cookies to sign in as a seeded person. pnpm db:stop stops Postgres; stop the others yourself.");
 }
 
 function stop(dir) {

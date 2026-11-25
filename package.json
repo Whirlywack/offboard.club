@@ -16,6 +16,8 @@
     "dev:local": "node scripts/local-db.mjs dev",
     "fake-lichess": "tsx --env-file-if-exists=.env.local scripts/fake-lichess.ts",
     "collect-results": "tsx --env-file-if-exists=.env.local scripts/collect-results.ts",
+    "fake-telegram": "tsx --env-file-if-exists=.env.local scripts/fake-telegram.ts",
+    "post-to-telegram": "tsx --env-file-if-exists=.env.local scripts/post-to-telegram.ts",
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "seed:cookies": "tsx --env-file-if-exists=.env.local scripts/seed.ts --cookies"
   },

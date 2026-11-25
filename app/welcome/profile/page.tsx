@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { ExternalLink } from "../../external-link";
 import { ProfileForm } from "../../profile/profile-form";
 import ui from "../../ui.module.css";
 import { SignUpSteps } from "../steps";
 import { getProfile, requireSignedUp } from "@/lib/auth";
+import { inviteLink, postingSetUp } from "@/lib/telegram";
 
 export const metadata: Metadata = { title: "Your Profile" };
 
@@ -26,7 +28,21 @@ export default function WelcomeProfile() {
   );
 }
 
-async function Step() {
+// For Members only, like the Telegram group's invite link in it. Exported for app/home.test.ts.
+export async function Step() {
   const { id } = await requireSignedUp();
-  return <ProfileForm saved={await getProfile(id)} welcome />;
+  const invite = inviteLink();
+  return (
+    <>
+      {invite && (
+        <p className={ui.prose}>
+          {postingSetUp()
+            ? "Members talk in the Club's Telegram group, where the bot also posts the Matchday reminders and Recaps."
+            : "Members talk in the Club's Telegram group."}{" "}
+          <ExternalLink href={invite}>Join the Telegram group</ExternalLink>
+        </p>
+      )}
+      <ProfileForm saved={await getProfile(id)} welcome />
+    </>
+  );
 }

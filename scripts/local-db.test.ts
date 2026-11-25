@@ -1,6 +1,6 @@
-// The local tools (scripts/local-db.mjs, seed.ts, fake-lichess.ts) refuse anything real before they touch it: a
-// database not on this machine, a checkout whose .env.local holds real settings, a Postgres db:start did not make, and
-// a database without db:start's mark. Each run of db:start here is in a temporary checkout, so that this checkout's own
+// The local tools (scripts/local-db.mjs, seed.ts, fake-lichess.ts, fake-telegram.ts, post-to-telegram.ts) refuse anything
+// real before they touch it: a database not on this machine, a checkout whose .env.local holds real settings, a Postgres
+// db:start did not make, a database without db:start's mark, and a Lichess or Telegram that is not the fake one. Each run of db:start here is in a temporary checkout, so that this checkout's own
 // .env.local, the owner's real one included, is never read or changed.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -107,6 +107,25 @@ describe("refusing before touching anything", () => {
     refuses(tsx, [script], refused, { DATABASE_URL: LOCAL });
     refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "https://fake.lichess.example" });
     refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, LICHESS_URL: "http://127.0.0.1:8089", NODE_ENV: "production" });
+  }, 30_000);
+
+  it("posting to Telegram on a real DATABASE_URL, to anything but a fake Telegram on this machine, or as of no clear time", () => {
+    const script = "scripts/post-to-telegram.ts";
+    const fake = { TELEGRAM_URL: "http://127.0.0.1:8189" };
+    refuses(tsx, [script], /^Refusing to post: DATABASE_URL's host is ep-pretend-123.*not this machine/, { DATABASE_URL: REAL, ...fake });
+    const refused = /^Refusing to post: the site does not follow TELEGRAM_URL to http:\/\/127\.0\.0\.1:<port>\./;
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, TELEGRAM_URL: "https://api.telegram.org" });
+    refuses(tsx, [script], refused, { DATABASE_URL: LOCAL, ...fake, NODE_ENV: "production" });
+    // A time without its offset could be any of three in Vilnius's year.
+    for (const args of [["--help"], ["constructor"], ["2026-11-29T10:00"], ["2026-11-29T10:00+02:00", "again"]])
+      refuses(tsx, [script, ...args], /^Usage: pnpm post-to-telegram/, { DATABASE_URL: LOCAL, ...fake });
+  }, 30_000);
+
+  it("the fake Telegram anywhere but on this machine, or with any argument", () => {
+    const script = "scripts/fake-telegram.ts";
+    refuses(tsx, [script], /^Refusing to start the fake Telegram: TELEGRAM_URL is not http:\/\/127\.0\.0\.1:<port>\./, { TELEGRAM_URL: "https://api.telegram.org" });
+    refuses(tsx, [script, "--help"], /^Usage: pnpm fake-telegram/, { TELEGRAM_URL: "http://127.0.0.1:8189" });
   }, 30_000);
 
   it("the mark CI writes on the database it seeds is db:start's", () => {

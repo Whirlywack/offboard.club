@@ -4,26 +4,12 @@ import { ExternalLink } from "../external-link";
 import ui from "../ui.module.css";
 import styles from "./awards.module.css";
 import { Replay } from "./replay";
-import { awardGameEmbedUrl, awardGameUrl, type RecapAward } from "@/lib/awards";
-
-const TITLES: Record<RecapAward["kind"], string> = {
-  biggestUpset: "Biggest upset",
-  leastTimeLeft: "Closest call",
-  fastestCheckmate: "Fastest checkmate",
-};
+import { AWARD_TITLES as TITLES, awardGameEmbedUrl, awardGameUrl, timeLeft, type RecapAward } from "@/lib/awards";
 
 // An Award's name as running text has it: "biggest upset".
 const inText = (award: RecapAward) => TITLES[award.kind].toLowerCase();
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
-
-// Time left as a clock shows it, never rounded up: under a minute in seconds to a tenth, so 2.78 seconds is "2.7
-// seconds"; from a minute up in minutes and whole seconds, so 272.34 seconds is "4:32".
-function timeLeft(centis: number) {
-  if (centis < 6000) return { n: (Math.floor(centis / 10) / 10).toFixed(1), unit: " seconds" };
-  const seconds = Math.floor(centis / 100);
-  return { n: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`, unit: "" };
-}
 
 // What the winner did, with the Award's number in it.
 function feat({ kind, value }: RecapAward): ReactNode {

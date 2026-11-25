@@ -21,6 +21,7 @@ import { cancelSwiss, timeLimit } from "./lichess";
 import { organiserToken, refusedPermission } from "./organiser-lichess";
 import { matchdayStart, ZONE } from "./schedule";
 import { placesIn, postgresStore, readSchedule, seasonDates, setSeasonStart, skipSunday, unskipSunday, type Store } from "./seasons";
+import { postNotice } from "./telegram";
 import { inTransaction } from "./transaction";
 
 // What the Organiser is told: what happened, and whether it needs them, as a refusal or a tournament to cancel by hand.
@@ -48,6 +49,10 @@ async function changeSchedule(now: Date, change: (store: Store) => Promise<Said 
   });
   if (!("stranded" in made)) return made;
   const cancelled = await cancelOnLichess(made.stranded, now);
+  // The change's notice for the Telegram group, queued in its transaction (lib/seasons.ts), now that the change is kept;
+  // after Lichess, so that Telegram cannot hold up the cancelling. It cannot fail the change, and if it is not sent now
+  // the next run of Posting to Telegram sends it.
+  await postNotice(now);
   return {
     text: [
       made.text,

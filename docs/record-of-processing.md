@@ -21,6 +21,7 @@ Members; people who signed in with LinkedIn but have not finished joining; the O
 | Results and Games | Rank, points, rating and Company per Matchday; Games: Lichess game id, players, result, status, plies, both ratings, winner's clock, finish time | `matchdayResult`; `game` | (b) contract |
 | Profiles | Company website (registrable domain, with name and logo fetched from it), position, LinkedIn profile link, "open to" line; new Companies created per day | `user.companyDomain`, `position`, `linkedInUrl`, `openTo`, `companiesCreatedOn`, `companiesCreatedThatDay`; `company` | (b) contract |
 | Public Leaderboards, Recaps, Awards and Season champion | Name, Company, place, points, Season score, Matchdays played, Awards | Read from the above | (f) the Club's visibility to people deciding whether to join (ADR 0002). A condition of membership; objecting means leaving (#34 decision) |
+| The Club's Telegram group (#13) | The names of each Recap's top three and Award winners, in the bot's post; no Company, and the reminders link to the site, not to Lichess (ADR 0002) | `telegramPost.text`, written afresh until sent; then in the group, on Telegram | (f) as the public Recap, to Members who join the group |
 | Fair play | Marked and closed flags, used to leave someone off Leaderboards and Awards unnamed | `user.lichessMarked`, `lichessClosed` | (f) honest rankings |
 | Games of someone who has left | Their side nulled; Lichess game id and both ratings stay. An Award won against them keeps its winner and shows its Game to nobody | `game` | (f) opponents' own record |
 | Removal from the Lichess team that failed | The connected Lichess id to remove by hand, when the site gave up, and why (#15) | `teamRemoval` | (f) completing the removal |
@@ -37,6 +38,7 @@ No special-category data. No decisions under Art 22. No email sent, no payments,
 | Neon, part of Databricks, Inc. | Processor (database) | Databricks DPA, incorporated by the MCSA | AWS `eu-central-1` (Frankfurt); sub-processors and support in the USA |
 | LinkedIn Ireland | Separate controller; source of sign-in data | LinkedIn API Terms and BD DPA | Members' browsers load photos from LinkedIn |
 | Lichess (association under French law) | Separate controller | None needed | EU |
+| Telegram | Separate controller for the group, which Members join by choice; the bot only posts | Telegram's terms for bots | Not stated for groups; Telegram's privacy policy (4.1) keeps the data of users who signed up in the EEA in the Netherlands |
 | Signed-in Members; the public | Recipients of what ADR 0002 shows them | — | — |
 
 ## Transfers outside the EEA
@@ -52,6 +54,7 @@ USA, through Vercel (EU-U.S. Data Privacy Framework and 2021 SCCs, Module Two) a
 | Games of someone who has left | Kept, side nulled, including through a redo of the Matchday |
 | Sessions with IP and user agent | Cookie 7 days from sign-in. The row's expiry moves on as the site is used, and the row stays until signed out or the account is deleted (expired rows are not purged) |
 | OAuth state, pending-Lichess cookie | 5 to 10 minutes |
+| A post to the Telegram group (`telegramPost`) | Until it is no longer worth posting, a Recap's until the next Matchday starts; deleted by the next hourly run after that. In the group, for as long as Telegram keeps it: leaving does not reach it |
 | A failed team removal (`teamRemoval`) | Until the Organiser has removed the account on Lichess and pressed Done on the Organiser page |
 | The Organiser's Lichess token | Until replaced or expired (one year); deleted, and revoked on Lichess, when the Organiser's account is deleted |
 | Neon restore history | 6 hours |

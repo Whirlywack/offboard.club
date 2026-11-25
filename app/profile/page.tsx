@@ -50,7 +50,8 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
         )}
         <p className={ui.muted}>
           To play with a different account, sign in to Lichess with it first, then switch here. Your Matchdays, Games and
-          Profile stay with you.
+          Profile stay with you. Your old account leaves the Club&apos;s Lichess team, unless it is one of the team&apos;s
+          leaders.
         </p>
         {problem && (
           <p role="alert" className={ui.alert}>

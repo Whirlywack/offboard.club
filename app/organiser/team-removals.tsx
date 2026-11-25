@@ -5,9 +5,9 @@ import styles from "./organiser.module.css";
 import type { TeamRemoval } from "@/lib/leaving";
 import { lichessTeamKickUrl } from "@/lib/lichess";
 
-// The Lichess accounts of people who left the Club that the site could not remove from the Club's Lichess team, oldest
-// first, each with why and a button for once the Organiser has removed it on Lichess, which forgets it. Nothing at all
-// when there are none.
+// The Lichess accounts no Member has any more, of people who left the Club or switched to another account, that the
+// site could not remove from the Club's Lichess team, oldest first, each with why and a button for once the Organiser
+// has removed it on Lichess, which forgets it. Nothing at all when there are none.
 export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
   if (removals.length === 0) return null;
   const teamId = process.env.LICHESS_TEAM_ID;
@@ -15,8 +15,8 @@ export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
     <section aria-labelledby="removals" className={styles.section}>
       <h2 id="removals">Remove from the Lichess team</h2>
       <p>
-        These people left the Club, but the site couldn&apos;t remove them from the Club&apos;s Lichess team. Remove each
-        one on Lichess, then press Done.
+        No Member uses these Lichess accounts any more, but the site couldn&apos;t remove them from the Club&apos;s
+        Lichess team. Remove each one on Lichess, then press Done.
       </p>
       {teamId && (
         <p>

@@ -32,6 +32,8 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/lib/db", () => ({ db: { query } }));
+// What the callback does once the person has been sent on is app/switching-lichess.test.ts's; here it never runs.
+vi.mock("next/server", () => ({ after: () => {} }));
 
 // --- The "user" table ---
 
@@ -75,25 +77,31 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
     const [lichessId, id] = params;
     return { rows: [...people.values()].filter((p) => p.lichessId === lichessId && p.id !== id).map(() => ({})) };
   }
-  if (/^update "user" set "lichessId" = \$2, "lichessUsername" = \$3, "lichessBlitzRating" = \$4,\s+"lichessMarked" = false, "lichessClosed" = false,\s+"lichessConnectedAt" = coalesce\("lichessConnectedAt", now\(\)\), "updatedAt" = now\(\)\s+where id = \$1$/.test(sql)) {
+  const text = sql.replace(/\s+/g, " ").trim();
+  // The save, with the account it replaced, and forgetting the new one from the Organiser's list once saved.
+  if (text === `with saved as ( update "user" u set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4, "lichessMarked" = false, "lichessClosed" = false, "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now() from (select id, "lichessId" from "user" where id = $1 for update) before where u.id = before.id returning before."lichessId" as "replaced" ), forgotten as (delete from "teamRemoval" where "lichessId" = $2 and exists (select 1 from saved)) select "replaced" from saved`) {
     const [id, lichessId, lichessUsername, lichessBlitzRating] = params as [string, string, string, number | null];
     if ([...people.values()].some((p) => p.lichessId === lichessId && p.id !== id))
       throw Object.assign(new Error('duplicate key value violates unique constraint "user_lichessId_key"'), { code: "23505" });
     const row = people.get(id);
-    if (row)
-      Object.assign(row, {
-        lichessId,
-        lichessUsername,
-        lichessBlitzRating,
-        lichessMarked: false,
-        lichessClosed: false,
-        lichessConnectedAt: row.lichessConnectedAt ?? new Date(),
-      });
-    return { rows: [], rowCount: row ? 1 : 0 };
+    if (!row) return { rows: [], rowCount: 0 };
+    const replaced = row.lichessId;
+    teamRemovals.delete(lichessId);
+    Object.assign(row, {
+      lichessId,
+      lichessUsername,
+      lichessBlitzRating,
+      lichessMarked: false,
+      lichessClosed: false,
+      lichessConnectedAt: row.lichessConnectedAt ?? new Date(),
+    });
+    return { rows: [{ replaced }], rowCount: 1 };
   }
-  // The account kept for the Organiser to remove from the team by hand, once, as lib/fake-db.ts has it.
-  if (/^insert into "teamRemoval" \("lichessId", "problem"\) values \(\$1, \$2\)\s+on conflict \("lichessId"\) do update set "at" = now\(\), "problem" = excluded\."problem"$/.test(sql)) {
+  // The account kept for the Organiser to remove from the team by hand, once, and not while anyone has it, as
+  // lib/fake-db.ts has it.
+  if (text === `insert into "teamRemoval" ("lichessId", "problem") select $1, $2 where not exists (select 1 from "user" where "lichessId" = $1) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`) {
     const [lichessId, problem] = params as [string, string];
+    if ([...people.values()].some((p) => p.lichessId === lichessId)) return { rows: [], rowCount: 0 };
     teamRemovals.set(lichessId, problem);
     return { rows: [], rowCount: 1 };
   }
@@ -101,7 +109,7 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
 }
 
 const statements = () => query.mock.calls.map(([sql]) => (sql as string).split(" ").slice(0, 2).join(" "));
-const updates = () => query.mock.calls.filter(([sql]) => (sql as string).startsWith("update"));
+const updates = () => query.mock.calls.filter(([sql]) => (sql as string).includes(`update "user"`));
 
 // --- Lichess ---
 
@@ -520,7 +528,7 @@ describe("swapping to a different Lichess account", () => {
     const after = people.get("member")!;
     expect(after).toEqual({ ...before, lichessId: "newbie", lichessUsername: "Newbie", lichessBlitzRating: null });
     expect(people.size).toBe(4);
-    expect(statements()).toEqual(["select 1", "update \"user\""]);
+    expect(statements()).toEqual(["select 1", "with saved"]);
     expect(updates()[0][1][0]).toBe("member");
     expect(lichess.team.members.has("newbie")).toBe(true);
     expect(revoked()).toBe(true);
@@ -536,19 +544,6 @@ describe("swapping to a different Lichess account", () => {
     await connectAs("newbie");
     await connectAs("bobby");
     expect(people.get("member")).toMatchObject({ lichessId: "bobby", lichessConnectedAt: at });
-  });
-
-  it("leaves the old account in the team for now", async () => {
-    lichess.team.members.add("oldie");
-    await connectAs("newbie");
-    expect(lichess.team.members.has("oldie")).toBe(true);
-    expect(apiCalls()).toEqual([
-      "POST /api/token",
-      "GET /api/account",
-      "GET /api/user/newbie",
-      "POST /team/offboard-team/join",
-      "DELETE /api/token",
-    ]);
   });
 
   it("keeps the old account when the new one is refused, and says why on the Profile edit page", async () => {

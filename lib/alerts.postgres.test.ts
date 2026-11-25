@@ -2,12 +2,12 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
-import { doneSince, done, failed, failingJobs, runJob, skipped } from "./jobs";
-import { deliverAlerts, deliverPosts, stuckPost } from "./telegram";
+import { doneSince, done, failed, failingJobs, recordFailure, runJob, skipped, workDone } from "./jobs";
+import { deliverAlerts, deliverPosts, stuckPosts } from "./telegram";
 
 // The private alerts' real SQL (#17) against the database in DATABASE_URL (migrations/011_backups_and_alerts.sql): when
-// each job last did its work, which jobs are failing, and the alerts kept apart from the group's posts in
-// "telegramPost". Inside one transaction that is always rolled back, so nothing it does is kept; inside it, it empties
+// each job last did its work, which jobs are failing, a failure a run finds recorded once, and the alerts kept apart
+// from the group's posts in "telegramPost". Inside one transaction that is always rolled back, so nothing it does is kept; inside it, it empties
 // "scheduledJob", "jobFailure" and "telegramPost". Telegram is the fake. Runs only when ALLOW_DB_TESTS=1 is set as well
 // as DATABASE_URL, and a plain `pnpm test` skips it. Run it against a local database from `pnpm db:start`, never a
 // shared or live one, before seeding: ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/alerts.postgres.test.ts
@@ -74,13 +74,41 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect((await doneSince("a-job"))!.getTime()).toBeGreaterThan(backdated!.getTime());
   });
 
-  it("lists the jobs whose last run failed, with why, and no other", async () => {
+  it("moves when a job last did its work when the job says so in a run, for that job alone", async () => {
+    await client.query(`update "scheduledJob" set "lastDoneAt" = '2026-01-01T00:00:00Z'`);
+    await workDone("a-job");
+    expect((await doneSince("a-job"))!.getTime()).toBeGreaterThan(new Date("2026-01-01T00:00:00Z").getTime());
+    expect(await doneSince("another-job")).toEqual(new Date("2026-01-01T00:00:00Z"));
+  });
+
+  it("lists the jobs whose last run failed, with why and when that run ended, and no other", async () => {
     await runJob("failing", async () => failed("It broke."));
     await runJob("fixed", async () => failed("It broke too."));
     await runJob("fixed", async () => done("Fine now."));
     await runJob("idle", async () => skipped("Nothing."));
     await client.query(`insert into "scheduledJob" ("job") values ('never-finished')`);
-    expect(await failingJobs()).toEqual([{ job: "failing", detail: "It broke." }]);
+    await client.query(`update "scheduledJob" set "lastRunAt" = '2026-02-02T02:00:00Z' where "job" = 'failing'`);
+    expect(await failingJobs()).toEqual([{ job: "failing", detail: "It broke.", at: new Date("2026-02-02T02:00:00Z") }]);
+  });
+
+  it("records a failure a run finds once since it began: not again, but for another job, problem or beginning", async () => {
+    await client.query(`delete from "jobFailure"`);
+    // Each failure begins at the test's transaction's now(), after the first and before the second.
+    const [before, after] = [new Date("2000-01-01T00:00:00Z"), LATER];
+    for (const [job, problem, since] of [
+      ["a-job", "It is lost.", before],
+      ["a-job", "It is lost.", before],
+      ["a-job", "Another is lost.", before],
+      ["another-job", "It is lost.", before],
+      ["a-job", "It is lost.", after],
+    ] as const)
+      await recordFailure(job, problem, since);
+    expect(await select(`select "job", "problem", "matchdayDate" from "jobFailure" order by "id"`)).toEqual([
+      { job: "a-job", problem: "It is lost.", matchdayDate: null },
+      { job: "a-job", problem: "Another is lost.", matchdayDate: null },
+      { job: "another-job", problem: "It is lost.", matchdayDate: null },
+      { job: "a-job", problem: "It is lost.", matchdayDate: null },
+    ]);
   });
 
   it("sends the group's posts to the group and the alerts to the Organiser, never one to the other, and reports only the group's as stuck", async () => {
@@ -95,18 +123,22 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await add("alert:newer", 1);
     await add("alert:stuck", 20, 30);
     await add("alert:being-sent", 20, 10);
+    // Claimed as long ago, and sent.
+    const claimed = new Date(NOW.getTime() - 30 * 60_000);
+    await client.query(`insert into "telegramPost" ("key", "text", "until", "claimedAt", "sentAt") values ('alert:sent', 'alert:sent', $1, $2, $2)`, [LATER, claimed]);
     expect(await deliverPosts(NOW)).toEqual({ posted: 1, failed: null });
     expect(sent()).toEqual([`${GROUP} recap:2026-11-29`]);
-    expect(await stuckPost(NOW)).toBeNull();
-    // The alert claimed half an hour ago and never sent is sent again, oldest first; the one claimed ten minutes ago is
-    // left to the delivery that may still be sending it.
+    expect(await stuckPosts(NOW)).toEqual([]);
+    // The alert claimed half an hour ago and never sent is sent again, oldest first, and the one sent is not; the one
+    // claimed ten minutes ago is left to the delivery that may still be sending it.
     expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 3, failed: null });
     expect(sent()).toEqual([`${GROUP} recap:2026-11-29`, `${CHAT} alert:stuck`, `${CHAT} alert:older`, `${CHAT} alert:newer`]);
     expect(await select(`select "key" from "telegramPost" where "sentAt" is null order by "key"`)).toEqual([{ key: "alert:being-sent" }]);
+    expect(await select(`select "claimedAt" from "telegramPost" where "key" = 'alert:sent'`)).toEqual([{ claimedAt: claimed }]);
     // A group post so claimed is never sent again, and is reported instead.
     await add("notice:stuck", 20, 30);
     expect(await deliverAlerts(CHAT, NOW)).toEqual({ posted: 0, failed: null });
     expect(await deliverPosts(NOW)).toEqual({ posted: 0, failed: null });
-    expect(await stuckPost(NOW)).toBe("notice:stuck");
+    expect((await stuckPosts(NOW)).map((post) => post.text)).toEqual(["notice:stuck"]);
   });
 });

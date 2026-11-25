@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { skipMatchday } from "./reschedule";
 import { postgresStore } from "./seasons";
-import { deliverPosts, forgetPastPosts, forgetReminders, postNotice, queuePost, stuckPost } from "./telegram";
+import { deliverPosts, forgetPastPosts, forgetReminders, postNotice, queuePost, stuckPosts } from "./telegram";
 
 // The Telegram posts' real SQL against the database in DATABASE_URL (migrations/008_telegram.sql), inside one
 // transaction that is always rolled back, so nothing it does is kept; Telegram is the fake. The migration is applied
@@ -230,15 +230,18 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await client.query("rollback to savepoint unclaimed");
   });
 
-  it("finds the oldest post claimed more than 15 minutes ago and never sent, and no other", async () => {
+  it("finds the posts claimed more than 15 minutes and less than a day ago and never sent, oldest first, and no other", async () => {
     await client.query(`delete from "telegramPost"`);
     await add("sent long ago", { claimedMinutesAgo: 30, sent: true });
     await add("stuck", { claimedMinutesAgo: 20 });
-    await add("being sent", { claimedMinutesAgo: 10 });
+    await add("stuck all day", { claimedMinutesAgo: 24 * 60 - 1 });
+    await add("let go", { claimedMinutesAgo: 24 * 60 });
+    await add("being sent", { claimedMinutesAgo: 15 - 1 / 60 });
     await add("waiting");
-    expect(await stuckPost(NOW)).toBe("stuck");
-    await client.query(`delete from "telegramPost" where "key" = 'stuck'`);
-    expect(await stuckPost(NOW)).toBeNull();
+    expect(await stuckPosts(NOW)).toEqual([
+      { text: "stuck all day", claimedAt: new Date(NOW.getTime() - (24 * 60 - 1) * MINUTE) },
+      { text: "stuck", claimedAt: new Date(NOW.getTime() - 20 * MINUTE) },
+    ]);
   });
 
   it("forgets the posts whose until has passed, and no other", async () => {

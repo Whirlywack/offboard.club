@@ -640,13 +640,21 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], gone.length);
   },
 
-  // stuckPost: the oldest post for the group claimed at or before $1 and never sent.
-  [`select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "key" not like 'alert:%' order by "claimedAt", "key" limit 1`]: (before) => {
-    const post = [...telegramPosts.values()]
-      .filter((p) => p.sentAt === null && p.claimedAt !== null && p.claimedAt <= new Date(before as unknown as Date) && !likePrefix(p.key, "alert:%"))
-      .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1))[0];
-    return answer(post ? [{ text: post.text }] : []);
-  },
+  // stuckPosts: the posts for the group claimed at or before $1 and after $2 and never sent, oldest first.
+  [`select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "claimedAt" > $2 and "key" not like 'alert:%' order by "claimedAt", "key"`]:
+    (before, after) => {
+      const posts = [...telegramPosts.values()]
+        .filter(
+          (p) =>
+            p.sentAt === null &&
+            p.claimedAt !== null &&
+            p.claimedAt <= new Date(before as unknown as Date) &&
+            p.claimedAt > new Date(after as unknown as Date) &&
+            !likePrefix(p.key, "alert:%"),
+        )
+        .sort((a, b) => a.claimedAt!.getTime() - b.claimedAt!.getTime() || (a.key < b.key ? -1 : 1));
+      return answer(posts.map((post) => ({ text: post.text, claimedAt: post.claimedAt })));
+    },
 
   // deliverAlerts: an alert claimed at or before $1 and not sent is given back.
   [`update "telegramPost" set "claimedAt" = null where "key" like 'alert:%' and "sentAt" is null and "claimedAt" <= $1`]: (before) => {
@@ -761,9 +769,29 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer(row ? [{ lastDoneAt: row.lastDoneAt }] : []);
   },
 
+  // workDone
+  [`update "scheduledJob" set "lastDoneAt" = now() where "job" = $1`]: (job) => {
+    const row = scheduledJobs.get(job);
+    if (!row) return answer([], 0);
+    row.lastDoneAt = new Date();
+    return answer([], 1);
+  },
+
   // failingJobs
-  [`select "job", "lastDetail" as "detail" from "scheduledJob" where "lastOutcome" = 'failed'`]: () =>
-    answer([...scheduledJobs.values()].filter((row) => row.lastOutcome === "failed").map((row) => ({ job: row.job, detail: row.lastDetail }))),
+  [`select "job", "lastDetail" as "detail", "lastRunAt" as "at" from "scheduledJob" where "lastOutcome" = 'failed'`]: () =>
+    answer(
+      [...scheduledJobs.values()].filter((row) => row.lastOutcome === "failed").map((row) => ({ job: row.job, detail: row.lastDetail, at: row.lastRunAt })),
+    ),
+
+  // recordFailure: only if no failure of the job with the same problem has begun at or after $3.
+  [`insert into "jobFailure" ("job", "problem") select $1, $2 where not exists (select from "jobFailure" where "job" = $1 and "problem" = $2 and "at" >= $3)`]:
+    (job, problem, since) => {
+      const recorded = [...jobFailures.values()].some((f) => f.job === job && f.problem === problem && f.at >= new Date(since as unknown as Date));
+      if (recorded) return answer([], 0);
+      const id = ++lastFailureId;
+      jobFailures.set(String(id), { id, job, at: new Date(), matchdayDate: null, problem: String(problem) });
+      return answer([], 1);
+    },
 
   // lastFailure
   [`select "job", "at", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" order by "at" desc, "id" desc limit 1`]:

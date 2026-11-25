@@ -139,7 +139,7 @@ export const ALERT = "alert:";
 //   claimed is sent by its claimer alone.
 // - A post Telegram refused, or that never reached it, is given back, and the next delivery tries it again.
 // - A post that may have been posted without Telegram saying so stays claimed and is never sent again; so does one
-//   whose delivery died while sending it (stuckPost). An alert is the exception (deliverAlerts).
+//   whose delivery died while sending it (stuckPosts). An alert is the exception (deliverAlerts).
 // - A post is not sent after its "until", as of `now`.
 async function deliverOne(group: string, now: Date, prefix: string): Promise<Delivery | null> {
   const { rows } = await db.query<{ key: string; text: string }>(
@@ -211,14 +211,19 @@ export async function forgetReminders(keep: string | null) {
 // How long a delivery may hold one post, its 10 s request included, before the post counts as stuck.
 const STUCK_MS = 15 * 60_000;
 
-// The text of the oldest post for the group claimed more than 15 minutes before `now` and never sent: Telegram may have
-// posted it without saying so, or its delivery died while sending it. Either way it is not sent again, so the Organiser
-// is asked to look at the group. Null if there is none. It stands until its "until", when a run deletes it.
-export async function stuckPost(now: Date): Promise<string | null> {
-  const { rows } = await db.query<{ text: string }>(
-    `select "text" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "key" not like 'alert:%'
-     order by "claimedAt", "key" limit 1`,
-    [new Date(now.getTime() - STUCK_MS)],
+// How long after its claim a stuck post is looked for.
+const DAY = 86_400_000;
+
+// The posts for the group claimed more than 15 minutes and less than a day before `now` and never sent, oldest first:
+// Telegram may have posted each without saying so, or its delivery died while sending it. None is sent again, so each
+// is one failure of Posting to Telegram and one alert, for the Organiser to look at the group (lib/post-to-telegram.ts,
+// lib/alerts.ts). A day after its claim it is let go: it stays as it is, claimed and never sent, so that nothing sends
+// or queues it again, until its "until" (forgetPastPosts).
+export async function stuckPosts(now: Date): Promise<{ text: string; claimedAt: Date }[]> {
+  const { rows } = await db.query<{ text: string; claimedAt: Date }>(
+    `select "text", "claimedAt" from "telegramPost" where "sentAt" is null and "claimedAt" <= $1 and "claimedAt" > $2
+     and "key" not like 'alert:%' order by "claimedAt", "key"`,
+    [new Date(now.getTime() - STUCK_MS), new Date(now.getTime() - DAY)],
   );
-  return rows[0]?.text ?? null;
+  return rows;
 }

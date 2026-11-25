@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as cronRequest } from "@/app/api/jobs/alert-organiser/route";
 import { GET as backupRequest } from "@/app/api/jobs/backup/route";
-import { addPerson, organiserLichess, resetDb, scheduledJobs, seasons, telegramPosts } from "@/lib/fake-db";
+import { addPerson, jobFailures, organiserLichess, resetDb, scheduledJobs, seasons, telegramPosts } from "@/lib/fake-db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { alertOrganiser, JOB } from "./alerts";
 import { JOB as BACKUP } from "./backup";
@@ -14,7 +14,7 @@ import { JOB as COLLECT } from "./collect-results";
 import { createUpcomingMatchday } from "./create-matchdays";
 import { done, failed, runJob, skipped } from "./jobs";
 import { postToTelegram } from "./post-to-telegram";
-import { queuePost } from "./telegram";
+import { postNotice, queuePost } from "./telegram";
 
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
@@ -33,6 +33,8 @@ let telegram: ReturnType<typeof createFakeTelegram>;
 
 const dms = () => telegram.posts.filter((post) => post.chatId === CHAT).map((post) => post.text);
 const toGroup = () => telegram.posts.filter((post) => post.chatId !== CHAT);
+// What is said of a group post Telegram may have posted.
+const lost = (text: string) => `It isn't known whether Telegram posted "${text}", so it won't be posted again. Check the group.`;
 
 // One run of a job at `now`, ending as `ends` says, with the clock at `now`.
 async function jobRun(job: string, now: Date, ends: ReturnType<typeof failed>) {
@@ -136,6 +138,62 @@ describe("a scheduled job's failure", () => {
     await jobRun(COLLECT, SUNDAY, failed(`The job stopped: password authentication failed for user "neon+owner" with a/pretend@password.`));
     await alertAt(SUNDAY);
     expect(dms()).toEqual(['Collecting results: The job stopped: password authentication failed for user "[hidden]" with [hidden].']);
+  });
+});
+
+describe("a post to the group Telegram may have posted", () => {
+  const NOTICE = "No Matchday on Sunday 6 December. The next one is on Sunday 13 December at 20:00.";
+  const ALERTED = `Posting to Telegram: ${lost(NOTICE)}`;
+  const badGateway = (call: { params: Record<string, unknown> }) => (call.params.chat_id === GROUP ? new Response("Bad Gateway", { status: 502 }) : undefined);
+  const at = (hours: number) => new Date(SUNDAY.getTime() + hours * HOUR);
+  const postAt = async (now: Date) => {
+    vi.setSystemTime(now);
+    return postToTelegram(now);
+  };
+  // Posting to Telegram and the alerts each hour, in either order, for two days from `hours`; then a week, a month and
+  // a year on.
+  const later = async (hours: number) => {
+    for (let hour = hours; hour <= hours + 48; hour++) {
+      if (hour % 2) await postAt(at(hour));
+      await alertAt(at(hour));
+      if (!(hour % 2)) await postAt(at(hour));
+    }
+    for (const days of [7, 30, 365]) await alertAt(at(hours + days * 24));
+  };
+
+  beforeEach(async () => {
+    await queuePost({ key: "notice:a", text: NOTICE, until: new Date("2099-01-01T00:00:00Z") });
+  });
+
+  it("reaches the Organiser once, from the run that sent it and those after it, in one failure", async () => {
+    telegram.override = badGateway;
+    expect(await postAt(at(0))).toMatchObject({ outcome: "failed", detail: lost(NOTICE) });
+    telegram.override = undefined;
+    await later(0);
+    expect(dms()).toEqual([ALERTED]);
+    expect([...jobFailures.values()].map((f) => f.problem)).toEqual([lost(NOTICE)]);
+  });
+
+  it("reaches the Organiser once when it went out from elsewhere, as a change's notice does, in one failure", async () => {
+    telegram.override = badGateway;
+    vi.setSystemTime(at(0));
+    await postNotice(at(0));
+    telegram.override = undefined;
+    await alertAt(new Date(at(0).getTime() + 14 * MINUTE));
+    expect(dms()).toEqual([]);
+    await later(1);
+    expect(dms()).toEqual([ALERTED]);
+    expect([...jobFailures.values()].map((f) => `${f.job} ${f.problem}`)).toEqual([`post-to-telegram ${lost(NOTICE)}`]);
+  });
+
+  it("reaches the Organiser once though the run that sent it ended after the alerts' run began", async () => {
+    telegramPosts.get("notice:a")!.claimedAt = new Date(at(0).getTime() + 500);
+    await jobRun("post-to-telegram", new Date(at(0).getTime() + 1000), failed(lost(NOTICE)));
+    await alertAt(at(0));
+    expect(dms()).toEqual([ALERTED]);
+    await postAt(at(0.5));
+    for (const hours of [24, 25]) await alertAt(at(hours));
+    expect(dms()).toEqual([ALERTED]);
   });
 });
 
@@ -253,7 +311,7 @@ describe("sending", () => {
     expect(dms().at(-1)).toBe("Collecting results: Couldn't collect the results of Sunday 29 November: another thing.");
   });
 
-  it("sends an alert whose run died after claiming it, once 15 minutes have passed, and never touches a group post so claimed", async () => {
+  it("sends an alert whose run died after claiming it, once 15 minutes have passed, and never sends a group post so claimed", async () => {
     await queuePost({ key: "alert:lost", text: "Your Lichess permission ended on 25 November 2027.", until: new Date(SUNDAY.getTime() + DAY) });
     await queuePost({ key: "recap:2026-11-29", text: "A Recap.", until: new Date(SUNDAY.getTime() + DAY) });
     // Claimed by a run that died before it sent them.
@@ -261,7 +319,8 @@ describe("sending", () => {
     await alertAt(new Date(SUNDAY.getTime() + 14 * MINUTE));
     expect(dms()).toEqual([]);
     await alertAt(new Date(SUNDAY.getTime() + 15 * MINUTE));
-    expect(dms()).toEqual(["Your Lichess permission ended on 25 November 2027."]);
+    // The group post is the Organiser's to look for.
+    expect(dms()).toEqual(["Your Lichess permission ended on 25 November 2027.", `Posting to Telegram: ${lost("A Recap.")}`]);
     expect(telegramPosts.get("recap:2026-11-29")).toMatchObject({ claimedAt: SUNDAY, sentAt: null });
   });
 

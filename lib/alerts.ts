@@ -9,6 +9,8 @@
 //   at once. A job that failed and recovered between two runs, such as Collecting results while Lichess was slow for a
 //   few minutes, is not alerted: there is nothing left to do. This job's own failures are failures to send an alert, so
 //   the Organiser page shows them and no alert is made of them.
+// - A post to the group that Telegram may have posted without saying so (lib/telegram.ts, stuckPosts): once, in the
+//   words of Posting to Telegram's failure for it, as it is looked for only in the day after it was sent.
 // - No backup having been made for two days, while backups are set up: once a day until one is.
 // - The Organiser's Lichess permission: 30 days before it ends, 7 days before, and on the day it ends. One revoked on
 //   Lichess shows when Creating Matchdays next uses it, as that job's failure.
@@ -21,9 +23,9 @@ import { JOB as COLLECT } from "./collect-results";
 import { JOB as CREATE } from "./create-matchdays";
 import { done, doneSince, failed, failingJobs, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { organiserPermission, type OrganiserPermission } from "./organiser-lichess";
-import { JOB as POST } from "./post-to-telegram";
+import { lostPost, JOB as POST } from "./post-to-telegram";
 import { ZONE } from "./schedule";
-import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, groupId, queuePost, sendMessage, type Delivery } from "./telegram";
+import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, groupId, queuePost, sendMessage, stuckPosts, type Delivery } from "./telegram";
 
 export const JOB = "alert-organiser";
 
@@ -114,7 +116,11 @@ async function alert(now: Date): Promise<JobRun> {
   const chat = organiserChat();
   if (!botSetUp() || !chat) return skipped(alertsProblem()!);
   const aDay = new Date(now.getTime() + DAY);
-  for (const { job, detail } of await failingJobs()) if (job !== JOB) await queueAlert(`${JOB_TITLES[job] ?? job}: ${detail}`, aDay);
+  // A failure's alert is worth sending for a day from now, or from the failed run's end if that came after: the alert of
+  // a lost post must outlast the day in which the post is looked for (stuckPosts), or it would be queued again.
+  for (const { job, detail, at } of await failingJobs())
+    if (job !== JOB) await queueAlert(`${JOB_TITLES[job] ?? job}: ${detail}`, new Date(Math.max(aDay.getTime(), at.getTime() + DAY)));
+  for (const { text } of await stuckPosts(now)) await queueAlert(`${JOB_TITLES[POST]}: ${lostPost(text)}`, aDay);
   const since = await doneSince(BACKUP);
   if (!backupProblem() && since && now.getTime() - since.getTime() > 2 * DAY)
     await queueAlert(`Backing up: no backup of the database has been made since ${day(since)}.`, aDay);

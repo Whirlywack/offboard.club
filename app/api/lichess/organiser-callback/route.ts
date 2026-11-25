@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { requireOrganiser } from "@/lib/auth";
 import { clearedPendingCookie } from "@/lib/connect-lichess";
 import { finishOrganiserConnection, ORGANISER_FLOW } from "@/lib/organiser-lichess";
@@ -15,6 +15,12 @@ export async function GET(request: Request) {
   const pending = jar.get(ORGANISER_FLOW.cookie)?.value;
   // Single use: cleared before anything else, whatever happens next.
   jar.delete(clearedPendingCookie(ORGANISER_FLOW));
-  const organiser = await requireOrganiser();
+  // A session that cannot be read, as when the database cannot be reached, sends the Organiser back saying it didn't
+  // work, not to an empty error.
+  const organiser = await requireOrganiser().catch((error: unknown) => {
+    unstable_rethrow(error);
+    console.error("Coming back from Lichess, the session could not be read:", error instanceof Error ? error.message : error);
+    redirect("/organiser?lichess=failed");
+  });
   redirect(await finishOrganiserConnection(organiser, new URL(request.url).searchParams, pending));
 }

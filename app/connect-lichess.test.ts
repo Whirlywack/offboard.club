@@ -30,6 +30,10 @@ vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);
   },
+  // As Next.js's: passes on what redirect throws, and nothing else.
+  unstable_rethrow: (error: unknown) => {
+    if (error instanceof Error && error.message.startsWith("redirect ")) throw error;
+  },
 }));
 vi.mock("@/lib/db", () => ({ db: { query } }));
 // What the callback does once the person has been sent on is app/switching-lichess.test.ts's; here it never runs.
@@ -320,6 +324,16 @@ describe("coming back from Lichess", () => {
     signedIn = "unwelcomed";
     expect(await arrive(back)).toBe("/welcome");
     expect(lichess.calls).toEqual([]);
+  });
+
+  it("sends the person back to the connect step, told it didn't work, when the session cannot be read", async () => {
+    const back = await approveOnLichess(await pressConnect(), "bobby");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    expect(await arrive(back)).toBe("/welcome/lichess?lichess=failed");
+    expect(lichess.calls).toEqual([]);
+    expect(jar.values.size).toBe(0);
+    expect(logged).toHaveBeenCalledWith("Coming back from Lichess, the session could not be read:", "Connection terminated due to connection timeout");
   });
 
   describe("refuses an attempt it did not start in this browser, without asking Lichess anything", () => {

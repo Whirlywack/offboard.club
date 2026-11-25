@@ -38,6 +38,10 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("not found");
   },
+  // As Next.js's: passes on what redirect and notFound throw, and nothing else.
+  unstable_rethrow: (error: unknown) => {
+    if (error instanceof Error && /^(redirect |not found$)/.test(error.message)) throw error;
+  },
 }));
 vi.mock("next/server", () => ({ after: (task: () => Promise<unknown>) => void afterwards.push(task) }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));

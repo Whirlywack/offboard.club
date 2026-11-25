@@ -144,7 +144,8 @@ describe("the Matchday under way on the home page", () => {
 // database, every call reads it, so a session cannot be read for a visitor with no session cookie either: only someone
 // with the cookie is signed in, and must not be offered to sign in again.
 describe("the signed-in panel on the home page", () => {
-  const you = async () => renderToStaticMarkup((await You()) as ReactElement);
+  const you = async (query: Record<string, string> = {}) =>
+    renderToStaticMarkup((await You({ searchParams: Promise.resolve(query) })) as ReactElement);
   const unreadable = () => getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
 
   it("says plainly that the sign-in cannot be checked when a signed-in person's session cannot be read", async () => {
@@ -161,5 +162,12 @@ describe("the signed-in panel on the home page", () => {
     const html = await you();
     expect(html).toContain("Sign in with LinkedIn");
     expect(html).not.toContain("can&#x27;t be checked");
+  });
+
+  it("says that signing in isn't working, beside the button, to someone Better Auth failed coming back from LinkedIn", async () => {
+    expect(await you()).not.toContain("isn&#x27;t working");
+    const html = await you({ signin: "failed" });
+    expect(html).toContain("LinkedIn sign-in isn&#x27;t working right now. Please try again in a few minutes.");
+    expect(html).toContain("Sign in with LinkedIn");
   });
 });

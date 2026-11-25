@@ -39,6 +39,10 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("not found");
   },
+  // As Next.js's: passes on what redirect and notFound throw, and nothing else.
+  unstable_rethrow: (error: unknown) => {
+    if (error instanceof Error && /^(redirect |not found$)/.test(error.message)) throw error;
+  },
 }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
@@ -181,6 +185,15 @@ describe("who the Organiser is", () => {
     await expect(openPage()).rejects.toThrow("not found");
     await expect(connectOrganiserLichess()).rejects.toThrow("not found");
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("is sent back to the Organiser page, told it didn't work, when the session cannot be read at the callback", async () => {
+    const back = await approveOnLichess(await pressConnect(), "boss");
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    expect(await arrive(back)).toBe("/organiser?lichess=failed");
+    expect(lichess.calls).toEqual([]);
+    expect(jar.values.size).toBe(0);
+    expect(logged).toContain("Coming back from Lichess, the session could not be read: Connection terminated due to connection timeout");
   });
 
   it("is not found at the callback by anyone else, who cannot finish an attempt there", async () => {

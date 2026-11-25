@@ -414,6 +414,6 @@ describe("the list of Recaps", () => {
   });
 
   it("is linked from the home page", () => {
-    expect(renderToStaticMarkup(Home())).toContain('href="/recaps"');
+    expect(renderToStaticMarkup(Home({ params: Promise.resolve({}), searchParams: Promise.resolve({}) }))).toContain('href="/recaps"');
   });
 });

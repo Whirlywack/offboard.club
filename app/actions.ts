@@ -2,7 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed } from "@/lib/auth";
+import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed, SIGN_IN_FAILED } from "@/lib/auth";
 import { companyForWebsite } from "@/lib/companies";
 import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect-lichess";
 import { consentProblem, mustWelcome } from "@/lib/consent";
@@ -23,7 +23,7 @@ export async function signIn(): Promise<string> {
   } catch (error) {
     console.error("LinkedIn sign-in could not start", error);
   }
-  if (!url) return "LinkedIn sign-in isn't working right now. Please try again in a few minutes.";
+  if (!url) return SIGN_IN_FAILED;
   redirect(url);
 }
 

@@ -12,6 +12,9 @@ import type { Profile } from "./profile";
 // Until the Organiser supplies LinkedIn credentials, sign-in says so instead of failing.
 export const linkedInConfigured = Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
 
+// What the sign-in form says when signing in fails on the site's side, going to LinkedIn or coming back.
+export const SIGN_IN_FAILED = "LinkedIn sign-in isn't working right now. Please try again in a few minutes.";
+
 // Nothing uses a LinkedIn token after sign-in, so none is kept: Better Auth would otherwise store the
 // ID token (email, name and photo) in plain text.
 const withoutLinkedInTokens = async (account: { providerId?: string }) =>

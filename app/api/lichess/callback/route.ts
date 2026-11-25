@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { requireWelcomed } from "@/lib/auth";
 import { clearedPendingCookie, finishConnection, PENDING_COOKIE, REMOVED_BY_MS } from "@/lib/connect-lichess";
@@ -19,7 +19,13 @@ export async function GET(request: Request) {
   const pending = jar.get(PENDING_COOKIE)?.value;
   // Single use: cleared before anything else, whatever happens next.
   jar.delete(clearedPendingCookie());
-  const person = await requireWelcomed();
+  // A session that cannot be read, as when the database cannot be reached, sends the person back to the connect step
+  // saying it didn't work, not to an empty error.
+  const person = await requireWelcomed().catch((error: unknown) => {
+    unstable_rethrow(error);
+    console.error("Coming back from Lichess, the session could not be read:", error instanceof Error ? error.message : error);
+    redirect("/welcome/lichess?lichess=failed");
+  });
   const { to, replaced } = await finishConnection(person, new URL(request.url).searchParams, pending);
   // The account a switch replaced is removed from the Club's Lichess team after the person has been sent on, so that
   // Lichess cannot keep them waiting or undo the switch.

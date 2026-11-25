@@ -6,8 +6,9 @@ import { signIn } from "./actions";
 import styles from "./home.module.css";
 import ui from "./ui.module.css";
 
-export function SignIn() {
-  const [problem, action, pending] = useActionState(signIn, "");
+// `shown` is a problem to show before the button is pressed.
+export function SignIn({ problem: shown }: { problem: string }) {
+  const [problem, action, pending] = useActionState(signIn, shown);
   return (
     <form action={action} className={`${styles.signIn} ${ui.arrive}`}>
       <button disabled={pending} aria-describedby="linkedin-notice">

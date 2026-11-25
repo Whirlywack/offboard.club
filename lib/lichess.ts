@@ -9,10 +9,13 @@
 export const USER_AGENT = "offboard.club (https://offboard.club)";
 export const RATE_LIMIT_WAIT_MS = 60_000;
 const TIMEOUT_MS = 30_000;
+// Why a request failed when Lichess gave no answer at all: the network, or Lichess down.
+const UNREACHABLE = "Lichess couldn't be reached";
 
-// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org.
-const base = () =>
-  (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || "https://lichess.org";
+// LICHESS_URL points development and tests at a fake Lichess; production always talks to lichess.org. The fake's
+// address while it is followed, or null.
+export const fakeLichessUrl = () => (process.env.NODE_ENV !== "production" && process.env.LICHESS_URL) || null;
+const base = () => fakeLichessUrl() ?? "https://lichess.org";
 
 export const lichessUrl = (path: string) => new URL(path, base());
 
@@ -80,19 +83,21 @@ async function attempt<T>(
   { method = "GET", token, form, text, accept = "application/json", timeoutMs = TIMEOUT_MS, signal }: Options,
   read: (response: Response) => Promise<T> | T,
 ): Promise<T> {
-  const limit = timeLimit(timeoutMs, `Lichess did not answer ${method} ${path} within ${timeoutMs / 1000} s`, signal);
+  const url = lichessUrl(path);
   const headers: Record<string, string> = { "User-Agent": USER_AGENT, Accept: accept };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (text !== undefined) headers["Content-Type"] = "text/plain";
+  const body = form ? new URLSearchParams(form) : text;
+  const limit = timeLimit(timeoutMs, `Lichess did not answer ${method} ${path} within ${timeoutMs / 1000} s`, signal);
   try {
-    const response = await fetch(lichessUrl(path), {
-      method,
-      headers,
-      body: form ? new URLSearchParams(form) : text,
+    let response: Response;
+    try {
       // A redirect would carry the token somewhere unchecked; Lichess's API does not redirect.
-      redirect: "manual",
-      signal: limit.signal,
-    });
+      response = await fetch(url, { method, headers, body, redirect: "manual", signal: limit.signal });
+    } catch (error) {
+      // Given up on, it says why; otherwise no answer came at all, which fetch reports only as "fetch failed".
+      throw limit.signal.aborted ? error : new Error(UNREACHABLE);
+    }
     try {
       return await unlessAborted(Promise.resolve(read(response)), limit.signal);
     } finally {

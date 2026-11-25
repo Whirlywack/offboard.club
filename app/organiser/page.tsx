@@ -7,14 +7,15 @@ import { connectOrganiserLichess } from "./actions";
 import { ConnectButton } from "./connect-button";
 import styles from "./organiser.module.css";
 import { getSession, requireOrganiser } from "@/lib/auth";
-import { dueFrom, JOB, OVERDUE_MS } from "@/lib/create-matchdays";
+import { JOB as COLLECT, lastTryAt, uncollected, type Uncollected } from "@/lib/collect-results";
+import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
-import { lastFailure, lastRun, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
+import { lastFailure, lastRun, OVERDUE_MS, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
 import { lichessProfileUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
 import { LICHESS_SECURITY_URL, organiserMessage, organiserPermission, type OrganiserPermission } from "@/lib/organiser-lichess";
-import { ZONE } from "@/lib/schedule";
+import { latestSunday, matchdayStart, ZONE } from "@/lib/schedule";
 import { upcomingMatchday, type Matchday } from "@/lib/seasons";
 
 // To anyone but the Organiser the page does not exist, so their tab says so, as app/not-found.tsx does.
@@ -41,8 +42,10 @@ const DATE_TIME = { ...DATE, hour: "2-digit", minute: "2-digit" } as const;
 const WEEKDAY = { weekday: "long", day: "numeric", month: "long" } as const;
 const MATCHDAY = { ...WEEKDAY, hour: "2-digit", minute: "2-digit" } as const; // as the home page shows it
 
-const Time = ({ at, as = DATE }: { at: Date; as?: Intl.DateTimeFormatOptions }) => (
-  <time dateTime={at.toISOString()}>{format(at, as)}</time>
+const Time = ({ at, as = DATE, className }: { at: Date; as?: Intl.DateTimeFormatOptions; className?: string }) => (
+  <time dateTime={at.toISOString()} className={className}>
+    {format(at, as)}
+  </time>
 );
 
 const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -61,7 +64,14 @@ const Alert = ({ children }: { children: ReactNode }) => (
 async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "searchParams">) {
   await requireOrganiser();
   const now = new Date();
-  const [permission, run, failure, next] = await Promise.all([organiserPermission(), lastRun(JOB), lastFailure(), upcomingMatchday(now)]);
+  const [permission, creating, collecting, notIn, failure, next] = await Promise.all([
+    organiserPermission(),
+    lastRun(CREATE),
+    lastRun(COLLECT),
+    uncollected(now),
+    lastFailure(),
+    upcomingMatchday(now),
+  ]);
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage((await searchParams).lichess);
   const secretProblem = cronSecretProblem();
@@ -75,8 +85,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <p className={ui.eyebrow}>Only you can see this page</p>
         <h1>Organiser</h1>
         <p className={ui.lede}>
-          The site creates each Matchday on Lichess six days ahead, with the Lichess account you connect here. This page
-          shows whether that&apos;s working.
+          This page shows whether the site is creating Matchdays on Lichess and collecting their results.
         </p>
       </div>
 
@@ -104,7 +113,14 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
       <section aria-labelledby="jobs" className={styles.section}>
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
-        <CreatingMatchdays run={run} now={now} />
+        <JobStatus title={JOBS[CREATE]} neverRun="Not run yet: Vercel runs it hourly once CRON_SECRET is set." run={creating} now={now} />
+        <JobStatus
+          title={JOBS[COLLECT]}
+          neverRun="Not run yet: Vercel runs it at least hourly once CRON_SECRET is set."
+          run={collecting}
+          now={now}
+        />
+        <ResultsNotIn matchdays={notIn} now={now} />
         <LastFailure failure={failure} />
       </section>
 
@@ -232,41 +248,77 @@ function Unreadable({ lichessId }: { lichessId: string }) {
   );
 }
 
-const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Skipped", failed: "Failed" };
+const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Nothing to do", failed: "Failed" };
 
-function CreatingMatchdays({ run, now }: { run: LastRun | null; now: Date }) {
+// Each scheduled job by its name on the page, over its own part and in the last failure.
+const JOBS: Record<string, string> = { [CREATE]: "Creating Matchdays", [COLLECT]: "Collecting results" };
+
+// A scheduled job's last run, and plainly when it has never run or has not run for over two hours. The outcome comes
+// first, in the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome
+// and a late last run are flagged where they stand, and explained in an alert below. A run that went well keeps its
+// sentence quiet.
+function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: string; run: LastRun | null; now: Date }) {
+  const late = run !== null && now.getTime() - run.at.getTime() > OVERDUE_MS;
   return (
     <div className={styles.part}>
-      <h3>Creating Matchdays</h3>
+      <h3>{title}</h3>
       {run ? (
         <>
           <dl className={styles.facts}>
-            <Fact label="Last run">
-              <Time at={run.at} as={DATE_TIME} />
-            </Fact>
             <Fact label="Outcome">
-              {run.outcome === "failed" ? <span className={styles.failed}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
+              {run.outcome === "failed" ? <span className={styles.flagged}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
+            </Fact>
+            <Fact label="Last run">
+              <Time at={run.at} as={DATE_TIME} className={late ? styles.flagged : undefined} />
             </Fact>
           </dl>
-          <p className={styles.detail}>{run.detail}</p>
-          {now.getTime() - run.at.getTime() > OVERDUE_MS && (
+          {run.outcome === "failed" ? (
+            <Alert>{run.detail}</Alert>
+          ) : (
+            <p className={styles.detail}>{run.detail}</p>
+          )}
+          {late && (
             <Alert>
-              The last run was more than two hours ago, though the job runs every hour, so runs aren&apos;t getting
-              through. Check that CRON_SECRET is set on Vercel and that the project&apos;s cron jobs are enabled.
+              It hasn&apos;t run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are
+              enabled.
             </Alert>
           )}
         </>
       ) : (
-        <Alert>
-          Creating Matchdays has never run. Vercel runs it every hour once the site is deployed with CRON_SECRET set.
-          Until it runs, no Matchday is created.
-        </Alert>
+        <Alert>{neverRun}</Alert>
       )}
     </div>
   );
 }
 
-// The most recent failure of any scheduled job, as of when it began: a problem that stands for days is one failure.
+// The Matchdays of the last eight Sundays played on Lichess whose results are not in (lib/collect-results.ts), so that
+// one Collecting results has stopped looking after stays in sight. Nothing when there are none.
+function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date }) {
+  if (matchdays.length === 0) return null;
+  const latest = latestSunday(now);
+  return (
+    <div className={styles.part}>
+      <h3>Results not in</h3>
+      <ul className={styles.list}>
+        {matchdays.map(({ date, lichessTournamentId }) => (
+          <li key={date}>
+            <Time at={matchdayStart(date)} as={WEEKDAY} className={styles.when} />{" "}
+            {date === latest ? (
+              <>
+                Collecting results checks it until <Time at={lastTryAt(date)} as={MATCHDAY} />.
+              </>
+            ) : (
+              <>No longer checked. If Lichess still has its tournament, run pnpm ingest {lichessTournamentId}.</>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// The most recent failure of any scheduled job, which job it was and when it began: a problem that stands for days is
+// one failure.
 function LastFailure({ failure }: { failure: Failure | null }) {
   return (
     <div className={styles.part}>
@@ -274,6 +326,7 @@ function LastFailure({ failure }: { failure: Failure | null }) {
       {failure ? (
         <>
           <dl className={styles.facts}>
+            <Fact label="Job">{JOBS[failure.job] ?? failure.job}</Fact>
             <Fact label="Began">
               <Time at={failure.at} as={DATE_TIME} />
             </Fact>
@@ -281,7 +334,7 @@ function LastFailure({ failure }: { failure: Failure | null }) {
           <p className={styles.detail}>{failure.problem}</p>
         </>
       ) : (
-        <p className={ui.muted}>No scheduled job has failed.</p>
+        <p className={styles.detail}>No job has failed.</p>
       )}
     </div>
   );

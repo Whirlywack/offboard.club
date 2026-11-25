@@ -528,12 +528,13 @@ describe("db:start in a folder it has used before", () => {
     expect(again.status, again.stderr).toBe(0);
     expect(again.stdout).toContain(`${dir} was made by Postgres 9, which Postgres ${major} cannot open, so it was made again, empty.`);
     expect(readFileSync(join(dir, "PG_VERSION"), "utf8").trim()).toBe(major);
-    expect(blockIn(dir)).toBe(block);
-    const { rows, marked } = await query(databaseUrl(block), "select to_regclass('left_behind') as table, (select count(*)::int from schema_migrations) as migrations");
+    // The same database and secrets; its ports may have moved, should another worktree have taken them meanwhile.
+    expect(blockIn(dir).replace(/:\d+\b/g, ":<port>")).toBe(block.replace(/:\d+\b/g, ":<port>"));
+    const { rows, marked } = await query(databaseUrl(blockIn(dir)), "select to_regclass('left_behind') as table, (select count(*)::int from schema_migrations) as migrations");
     expect([rows, marked]).toEqual([[{ table: null, migrations: readdirSync("migrations").length }], true]);
   }, 60_000);
 
-  it("makes a folder made to sort or keep time otherwise again, empty, sorting by ICU's en-US in UTC", async () => {
+  it("makes a folder made to sort or keep time otherwise again, empty, sorting by ICU's en-US, punctuation shifted, in UTC", async () => {
     const block = blockIn(dir);
     await query(databaseUrl(block), "create table left_behind ()");
     expect(tool(root, "stop").status).toBe(0);
@@ -543,8 +544,8 @@ describe("db:start in a folder it has used before", () => {
     expect(again.stdout).toContain(`${dir} was made to sort or keep time otherwise than CI's database does, so it was made again, empty.`);
     const sql = `select d.datlocprovider as provider, to_jsonb(d) ->> (case when current_setting('server_version_num')::int >= 170000 then 'datlocale' else 'daticulocale' end) as locale,
       current_setting('TimeZone') as zone, to_regclass('left_behind') as table from pg_database d where d.datname = current_database()`;
-    expect((await query(databaseUrl(block), sql)).rows).toEqual([{ provider: "i", locale: "en-US", zone: "UTC", table: null }]);
-    expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/--locale-provider=icu --icu-locale=en-US .* TZ=UTC\n$/);
+    expect((await query(databaseUrl(blockIn(dir)), sql)).rows).toEqual([{ provider: "i", locale: "en-US-u-ka-shifted", zone: "UTC", table: null }]);
+    expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/--locale-provider=icu --icu-locale=en-US-u-ka-shifted .* TZ=UTC\n$/);
   }, 60_000);
 
   it("dev:local runs the site, which is listed and stopped with the server it started", async () => {

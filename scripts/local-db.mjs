@@ -10,7 +10,8 @@
 //     free set, and its block, and .env.local when that is <dir>'s block, are
 //     rewritten to match; any other .env.local is never changed. The Postgres is of CI's major version (the image in
 //     .github/workflows/ci.yml) when one is installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else
-//     the newest there, which it says, and 15 or later. It sorts text by ICU's en-US and keeps time in UTC, as near as
+//     the newest there, which it says, and 15 or later. It sorts text by ICU's en-US (punctuation and spaces weighed
+//     last) and keeps time in UTC, as near as
 //     this machine comes to CI's en_US.utf8 and UTC (INITDB below). A <dir> made by another major version, which cannot
 //     be opened, or made to sort or keep time otherwise, is made again.
 //   pnpm db:stop [--dir <dir>]  Stops that Postgres, and nothing else.
@@ -219,11 +220,12 @@ function postgres() {
 }
 
 // initdb, for a database as CI's postgres:18 has it: that image sets LANG=en_US.utf8, so text sorts by glibc's en_US, and
-// sets no zone, so it runs in UTC. There is no glibc here, so text sorts by ICU's en-US instead, which sorts letters,
-// case, accents and digits as glibc's en_US does; what remains different is in scripts/local-db.postgres.test.ts, which
-// CI runs too. ICU locales need Postgres 15. The folder records how it was made (offboard.initdb), and one made
-// otherwise, such as with C's sort and this machine's zone before, is made again.
-const INITDB = ["-U", "offboard", "--auth=trust", "-E", "UTF8", "--locale-provider=icu", "--icu-locale=en-US", "--locale=C", "--no-instructions"];
+// sets no zone, so it runs in UTC. There is no glibc here, so text sorts by ICU's en-US instead, with punctuation and
+// spaces weighed last ("ka-shifted"), as glibc weighs them. On the words in scripts/local-db.postgres.test.ts, which CI
+// runs too, the two sort alike; they are two implementations, so other text may not. ICU locales need Postgres 15. The
+// folder records how it was made (offboard.initdb), and one made otherwise, such as with C's sort and this machine's
+// zone before, is made again.
+const INITDB = ["-U", "offboard", "--auth=trust", "-E", "UTF8", "--locale-provider=icu", "--icu-locale=en-US-u-ka-shifted", "--locale=C", "--no-instructions"];
 const MADE_AS = `${INITDB.join(" ")} TZ=UTC`;
 
 const run = (file, args, env = process.env) => execFileSync(file, args, { stdio: ["ignore", 2, 2], env });

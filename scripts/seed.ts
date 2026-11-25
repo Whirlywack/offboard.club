@@ -11,8 +11,9 @@
 // the Organiser page's list), Season 3 under way with a skipped Sunday, a warm-up before Season 1 (all draws) and a
 // Matchday in the week off that nobody now on the Leaderboards played; the Organiser (org) connected, both scheduled
 // jobs run, and gone left and removed from the Lichess team. season-over: Season 1 just over, its champion on the home
-// page, Season 2's first Matchday played on Lichess and its results not collected yet, the Organiser's permission
-// expired and the job's failure recorded, then gone left and could not be removed from the Lichess team. empty: two
+// page, Season 2's first Matchday played on Lichess and its results not collected yet, its second skipped with a
+// tournament the site could not cancel, the Organiser's permission expired and the job's failure recorded, then gone
+// left and could not be removed from the Lichess team. empty: two
 // sign-ups short of sixteen, nothing played or connected. Each has step1 and step2 part-way through signing up.
 //
 // Season 2's first Matchday in season-over is on Lichess only: with LICHESS_URL set, the seed writes its tournament,
@@ -41,6 +42,7 @@ import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
 import { finishOrganiserConnection, organiserPermission, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { getRecap, recapDates } from "@/lib/recaps";
+import { skipMatchday, tournamentCancellations } from "@/lib/reschedule";
 import { addDays, firstSeasonStart, latestSunday, matchdayStart, MEMBERS_TO_START, signUpsNeeded } from "@/lib/schedule";
 import { readSchedule, seasonDates, upcomingMatchday, type Schedule } from "@/lib/seasons";
 import { countSignUps, signUpTimes } from "@/lib/signups";
@@ -288,7 +290,7 @@ async function seed(name: string) {
     await client.query("begin");
     await client.query(
       `truncate "game", "matchdayResult", "matchday", "skippedSunday", "season", "session", "account", "verification", "user",
-         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval" cascade`,
+         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation" cascade`,
     );
     await client.query(
       `insert into "company" ("domain", "name", "fetchedAt", "fetchAttempts") values
@@ -397,10 +399,12 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
 // The Organiser's Lichess permission, the scheduled jobs' runs and the one who left, written by the site's own code
 // against an in-process fake Lichess, so nothing leaves this process: the Organiser connects as the leader of the Club's
 // team, the jobs run once, and then the one who left leaves (lib/leaving.ts), which removes them from the team. In
-// season-over the permission has since expired, and Creating Matchdays runs at the next Matchday's due time at the
-// latest, so that it reaches the permission and records the failure; Collecting results has not run, and would find a
-// tournament this fake does not have; and the one who left, leaving after that, cannot be removed from the team, so the
-// Organiser page lists their account to remove by hand.
+// season-over Creating Matchdays makes Season 2's second Matchday's tournament, at its due time at the latest; then the
+// permission expires, and the Organiser skips that Sunday (lib/reschedule.ts), so that the site cannot cancel the
+// tournament and the Organiser page lists it to cancel by hand; Creating Matchdays runs again at the next Matchday's due
+// time at the latest, so that it reaches the permission and records the failure; Collecting results has not run, and
+// would find a tournament this fake does not have; and the one who left, leaving after that, cannot be removed from the
+// team, so the Organiser page lists their account to remove by hand.
 async function organiser(name: string) {
   const org = PEOPLE.find((p) => p.id === ORGANISER)!;
   const lichess = createFakeLichess({ teamId: process.env.LICHESS_TEAM_ID!, teamPassword: "", accounts: [{ id: lichessId(org), username: lichessName(org) }] });
@@ -414,11 +418,20 @@ async function organiser(name: string) {
     const back = new URL((await lichess.handle(new Request(started.url))).headers.get("location")!);
     const to = await finishOrganiserConnection({ id: ORGANISER }, back.searchParams, started.cookie);
     if (to !== "/organiser?lichess=connected") throw new Error(`The Organiser's Lichess did not connect: ${to}`);
-    if (name === "season-over")
+    // When the next Matchday is due for its tournament, if that is later than now.
+    const dueAtTheLatest = async () => {
+      const next = await upcomingMatchday(now);
+      const due = next ? dueFrom(next.start) : now;
+      return due > now ? due : now;
+    };
+    if (name === "season-over") {
+      const second = (await upcomingMatchday(now))!;
+      await createUpcomingMatchday(await dueAtTheLatest());
       await db.query(`update "organiserLichess" set "connectedAt" = now() - interval '369 days', "expiresAt" = now() - interval '4 days'`);
-    const next = await upcomingMatchday(now);
-    const due = next ? dueFrom(next.start) : now;
-    await createUpcomingMatchday(name === "season-over" && due > now ? due : now);
+      const skipped = await skipMatchday(second.date, now);
+      if (!skipped.problem) throw new Error(`Skipping ${second.date} went otherwise than the seed expects: ${skipped.text}`);
+      await createUpcomingMatchday(await dueAtTheLatest());
+    } else await createUpcomingMatchday(now);
     if (name === "club") await collectResults(now);
     for (const p of PEOPLE.filter((person) => person.leaves)) {
       if (!(await removeMember(p.id))) throw new Error(`${p.id} could not leave: they were not there.`);
@@ -443,12 +456,13 @@ async function check(name: string) {
   const played = (s: Awaited<ReturnType<typeof season>>) => s?.matchdays?.filter((m) => m.ingested).length ?? 0;
   const recaps = (await Promise.all((await recapDates()).map(getRecap))).filter((r) => r !== null);
   const allTime = await getAllTime();
-  const [permission, run, collecting, failure, removals] = await Promise.all([
+  const [permission, run, collecting, failure, removals, cancellations] = await Promise.all([
     organiserPermission(),
     lastRun(CREATE),
     lastRun(COLLECT),
     lastFailure(),
     teamRemovals(),
+    tournamentCancellations(),
   ]);
   const promises: [string, boolean][] = [
     ["every seeded person signs in with their cookie, as Better Auth reads it",
@@ -462,8 +476,8 @@ async function check(name: string) {
       ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(await countSignUps()) === 2],
       ["no Season scheduled, so no next Matchday", (await upcomingMatchday(now)) === null && (await season(1))?.matchdays === null],
       ["no Recaps and an empty all-time Leaderboard", recaps.length === 0 && allTime.length === 0],
-      ["nothing on the Organiser page: no permission, no run, no failure, nobody to remove from the Lichess team",
-        permission === null && run === null && collecting === null && failure === null && removals.length === 0],
+      ["nothing on the Organiser page: no permission, no run, no failure, nobody to remove from the Lichess team, no tournament to cancel",
+        permission === null && run === null && collecting === null && failure === null && removals.length === 0 && cancellations.length === 0],
     );
   } else {
     const gone = PEOPLE.find((p) => p.id === GONE)!;
@@ -513,6 +527,9 @@ async function check(name: string) {
           !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
         ["the one who left could not be removed from the Lichess team, so the Organiser page lists their account to remove by hand",
           removals.length === 1 && removals[0].lichessId === lichessId(gone) && removals[0].problem.includes("expired")],
+        ["Season 2's second Sunday skipped after its tournament was made, which the expired permission could not cancel, so the Organiser page lists it to cancel by hand and offers to undo the skip",
+          cancellations.length === 1 && cancellations[0].problem.includes("expired") && matchdayStart(cancellations[0].date) > now &&
+            (await readSchedule(now)).skipped.includes(cancellations[0].date) && (await matchdayOn(cancellations[0].date)) === null],
       );
     else {
       const ana = histories.get("ana")!;

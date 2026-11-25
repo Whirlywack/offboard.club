@@ -6,7 +6,8 @@
 //     database named for <dir> alone, marked and migrated, and the env block in <dir>/offboard.env, from which a missing
 //     .env.local is created. The ports come as a set, Postgres 55432 + n, the site 3100 + n, the fake Lichess 8089 + n
 //     and the fake Telegram 8189 + n, for the first n whose four are free (or the n of --port). When <dir>'s ports have
-//     been taken since, it moves to the first free set, and its block, and .env.local when that is <dir>'s block, are
+//     been taken since, or another db:start takes them between this one's choice and its start, it moves to the first
+//     free set, and its block, and .env.local when that is <dir>'s block, are
 //     rewritten to match; any other .env.local is never changed. The Postgres is of CI's major version (the image in
 //     .github/workflows/ci.yml) when one is installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else
 //     the newest there, which it says. A <dir> made by another major version, which cannot be opened, is made again.
@@ -340,9 +341,23 @@ async function start(dir, port) {
       writeFileSync(ENV_LOCAL, text, { mode: 0o600 });
       say(".env.local, which was its block, has the new ports.");
     }
-    // Scratch paths are too long for a Unix socket, so TCP on 127.0.0.1 only.
-    const options = `-c listen_addresses=127.0.0.1 -p ${portOf(variables(text).DATABASE_URL)} -c unix_socket_directories=''`;
-    run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", `${dir}/postgres.log`, "-o", options, "-w", "start"]);
+    // Scratch paths are too long for a Unix socket, so TCP on 127.0.0.1 only. Another db:start may have found the same
+    // ports free a moment before this one, and taken them since: then this one moves to the next free set and tries again.
+    for (let tries = 1; ; tries++) {
+      const postgres = portOf(variables(text).DATABASE_URL);
+      const options = `-c listen_addresses=127.0.0.1 -p ${postgres} -c unix_socket_directories=''`;
+      try {
+        run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", `${dir}/postgres.log`, "-o", options, "-w", "start"]);
+        break;
+      } catch (error) {
+        if (tries === 5 || !(await taken(postgres))) throw error;
+        const before = text;
+        text = moved(text, await freeSet(port));
+        writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 });
+        if (envLocal() === before) writeFileSync(ENV_LOCAL, text, { mode: 0o600 });
+        say(`Port ${postgres} was taken a moment ago, so ${dir} has the next free set: ${portsOf(text).join(", ")}.`);
+      }
+    }
   }
   const env = variables(text);
   const pid = Number(readFileSync(`${dir}/postmaster.pid`, "utf8").split("\n")[0]);

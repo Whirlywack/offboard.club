@@ -141,8 +141,8 @@ export default function Home() {
 }
 
 // The next Matchday once Season 1 is scheduled; until then, how many more sign-ups it is waiting for.
-// Left out, and logged, if the database cannot be read.
-async function NextMatchday() {
+// Left out, and logged, if the database cannot be read. Exported for app/home.test.ts.
+export async function NextMatchday() {
   await connection();
   const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
   const next = await upcomingMatchday(new Date()).catch(unreadable);

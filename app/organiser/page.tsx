@@ -65,6 +65,10 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
   const tournament = next ? ((await matchdayOn(next.date))?.lichessTournamentId ?? null) : null;
   const message = organiserMessage((await searchParams).lichess);
   const secretProblem = cronSecretProblem();
+  // What the page can tell stops every run from creating a Matchday, each shown further down: no permission it can use,
+  // and a secret every scheduled request is refused with.
+  const usable = permission !== null && permission.readable && permission.expiresAt > now;
+  const blockers = Number(!usable) + Number(secretProblem !== null);
   return (
     <main id="main" className={`${ui.page} ${ui.arrive}`}>
       <div className={ui.intro}>
@@ -76,7 +80,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         </p>
       </div>
 
-      <NextMatchday next={next} tournament={tournament} now={now} />
+      <NextMatchday next={next} tournament={tournament} blockers={blockers} now={now} />
 
       <section aria-labelledby="lichess" className={styles.section}>
         <h2 id="lichess">Lichess permission</h2>
@@ -89,8 +93,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <p className={`${ui.small} ${ui.muted}`}>
           Before you connect, sign in to Lichess as a leader of the Club&apos;s Lichess team who has the team&apos;s
           permission to manage tournaments: Lichess lets only those leaders create them. Lichess then asks you to let
-          Offboard create tournaments and manage the teams you lead, so that a Member who leaves can be removed from the
-          team.
+          Offboard create tournaments and manage the teams you lead. The site doesn&apos;t use the second yet. It asks
+          now so that you won&apos;t have to connect again once it can remove a Member from the team.
         </p>
         <form action={connectOrganiserLichess} className={ui.actions}>
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
@@ -111,8 +115,10 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
   );
 }
 
-// Whether the next Matchday is on Lichess yet, and if not, when it will be.
-function NextMatchday({ next, tournament, now }: { next: Matchday | null; tournament: string | null; now: Date }) {
+type Creation = { tournament: string | null; blockers: number; now: Date };
+
+// Whether the next Matchday is on Lichess yet, and if not, when it will be, or what stops it being created.
+function NextMatchday({ next, ...creation }: Creation & { next: Matchday | null }) {
   return (
     <section aria-labelledby="next" className={`${ui.panel} ${styles.status}`}>
       <h2 id="next" className={`${ui.eyebrow} ${styles.label}`}>
@@ -123,7 +129,7 @@ function NextMatchday({ next, tournament, now }: { next: Matchday | null; tourna
           <p className={styles.value}>
             <Time at={next.start} as={MATCHDAY} />
           </p>
-          <OnLichess start={next.start} tournament={tournament} now={now} />
+          <OnLichess start={next.start} {...creation} />
         </>
       ) : (
         <>
@@ -135,7 +141,7 @@ function NextMatchday({ next, tournament, now }: { next: Matchday | null; tourna
   );
 }
 
-function OnLichess({ start, tournament, now }: { start: Date; tournament: string | null; now: Date }) {
+function OnLichess({ start, tournament, blockers, now }: Creation & { start: Date }) {
   if (tournament)
     return (
       <>
@@ -146,6 +152,23 @@ function OnLichess({ start, tournament, now }: { start: Date; tournament: string
       </>
     );
   const due = dueFrom(start);
+  // Promise no creation the page knows cannot happen.
+  if (blockers > 0) {
+    const fixed = blockers > 1 ? "the problems below are fixed" : "the problem below is fixed";
+    return (
+      <Alert>
+        {now < due ? (
+          <>
+            The site should create it on Lichess on <Time at={due} as={WEEKDAY} />, but can&apos;t until {fixed}.
+          </>
+        ) : (
+          <>
+            It&apos;s due on Lichess now, but the site can&apos;t create it until {fixed}.
+          </>
+        )}
+      </Alert>
+    );
+  }
   if (now < due)
     return (
       <p className={styles.note}>

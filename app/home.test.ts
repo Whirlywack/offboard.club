@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, matchdays, people, resetDb, seasons } from "@/lib/fake-db";
-import Home from "./page";
+import { NextMatchday } from "./page";
 
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
@@ -16,11 +16,9 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 const DATE = "2026-11-29";
 let signedIn: string | null;
 
-// The next Matchday as the viewer gets it: the element inside the first <Suspense> beside the opening pitch.
+// The next Matchday as the viewer gets it: what the home page streams into its Next Matchday panel.
 async function nextMatchday() {
-  const side = Home().props.children[0].props.children[1];
-  const inner = side.props.children[0].props.children;
-  const shown = await inner.type(inner.props);
+  const shown = await NextMatchday();
   return shown ? renderToStaticMarkup(shown as ReactElement) : "";
 }
 

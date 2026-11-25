@@ -254,6 +254,22 @@ describe("recovering from a run that created the tournament without recording it
     expect(matchdays.get(DATE)?.lichessTournamentId).toBe("EaRLieR1");
   });
 
+  it("reports a failure, not success, when the tournament it found cannot be recorded as this Matchday's", async () => {
+    const earlier: FakeSwiss = { id: "EaRLieR1", teamId: TEAM, status: "created", startsAt: START.toISOString(), results: "", games: "", name: `Offboard Matchday ${DATE}`, createdBy: "boss" };
+    lichess.tournaments.set(earlier.id, earlier);
+    // Already recorded as another day's Matchday, so it cannot be this one's too.
+    matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "EaRLieR1", ingestedAt: null });
+    const run = await runAt(DUE);
+    expect(run).toEqual({
+      outcome: "failed",
+      detail: `Tournament EaRLieR1 is on Lichess for the Matchday of ${DATE}, but was not recorded: that Matchday already has another tournament, or this one is another Matchday's.`,
+      matchdayDate: DATE,
+    });
+    expect(matchdays.has(DATE)).toBe(false);
+    expect(creations()).toEqual([]);
+    expect(await lastFailure()).toMatchObject({ job: JOB, matchdayDate: DATE, problem: run.detail });
+  });
+
   it("creates nothing when the team has a tournament of the Matchday's name starting at another time", async () => {
     const other: FakeSwiss = { id: "MoVeD123", teamId: TEAM, status: "created", startsAt: "2026-11-29T16:00:00.000Z", results: "", games: "", name: `Offboard Matchday ${DATE}` };
     lichess.tournaments.set(other.id, other);

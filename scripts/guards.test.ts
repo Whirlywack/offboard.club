@@ -1,6 +1,10 @@
 // pnpm guards (scripts/guards.mjs): what a named change does to a file, which changes only the real-Postgres suites can
-// judge, what it proposes, and how it reads a run of the tests.
-import { readFileSync } from "node:fs";
+// judge, what it proposes, and how it reads a run of the tests. At the end the whole command runs in a small checkout of
+// its own, whose `pnpm test` stands in for vitest.
+import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { apply, FAKE_REFUSES, inSql, label, locate, parse, propose, shown, verdict } from "./guards.mjs";
 
@@ -163,4 +167,137 @@ describe("a run of the tests", () => {
     expect(verdict(unloaded, 1)).toEqual({ kind: "broken", why: "app/a.test.ts no longer loads: Transform failed with 1 error:" });
     expect(verdict(null, 1)).toEqual({ kind: "broken", why: "vitest wrote no report" });
   });
+});
+
+// The checkout: lib/a.ts with a guard a test notices, one none does and a query, a real-Postgres suite beside it, and a
+// `pnpm test` that judges lib/a.ts as it is when it runs and writes vitest's JSON report, stopping at its first failure
+// when given --bail. Its fast test fails as lib/fake-db.ts would when the statement is not the one it knows. Every script
+// records how it was run in $FAKE_LOG; $FAKE_FAIL=all fails every test.
+const A = [
+  "const WHERE = '\"x\" = $1';",
+  "export function a(ok, db) {",
+  '  if (!ok) return "refused";',
+  '  if (ok === 2) return "two";',
+  '  return db.query(`select 1 from "t" where ${WHERE}`, [ok]);',
+  "}",
+  "",
+].join("\n");
+const FAKE = [
+  'import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";',
+  "const [name, ...args] = process.argv.slice(2);",
+  'appendFileSync(process.env.FAKE_LOG, JSON.stringify({ name, args, postgres: process.env.ALLOW_DB_TESTS === "1" }) + "\\n");',
+  'const dir = args[args.indexOf("--dir") + 1];',
+  'if (name === "db:start") {',
+  "  mkdirSync(dir, { recursive: true });",
+  '  writeFileSync(dir + "/offboard.env", "DATABASE_URL=postgres://offboard@127.0.0.1:1/pretend\\n");',
+  '  writeFileSync(dir + "/postmaster.pid", "1\\n");',
+  "}",
+  'if (name === "db:stop") rmSync(dir + "/postmaster.pid");',
+  'if (name === "test") {',
+  '  const code = readFileSync("lib/a.ts", "utf8");',
+  `  const known = code.includes(${JSON.stringify(A.split("\n")[0])}) && code.includes(${JSON.stringify("where ${WHERE}")});`,
+  '  const broken = process.env.FAKE_FAIL === "all";',
+  '  const filters = args.filter((arg) => !arg.startsWith("--"));',
+  "  const runs = (file) => filters.length === 0 || filters.includes(file);",
+  "  const tests = [];",
+  `  const guarded = !broken && code.includes(${JSON.stringify(A.split("\n")[2].trim())});`,
+  '  if (runs("app/a.test.ts")) tests.push(["app/a.test.ts", "refuses a stranger", guarded ? null : "AssertionError: expected \'two\' to be \'refused\'"]);',
+  `  if (runs("app/a.test.ts")) tests.push(["app/a.test.ts", "reads the row", known ? null : ${JSON.stringify(`Error: ${FAKE_REFUSES}: select 1`)}]);`,
+  '  const postgres = process.env.ALLOW_DB_TESTS !== "1" ? "skipped" : known ? null : "AssertionError: expected 2 rows to be 1";',
+  '  if (runs("lib/a.postgres.test.ts")) tests.push(["lib/a.postgres.test.ts", "finds only its row", postgres]);',
+  '  const first = tests.findIndex(([, , why]) => why && why !== "skipped");',
+  '  const ran = args.includes("--bail=1") && first !== -1 ? tests.slice(0, first + 1) : tests;',
+  '  const status = (why) => (why === null ? "passed" : why === "skipped" ? "skipped" : "failed");',
+  "  const results = (file) => ran.filter(([f]) => f === file).map(([, title, why]) => ({ fullName: title, status: status(why), failureMessages: why && why !== \"skipped\" ? [why] : [] }));",
+  '  const files = [...new Set(ran.map(([file]) => file))].map((file) => ({ name: process.cwd() + "/" + file, status: "passed", message: "", assertionResults: results(file) }));',
+  '  const report = { numPassedTests: ran.filter(([, , why]) => why === null).length, testResults: files };',
+  '  writeFileSync(args.find((arg) => arg.startsWith("--outputFile=")).split("=")[1], JSON.stringify(report));',
+  "  process.exit(first === -1 ? 0 : 1);",
+  "}",
+  "",
+].join("\n");
+
+function fakeCheckout() {
+  const root = mkdtempSync(join(tmpdir(), "offboard-guards-test-"));
+  for (const dir of ["scripts", "lib", "app", "tmp"]) mkdirSync(join(root, dir));
+  for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
+  const scripts = Object.fromEntries(["test", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts }));
+  writeFileSync(join(root, "fake.mjs"), FAKE);
+  writeFileSync(join(root, "lib/a.ts"), A);
+  writeFileSync(join(root, "lib/a.postgres.test.ts"), "// the real-Postgres suite, in fake.mjs\n");
+  writeFileSync(join(root, "app/a.test.ts"), "// the fast test, in fake.mjs\n");
+  // guards.mjs reads TypeScript from node_modules; the copy it makes has an install of its own.
+  writeFileSync(join(root, ".gitignore"), "node_modules\ntmp\nfake.log\n");
+  symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"));
+  const git = (...args: string[]) =>
+    spawnSync("git", ["-c", "user.name=Pretend", "-c", "user.email=pretend@pretend.invalid", ...args], { cwd: root, encoding: "utf8" });
+  git("init", "--quiet");
+  git("add", ".");
+  git("commit", "--quiet", "--message", "first");
+  const env = { ...process.env, DATABASE_URL: "", TMPDIR: join(root, "tmp"), FAKE_LOG: join(root, "fake.log") };
+  const guards = (args: string[], more: Record<string, string> = {}) =>
+    spawnSync(process.execPath, [join(root, "scripts/guards.mjs"), ...args], { encoding: "utf8", env: { ...env, ...more } });
+  const runs = () =>
+    readFileSync(join(root, "fake.log"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { name: string; args: string[]; postgres: boolean });
+  // What is left: guards' folders in the temporary folder, git's status, and lib/a.ts.
+  const left = () => [
+    readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-")),
+    git("status", "--porcelain").stdout,
+    readFileSync(join(root, "lib/a.ts"), "utf8"),
+  ];
+  return { root, guards, runs, left };
+}
+
+describe("a run of pnpm guards", () => {
+  it("says which changes went red, judging one to SQL by the real-Postgres suites alone, and leaves the checkout as it was", () => {
+    const { root, guards, runs, left } = fakeCheckout();
+    const { status, stdout } = guards(["lib/a.ts:3", "lib/a.ts:4", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true", "lib/a.ts:1", "--replace", '"x" = $1', "true"]);
+    expect(stdout).toContain("The tests pass as the code is (the whole suite with the real-Postgres suites: 3 passed).");
+    expect(stdout).toContain('RED       lib/a.ts:3\n         - if (!ok) return "refused";\n         1 failed, first: app/a.test.ts > refuses a stranger\n');
+    // Had line 3 not been put back, this change would have gone red too.
+    expect(stdout).toContain('GREEN     lib/a.ts:4\n         - if (ok === 2) return "two";\n         no test noticed: 3 passed\n');
+    const alone = "by the real-Postgres suites alone, as lib/fake-db.ts refuses a changed statement: 1 failed, first: lib/a.postgres.test.ts > finds only its row";
+    expect(stdout).toContain(`RED       lib/a.ts:5 --replace 'where \${WHERE}' 'where true'\n`);
+    expect(stdout).toContain(`RED       lib/a.ts:1 --replace '"x" = $1' true\n         - const WHERE = '"x" = $1';\n         + const WHERE = 'true';\n         ${alone}\n`);
+    expect(stdout).toContain("3 of 4 changes went red.\nNo test noticed: lib/a.ts:4.\n");
+    expect(status).toBe(1);
+    // The change inside the template literal goes to the real-Postgres suite at once; the one outside it, only once the
+    // fast tests have failed on the fake's refusal alone.
+    const tests = runs().filter((run) => run.name === "test");
+    const filters = tests.map((run) => run.args.filter((arg) => !arg.startsWith("--")));
+    expect(filters).toEqual([[], [], [], ["lib/a.postgres.test.ts"], [], ["lib/a.postgres.test.ts"]]);
+    expect(tests.every((run) => run.postgres)).toBe(true);
+    expect(runs().filter((run) => run.name.startsWith("db:")).map((run) => run.name)).toEqual(["db:start", "db:stop"]);
+    expect(left()).toEqual([[], "", A]);
+    rmSync(root, { recursive: true });
+  }, 60_000);
+
+  it("judges nothing when the tests fail before any change", () => {
+    const { root, guards, left } = fakeCheckout();
+    const { status, stdout, stderr } = guards(["lib/a.ts:3"], { FAKE_FAIL: "all" });
+    expect(stderr.trim()).toBe("The tests fail before any change, so no change can be judged: 1 failed, first: app/a.test.ts > refuses a stranger");
+    expect(stdout).not.toMatch(/^(RED|GREEN)/m);
+    expect(status).toBe(1);
+    expect(left()).toEqual([[], "", A]);
+    rmSync(root, { recursive: true });
+  }, 60_000);
+
+  it("makes no change that is not in the file once, nor one to SQL that --tests leaves to the fast tests, and needs no database then", () => {
+    const { root, guards, runs, left } = fakeCheckout();
+    const places = ["lib/a.ts:9", "lib/none.ts:1", "lib/a.ts:3", "--replace", "nothing", "x", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true"];
+    const { status, stdout } = guards([...places, "--tests", "app/a.test.ts"]);
+    expect(stdout).toContain("NOT MADE  lib/a.ts:9\n         lib/a.ts: it has 6 lines\n");
+    expect(stdout).toContain("NOT MADE  lib/none.ts:1\n         lib/none.ts: there is no such file\n");
+    expect(stdout).toContain('NOT MADE  lib/a.ts:3 --replace nothing x\n         lib/a.ts: "nothing" is there 0 times, not once\n');
+    expect(stdout).toContain("a change to SQL is judged by the real-Postgres suites, and none of the --tests is one");
+    expect(stdout).toContain("0 of 4 changes went red.");
+    expect(status).toBe(1);
+    expect(runs().map((run) => run.name)).toEqual(["test"]);
+    expect(left()).toEqual([[], "", A]);
+    rmSync(root, { recursive: true });
+  }, 60_000);
 });

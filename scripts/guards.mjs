@@ -235,12 +235,11 @@ async function guards(args) {
       if (!database) throw new Error(`pnpm db:start failed (${log}).`);
     }
     const report = join(folder, "report.json");
-    // Runs the test files `filters` (all of them if none), stopped at the first failure, and judges the run.
+    // Runs the test files `filters` (all of them if none) with `pnpm test`, stopped at the first failure, and judges the run.
     const tests = async (filters, postgres) => {
       rmSync(report, { force: true });
       const env = { ...process.env, ...(postgres ? { ALLOW_DB_TESTS: "1", DATABASE_URL: database } : {}) };
-      const vitest = join(checkout, "node_modules/.bin/vitest");
-      const code = await run(vitest, ["run", "--bail=1", "--reporter=json", `--outputFile=${report}`, ...filters], { cwd: checkout, log, env, limit: 5 * 60_000 });
+      const code = await run("pnpm", ["test", "--bail=1", "--reporter=json", `--outputFile=${report}`, ...filters], { cwd: checkout, log, env, limit: 5 * 60_000 });
       return verdict(readJson(report), code);
     };
 

@@ -23,6 +23,8 @@ export const lichessUrl = (path: string) => new URL(path, base());
 // requests.
 export const lichessProfileUrl = (username: string) => `https://lichess.org/@/${encodeURIComponent(username)}`;
 export const lichessSwissUrl = (id: string) => `https://lichess.org/swiss/${encodeURIComponent(id)}`;
+// The page where a team's leader removes members from it by name (lila: GET /team/{id}/kick).
+export const lichessTeamKickUrl = (teamId: string) => `https://lichess.org/team/${encodeURIComponent(teamId)}/kick`;
 // A Game's page, with the board turned to one player's side.
 export const lichessGameUrl = (id: string, side: "white" | "black") => `https://lichess.org/${encodeURIComponent(id)}/${side}`;
 
@@ -240,6 +242,21 @@ export const joinTeam = (token: string, teamId: string, password: string, signal
     { method: "POST", token, form: { password }, signal },
     async (response) => {
       if (!response.ok) throw await refused("POST /team/{teamId}/join", response);
+    },
+  );
+
+// POST /api/team/{teamId}/kick/{userId}, needing the team:lead scope and an account that leads the team with the team's
+// permission to remove members: lila answers 400 "Insufficient team permissions" without it, and 404 when it has no
+// such team. It answers 200 whether or not anyone was removed: an account not in the team stays out, and the team's
+// creator stays in, as does any other leader unless the token's account has the team's Admin permission (lila's
+// TeamApi.kick). Someone removed this way can join again with the password of a team joined by password, as the Club's
+// is (TeamApi.join checks only the blocklist and the password), so a person who leaves can come back.
+export const kickFromTeam = (token: string, teamId: string, userId: string, signal?: AbortSignal) =>
+  lichessRequest(
+    `/api/team/${encodeURIComponent(teamId)}/kick/${encodeURIComponent(userId)}`,
+    { method: "POST", token, signal },
+    async (response) => {
+      if (!response.ok) throw await refused("POST /api/team/{teamId}/kick/{userId}", response);
     },
   );
 

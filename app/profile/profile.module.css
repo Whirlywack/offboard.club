@@ -1,4 +1,5 @@
-/* The Profile form (the optional sign-up step and the edit page) and the Lichess swap beside it. */
+/* The Profile form (the optional sign-up step and the edit page), the parts below it, and the step that confirms
+   leaving the Club. */
 
 .form {
   display: flex;
@@ -38,11 +39,58 @@
   }
 }
 
-.lichess {
+/* Each part below the form (the Lichess account, leaving the Club) in a hairline panel */
+.section {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-panel);
   border-radius: var(--radius-lg);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* The step that confirms leaving (leave/page.tsx): what goes and what stays, then the choice, in one raised panel */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.consequences {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 1.25em;
+}
+
+.consequences li::marker {
+  color: var(--muted);
+}
+
+.confirm > .formActions {
+  margin-top: var(--space-2);
+}
+
+/* Deleting: the quiet button's shape in the error colour, never filled, so it is found at once without being the easy
+   press. Keeping, beside it, is the filled one. */
+.delete {
+  background: transparent;
+  color: var(--error);
+  box-shadow: inset 0 0 0 1px var(--error);
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    opacity var(--duration-press) ease,
+    background-color var(--duration-hover) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .delete:hover:not(:disabled) {
+    background: var(--error-wash);
+  }
+}
+
+/* Keeping, once deleting has begun: no longer on offer, so dimmed as the working button is */
+.confirm a[aria-disabled="true"] {
+  opacity: 0.6;
+  pointer-events: none;
 }

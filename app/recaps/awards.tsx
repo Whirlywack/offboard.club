@@ -37,10 +37,11 @@ function feat({ kind, value }: RecapAward): ReactNode {
 }
 
 // A Recap's Awards: what each was for, who won it and the number that won it, and, when `showGames`, the Game on
-// Lichess's own board. Nothing about a Game reaches a visitor who is not shown it: not its board, its link or its id.
-// Nothing at all is shown when no Game won anything.
+// Lichess's own board, unless the loser has since left the Club. Nothing about a Game reaches a viewer who is not shown
+// it: not its board, its link or its id. Nothing at all is shown when no Game won anything.
 export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames: boolean }) {
   if (awards.length === 0) return null;
+  const replayable = awards.filter((award) => !award.opponentLeft).length;
   return (
     <section aria-labelledby="awards" className={styles.awards}>
       <div className={styles.heading}>
@@ -55,7 +56,7 @@ export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames:
               <Link href={`/profiles/${award.memberId}`}>{award.name}</Link>
             </p>
             <p className={styles.feat}>{feat(award)}</p>
-            {showGames && (
+            {showGames && !award.opponentLeft && (
               <Replay label={`of the ${inText(award)}`} board={<GameBoard award={award} />}>
                 <p className={styles.source}>
                   This is Lichess&apos;s own board, loaded from lichess.org.{" "}
@@ -63,10 +64,20 @@ export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames:
                 </p>
               </Replay>
             )}
+            {/* Lichess's board and page for the Game name both accounts, and someone who has left asked to be removed. */}
+            {showGames && award.opponentLeft && (
+              <p className={styles.noGame}>Their opponent has since left the Club, so the Game isn&apos;t shown.</p>
+            )}
           </li>
         ))}
       </ul>
-      {!showGames && <p className={`${ui.small} ${ui.muted}`}>Signed-in Members can replay each Game.</p>}
+      {!showGames && replayable > 0 && (
+        <p className={`${ui.small} ${ui.muted}`}>
+          {replayable === awards.length
+            ? "Signed-in Members can replay each Game."
+            : "Signed-in Members can replay some of these Games."}
+        </p>
+      )}
     </section>
   );
 }

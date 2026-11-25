@@ -1,0 +1,15 @@
+/* The privacy and terms page: one column of sections, each a heading over prose and lists. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.section ul,
+.section ol {
+  padding-left: 1.25em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

@@ -546,6 +546,13 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], 1);
     },
 
+  // organiserName
+  [`select name from "user" where id = $1 and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
+    (id) => {
+      const person = people.get(id);
+      return answer(isMember(person) ? [{ name: person.name }] : []);
+    },
+
   // --- Scheduled jobs (lib/jobs.ts) ---
 
   // runJob's hold: taken only if nobody holds the job, or their hold has lapsed. Returns the previous run's outcome.

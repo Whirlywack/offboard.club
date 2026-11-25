@@ -1,11 +1,14 @@
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
-import { forgetTeamRemoval, removeMember, teamRemovals } from "./leaving";
+import { finishConnection, startConnection } from "./connect-lichess";
+import { createFakeLichess } from "./fixtures/fake-lichess";
+import { forgetTeamRemoval, removeMember, removeSwitchedFrom, teamRemovals } from "./leaving";
 
 // Leaving the Club's real SQL against the database in DATABASE_URL, inside one transaction that is always rolled back,
 // so nothing it does is kept: that the foreign keys of migrations/ take everything of the person's with them but their
-// Games, as lib/fake-db.ts has it. The app's database is one connection holding that transaction, and the removal's own
+// Games, as lib/fake-db.ts has it; and the same removal from the Club's Lichess team for an account a Member switched
+// from, with the switch itself (lib/connect-lichess.ts). The app's database is one connection holding that transaction, and the removal's own
 // transaction a savepoint within it. Inside it, it empties "organiserLichess", which has one row at most, and
 // "teamRemoval", so it runs only when ALLOW_DB_TESTS=1 is set as well as DATABASE_URL, and a plain `pnpm test` skips it. Run it against a local
 // database from `pnpm db:start`, never a shared or live one, before seeding (once that one is seeded, a second from
@@ -35,6 +38,12 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
   const client = (db as unknown as { client: pg.Client }).client;
   const run = (sql: string, params: unknown[] = []) => client.query(sql, params);
   const count = async (sql: string, params: unknown[]) => (await run(sql, params)).rowCount;
+  const addPerson = (id: string, lichessId = `${id}-on-lichess`) =>
+    run(
+      `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt", "lichessId", "lichessUsername")
+       values ($1, $1, $2, false, now(), now(), $3, $3)`,
+      [id, `${id}@example.invalid`, lichessId],
+    );
 
   beforeAll(async () => {
     await client.connect();
@@ -53,12 +62,6 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     // Without the Club's team configured, removing them from it fails before asking Lichess anything.
     vi.stubEnv("LICHESS_TEAM_ID", "");
     vi.stubGlobal("fetch", () => Promise.reject(new Error("nothing may reach Lichess")));
-    const addPerson = (id: string, lichessId = `${id}-on-lichess`) =>
-      run(
-        `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt", "lichessId", "lichessUsername")
-         values ($1, $1, $2, false, now(), now(), $3, $3)`,
-        [id, `${id}@example.invalid`, lichessId],
-      );
     const GONE = "leaving-test-gone";
     const STAYS = "leaving-test-stays";
     // The one who stays first, so that a query reading the wrong person reads them.
@@ -111,6 +114,52 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     // The Organiser has removed one of them on Lichess: only that one is forgotten.
     await forgetTeamRemoval("leaving-test-also-on-lichess");
     expect(await teamRemovals()).toEqual([{ lichessId: `${GONE}-on-lichess`, problem: why }]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  }, 60_000);
+
+  it("switches a Member's account, forgetting the new one if it was kept for the Organiser, and then removes or keeps only an account nobody has", async () => {
+    // A fake Lichess for the switch itself. Without LICHESS_TOKEN_KEY the Organiser's permission cannot be read, so the
+    // removal from the team fails before asking Lichess anything.
+    const lichess = createFakeLichess({ teamId: "switch-team", teamPassword: "pw", accounts: [{ id: "switch-test-new", username: "switch-test-new" }] });
+    vi.stubGlobal("fetch", lichess.fetch);
+    for (const [name, value] of Object.entries({
+      LICHESS_URL: "https://fake.lichess.test",
+      BETTER_AUTH_URL: "https://offboard.test",
+      BETTER_AUTH_SECRET: "test secret",
+      LICHESS_TEAM_ID: "switch-team",
+      LICHESS_TEAM_PASSWORD: "pw",
+      LICHESS_TOKEN_KEY: "",
+    }))
+      vi.stubEnv(name, value);
+    const MEMBER = "switch-test-member";
+    const OTHER = "switch-test-other";
+    await addPerson(OTHER);
+    await addPerson(MEMBER);
+    await run(`delete from "teamRemoval"`);
+    // The new account was kept for the Organiser once, when someone else gave it up; so was an account nobody has.
+    for (const lichessId of ["switch-test-new", "switch-test-unheld"])
+      await run(`insert into "teamRemoval" ("lichessId", "problem") values ($1, 'kept')`, [lichessId]);
+
+    const { url, cookie } = startConnection(MEMBER);
+    lichess.signedInAs = "switch-test-new";
+    const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
+    expect(await finishConnection({ id: MEMBER, lichessId: `${MEMBER}-on-lichess` }, back.searchParams, cookie)).toBe(`/profiles/${MEMBER}`);
+    expect((await run(`select id, "lichessId" from "user" where id in ($1, $2) order by id`, [MEMBER, OTHER])).rows).toEqual([
+      { id: MEMBER, lichessId: "switch-test-new" },
+      { id: OTHER, lichessId: `${OTHER}-on-lichess` },
+    ]);
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept" }]);
+
+    // The account switched from is nobody's now: kept, with why. The one switched to, and another Member's, are left.
+    await removeSwitchedFrom(`${MEMBER}-on-lichess`, 25_000);
+    await removeSwitchedFrom("switch-test-new", 25_000);
+    await removeSwitchedFrom(`${OTHER}-on-lichess`, 25_000);
+    const why = "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read.";
+    expect((await teamRemovals()).sort((a, b) => (a.lichessId < b.lichessId ? -1 : 1))).toEqual([
+      { lichessId: `${MEMBER}-on-lichess`, problem: why },
+      { lichessId: "switch-test-unheld", problem: "kept" },
+    ]);
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);

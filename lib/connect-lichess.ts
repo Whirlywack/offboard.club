@@ -27,10 +27,13 @@ export const SCOPE = "team:write";
 export const CALLBACK_PATH = "/api/lichess/callback";
 const PENDING_SECONDS = 600;
 
-// The callback may run for 300 s (its maxDuration). Rate limits can stretch each Lichess call to two minutes, so the
-// connection gives up after 240 s, and revoking the token may use what is left up to 295 s.
+// The callback may run for 300 s (its maxDuration), including what it does after the person has been sent on. Rate
+// limits can stretch each Lichess call to two minutes, so the connection gives up after 240 s, revoking the token may
+// use what is left up to 295 s, and removing the account a switch replaced from the Club's team, once the person has
+// been sent on, what is left up to 298 s, so that there is still time to keep it for the Organiser if that fails.
 export const CONNECTION_DEADLINE_MS = 240_000;
 export const REVOKED_BY_MS = 295_000;
+export const REMOVED_BY_MS = 298_000;
 
 // Until the Organiser supplies the team's id and password, the connect step says so instead of failing.
 export const lichessConfigured = () => Boolean(process.env.LICHESS_TEAM_ID && process.env.LICHESS_TEAM_PASSWORD);
@@ -171,9 +174,7 @@ export async function finishConnection(
       return problem("team");
     }
     if (!(await saveConnection(person.id, account))) return problem("taken");
-    // ponytail: on a swap the old account (person.lichessId) stays in the Club's Lichess team. Removing it needs the
-    // Organiser's Lichess permission, as removing someone who leaves does (lib/leaving.ts, #15, which does not cover
-    // a swap); if wanted, remove it here the same way.
+    // On a swap the old account is removed from the Club's team once the person has been sent on (the callback).
     return swap ? `/profiles/${person.id}` : "/welcome/profile";
   } catch (error) {
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);
@@ -199,12 +200,14 @@ async function connectedToSomeoneElse(lichessId: string, personId: string): Prom
 
 // Only the Lichess columns of the person's own row change, so a swap leaves the Member and everything attached to
 // them as it was, including when they first connected (MEMBER_SINCE). The account was just found to be neither marked
-// nor closed, so marks a previous account carried go with it. False if someone else connected the same account in
-// the meantime.
+// nor closed, so marks a previous account carried go with it. An account kept for the Organiser to remove from the
+// Club's team by hand (lib/leaving.ts) belongs in the team again, so it is forgotten in the same statement. False if
+// someone else connected the same account in the meantime.
 async function saveConnection(personId: string, account: LichessAccount): Promise<boolean> {
   try {
     await db.query(
-      `update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
+      `with forgotten as (delete from "teamRemoval" where "lichessId" = $2)
+       update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4,
          "lichessMarked" = false, "lichessClosed" = false,
          "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now()
        where id = $1`,

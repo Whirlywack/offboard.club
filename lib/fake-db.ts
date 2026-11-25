@@ -591,7 +591,36 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
     },
 
+  // --- Connecting Lichess (lib/connect-lichess.ts) ---
+
+  // connectedToSomeoneElse
+  [`select 1 from "user" where "lichessId" = $1 and id <> $2`]: (lichessId, id) =>
+    answer([...people.values()].filter((p) => p.lichessId === lichessId && p.id !== id).map(() => ({}))),
+
+  // saveConnection: refused, changing nothing, when someone else has the account, as its unique constraint makes it;
+  // otherwise the account is no longer kept for the Organiser to remove from the team by hand.
+  [`with forgotten as (delete from "teamRemoval" where "lichessId" = $2) update "user" set "lichessId" = $2, "lichessUsername" = $3, "lichessBlitzRating" = $4, "lichessMarked" = false, "lichessClosed" = false, "lichessConnectedAt" = coalesce("lichessConnectedAt", now()), "updatedAt" = now() where id = $1`]:
+    (id, lichessId, lichessUsername, lichessBlitzRating) => {
+      if ([...people.values()].some((p) => p.lichessId === lichessId && p.id !== id)) throw violation("23505", "user_lichessId_key");
+      teamRemovals.delete(lichessId);
+      const person = people.get(id);
+      if (person)
+        Object.assign(person, {
+          lichessId,
+          lichessUsername: lichessUsername as string,
+          lichessBlitzRating: lichessBlitzRating as number | null,
+          lichessMarked: false,
+          lichessClosed: false,
+          lichessConnectedAt: person.lichessConnectedAt ?? new Date(),
+        });
+      return answer([], person ? 1 : 0);
+    },
+
   // --- Leaving the Club (lib/leaving.ts) ---
+
+  // removeSwitchedFrom: whether anyone has the account.
+  [`select 1 from "user" where "lichessId" = $1`]: (lichessId) =>
+    answer([...people.values()].filter((p) => p.lichessId === lichessId).map(() => ({}))),
 
   // removeMember: the person's Lichess account, if they are there at all.
   [`select "lichessId" from "user" where id = $1`]: (id) => {
@@ -613,7 +642,8 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     return answer([], 1);
   },
 
-  // removeMember: an account the site could not remove from the Lichess team, kept once however often it is recorded.
+  // removeMember and removeSwitchedFrom: an account the site could not remove from the Lichess team, kept once however
+  // often it is recorded.
   [`insert into "teamRemoval" ("lichessId", "problem") values ($1, $2) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
     (lichessId, problem) => {
       teamRemovals.set(lichessId, { lichessId, at: new Date(), problem: String(problem) });

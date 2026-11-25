@@ -3,6 +3,7 @@ import {
   allTimeLeaderboard,
   headToHead,
   matchdayLeaderboard,
+  rankByPlayed,
   seasonChampions,
   seasonLeaderboard,
   streak,
@@ -65,12 +66,14 @@ describe("seasonLeaderboard", () => {
 describe("seasonChampions", () => {
   const five = [md(["ana", 4], ["ben", 3]), md(["ana", 4]), md(["ana", 4]), md(["ana", 4]), md(["ana", 4])];
 
-  it("names nobody before the sixth Matchday", () => {
-    expect(seasonChampions(five)).toEqual([]);
+  it("names nobody when nobody is on the Leaderboard", () => {
+    expect(seasonChampions([md(), md()])).toEqual([]);
+    expect(seasonChampions(five, new Set(["ana", "ben"]))).toEqual([]);
   });
 
-  it("names the top Member once the sixth Matchday is in", () => {
+  it("names the top Member of the Matchdays played, however many there were", () => {
     expect(seasonChampions([...five, md(["ben", 5])])).toEqual(["ana"]);
+    expect(seasonChampions(five)).toEqual(["ana"]);
   });
 
   it("names every Member still level at the top", () => {
@@ -99,6 +102,20 @@ describe("allTimeLeaderboard", () => {
   it("leaves out a marked Member", () => {
     const history = [md(["ana", 1], ["cheat", 1]), md(["cheat", 1])];
     expect(allTimeLeaderboard(history, new Set(["cheat"])).map((r) => r.memberId)).toEqual(["ana"]);
+  });
+});
+
+describe("rankByPlayed", () => {
+  it("ranks counts of Matchdays played as allTimeLeaderboard ranks the Matchdays themselves", () => {
+    const history = [md(["ana", 0], ["ben", 5]), md(["ana", 0.5], ["cid", 5]), md(["ana", 0], ["ben", 5], ["dan", 5]), md(["cid", 5], ["cheat", 5])];
+    const counts = [
+      { memberId: "ana", played: 3 },
+      { memberId: "ben", played: 2 },
+      { memberId: "cid", played: 2 },
+      { memberId: "dan", played: 1 },
+      { memberId: "cheat", played: 1 },
+    ];
+    expect(rankByPlayed(counts, new Set(["cheat"]))).toEqual(allTimeLeaderboard(history, new Set(["cheat"])));
   });
 });
 

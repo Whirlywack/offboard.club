@@ -5,11 +5,13 @@ import { signOut } from "./actions";
 import { Avatar } from "./avatar";
 import { ExternalLink } from "./external-link";
 import styles from "./home.module.css";
+import leaderboards from "./leaderboards.module.css";
 import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
 import { getSession, viewerIsMember } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
 import { organiserEmail } from "@/lib/contact";
+import { newChampions } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
@@ -71,7 +73,10 @@ export default function Home() {
           </li>
           <li>
             <h3>Read the Recap</h3>
-            <p>Afterwards the Matchday gets a Recap with that night&apos;s Leaderboard, open for anyone to read.</p>
+            <p>
+              Afterwards the Matchday gets a Recap that anyone can read. It has that night&apos;s Leaderboard and Awards
+              for things any Member can pull off at any rating, such as the biggest upset.
+            </p>
           </li>
           <li>
             <h3>Keep your best four</h3>
@@ -92,10 +97,7 @@ export default function Home() {
             or hearing about jobs. Only signed-in Members can see Profiles; Leaderboards and Recaps are public and show
             names and Companies.
           </p>
-          <p className={styles.plans}>
-            Still to come: Awards in each Recap for things any Member can pull off at any rating, such as the biggest
-            upset, and a Telegram group for Members.
-          </p>
+          <p className={styles.plans}>Still to come: a Telegram group for Members.</p>
         </div>
       </section>
 
@@ -105,6 +107,23 @@ export default function Home() {
           <p>
             There are two: no outside help during Games, and no sales or recruiting pitches unless the other
             person&apos;s &ldquo;open to&rdquo; line invites it.
+          </p>
+        </div>
+      </section>
+
+      <section className={styles.section} aria-labelledby="leaderboards">
+        <h2 id="leaderboards">Leaderboards</h2>
+        <div className={styles.sectionText}>
+          <Suspense>
+            <SeasonChampions />
+          </Suspense>
+          <p>
+            The Season Leaderboard adds up each Member&apos;s best four Matchdays. The all-time one counts only how many
+            Sundays you&apos;ve played, so anyone can top it by showing up.
+          </p>
+          <p className={leaderboards.links}>
+            <Link href="/seasons">This Season&apos;s Leaderboard</Link>
+            <Link href="/all-time">All-time Leaderboard</Link>
           </p>
         </div>
       </section>
@@ -177,6 +196,34 @@ async function NextMatchday() {
 async function tournamentForMembers(date: string): Promise<string | null> {
   if (!(await viewerIsMember())) return null;
   return (await matchdayOn(date))?.lichessTournamentId ?? null;
+}
+
+// The champion of the Season that has just ended, from its sixth Matchday until the next Season's first. Left out, and
+// logged, if the database cannot be read.
+async function SeasonChampions() {
+  await connection();
+  const named = await newChampions(new Date()).catch(
+    (error: Error) => void console.error("Home page could not read the Season champion:", error.message),
+  );
+  if (!named) return null;
+  const names = new Intl.ListFormat("en-GB", { type: "conjunction" }).format(named.champions.map((c) => c.name));
+  const season = <Link href={`/seasons/${named.season}`}>Season {named.season}</Link>;
+  return (
+    <p className={`${leaderboards.homeChampion} ${ui.arrive}`}>
+      <span className={ui.marker} aria-hidden="true" />
+      <span>
+        {named.champions.length > 1 ? (
+          <>
+            <strong>{names}</strong> share the {season} title.
+          </>
+        ) : (
+          <>
+            <strong>{names}</strong> is the {season} champion.
+          </>
+        )}
+      </span>
+    </p>
+  );
 }
 
 async function You() {

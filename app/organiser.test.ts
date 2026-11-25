@@ -427,7 +427,7 @@ describe("the next Matchday on the Organiser page", () => {
     return html.slice(html.indexOf('aria-labelledby="next"'), html.indexOf('aria-labelledby="lichess"'));
   };
 
-  beforeEach(() => seasons.set("1", { number: 1, start: DATE }));
+  beforeEach(() => seasons.set(1, { number: 1, start: DATE }));
   afterEach(() => vi.useRealTimers());
 
   it("says when Season 1 will be scheduled, while it is not", async () => {

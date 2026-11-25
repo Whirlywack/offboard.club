@@ -29,7 +29,7 @@ beforeEach(() => {
   resetDb();
   addPerson("member");
   addPerson("newcomer", { lichessId: null, lichessUsername: null });
-  seasons.set("1", { number: 1, start: DATE });
+  seasons.set(1, { number: 1, start: DATE });
   signedIn = null;
   getSession.mockReset().mockImplementation(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;

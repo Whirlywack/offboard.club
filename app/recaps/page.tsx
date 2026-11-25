@@ -14,7 +14,7 @@ export default function RecapsPage() {
     <main id="main" className={ui.page}>
       <h1>Recaps</h1>
       <p className={`${ui.lede} ${styles.underTitle}`}>
-        Every Matchday gets a Recap with that night&apos;s Leaderboard. Newest first.
+        Every Matchday gets a Recap with that night&apos;s Leaderboard and Awards. Newest first.
       </p>
       <Suspense>
         <RecapList />

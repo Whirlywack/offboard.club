@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import { MAX_SEASONS, matchdaysOfSeason, setSeasonStart, skipSunday, unskipSunday, upcomingMatchday, type Store, type StoredSeason } from "./seasons";
 
 // An in-memory database. `added` counts attempts to store a Season automatically.
-function fake(init: { seasons?: StoredSeason[]; skipped?: string[]; signUps?: Date[] } = {}) {
-  const db = { seasons: [...(init.seasons ?? [])], skipped: new Set(init.skipped), signUps: [...(init.signUps ?? [])], added: 0 };
+function fake(init: { seasons?: StoredSeason[]; skipped?: string[]; signUps?: Date[]; ingested?: string[] } = {}) {
+  const db = {
+    seasons: [...(init.seasons ?? [])],
+    skipped: new Set(init.skipped),
+    signUps: [...(init.signUps ?? [])],
+    ingested: [...(init.ingested ?? [])],
+    added: 0,
+  };
   const store: Store = {
     seasons: async () => db.seasons.map((s) => ({ ...s })),
     skippedSundays: async () => [...db.skipped],
@@ -16,6 +22,7 @@ function fake(init: { seasons?: StoredSeason[]; skipped?: string[]; signUps?: Da
       db.seasons = [...db.seasons.filter((s) => s.number !== season.number), { ...season }];
     },
     setSkipped: async (date, skipped) => void (skipped ? db.skipped.add(date) : db.skipped.delete(date)),
+    ingestedDates: async () => [...db.ingested],
   };
   return { store, db };
 }
@@ -262,6 +269,36 @@ describe("setting a Season's start by hand", () => {
     expect(await setSeasonStart(1, "9999-12-26", beforeSeasonOne, store)).toBe("9999-12-26 is more than two years ahead.");
     expect(await setSeasonStart(1, "2028-12-10", beforeSeasonOne, store)).toMatch(/two years/);
     expect(db.seasons).toEqual(seasonOne());
+  });
+});
+
+// A tournament made by hand can be ingested before its Sunday's 20:00, so the start alone does not say a Matchday has
+// been played. Season 1 here runs 13 December to 17 January; 24 January is the week off.
+describe("a change to the schedule, once a Matchday is ingested", () => {
+  const noon = (date: string) => at(`${date}T10:00:00Z`);
+
+  it("is refused if it would take that day's Matchday out of its Season", async () => {
+    const { store, db } = fake({ seasons: seasonOne(), ingested: ["2026-12-13", "2026-12-20"] });
+    expect(await skipSunday("2026-12-20", noon("2026-12-20"), store)).toBe(
+      "That would change which Season the Matchday of 2026-12-20, already played, belongs to.",
+    );
+    expect(db.skipped.size).toBe(0);
+  });
+
+  it("is refused if it would pull a Matchday played in the week off into the next Season", async () => {
+    const { store, db } = fake({ seasons: seasonOne(), ingested: ["2027-01-17", "2027-01-24"] });
+    expect(await setSeasonStart(2, "2027-01-24", noon("2027-01-24"), store)).toMatch(/Matchday of 2027-01-24, already played/);
+    expect(db.seasons).toEqual(seasonOne());
+    // Without that Matchday the same change is allowed.
+    const without = fake({ seasons: seasonOne(), ingested: ["2027-01-17"] });
+    expect(await setSeasonStart(2, "2027-01-24", noon("2027-01-24"), without.store)).toBeNull();
+  });
+
+  it("goes through if every ingested Matchday keeps its Season and place", async () => {
+    const { store, db } = fake({ seasons: seasonOne(), ingested: ["2026-12-13", "2026-12-20"] });
+    expect(await skipSunday("2027-01-10", noon("2026-12-20"), store)).toBeNull();
+    expect(await setSeasonStart(2, "2027-02-14", noon("2026-12-20"), store)).toBeNull();
+    expect([...db.skipped]).toEqual(["2027-01-10"]);
   });
 });
 

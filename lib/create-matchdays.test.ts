@@ -38,7 +38,7 @@ function runAt(now: Date) {
   return createUpcomingMatchday(now);
 }
 
-const seasonOne = (start: string) => seasons.set("1", { number: 1, start });
+const seasonOne = (start: string) => seasons.set(1, { number: 1, start });
 
 // The database losing its connection for statements that start with `start`, the first `times` of them.
 const fakeQuery = db.query.getMockImplementation()!;

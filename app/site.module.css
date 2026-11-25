@@ -47,6 +47,24 @@
   padding-inline: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 500;
+  white-space: nowrap;
+}
+
+/* On a phone the links lose their side padding, which keeps the name and all three on one row down to 375px. On a
+   narrower screen the links move to a row of their own under the name. */
+@media (max-width: 29.99rem) {
+  .header {
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+  }
+
+  .nav {
+    gap: var(--space-3);
+  }
+
+  .nav a {
+    padding-inline: 0;
+  }
 }
 
 .footer {

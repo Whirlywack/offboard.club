@@ -84,7 +84,7 @@ export const companies = new Map<string, CompanyRow>();
 export const matchdays = new Map<string, MatchdayRow>(); // by date
 export const results = new Map<string, ResultRow>(); // by `${matchdayDate} ${userId}`
 export const games = new Map<string, GameRow>(); // by lichessGameId
-export const seasons = new Map<string, SeasonRow>(); // by String(number)
+export const seasons = new Map<number, SeasonRow>(); // the "season" table, by number
 export const skippedSundays = new Map<string, { date: string }>(); // by date
 export const organiserLichess = new Map<string, OrganiserLichessRow>(); // at most one row, by "singleton"
 export const scheduledJobs = new Map<string, ScheduledJobRow>(); // by job
@@ -194,6 +194,58 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         },
       ]);
     },
+
+  // --- A Profile's history (lib/history.ts) ---
+
+  // matchdaysOf: every ingested Matchday, oldest first, with the Member's points if they played it.
+  [`select r."points" from "matchday" m left join "matchdayResult" r on r."matchdayDate" = m."date" and r."userId" = $1 where m."ingestedAt" is not null order by m."date"`]:
+    (memberId) =>
+      answer(
+        [...matchdays.values()]
+          .filter((m) => m.ingestedAt !== null)
+          .sort((a, b) => (a.date < b.date ? -1 : 1))
+          .map((m) => ({ points: results.get(`${m.date} ${memberId}`)?.points ?? null })),
+      ),
+
+  // gamesOf: the Member's latest Games, $2 of them, Matchday by Matchday, each with the opponent if they are a Member, and
+  // how many there are in all. A side whose player has left is null, so it joins nobody.
+  [`select g."lichessGameId", to_char(g."matchdayDate", 'YYYY-MM-DD') as "date", g."whiteId", g."blackId", g."winner", o.id as "opponentId", o.name as "opponentName", (count(*) over ())::int as "total" from "game" g left join "user" o on o.id = case when g."whiteId" = $1 then g."blackId" else g."whiteId" end and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null where g."whiteId" = $1 or g."blackId" = $1 order by g."matchdayDate" desc, g."finishedAt" desc, g."lichessGameId" desc limit $2`]:
+    (memberId, limit) => {
+      const descending = (a: string | number, b: string | number) => (a < b ? 1 : a > b ? -1 : 0);
+      const theirs = [...games.values()]
+        .filter((g) => g.whiteId === memberId || g.blackId === memberId)
+        .sort(
+          (a, b) =>
+            descending(a.matchdayDate, b.matchdayDate) ||
+            descending(a.finishedAt.getTime(), b.finishedAt.getTime()) ||
+            descending(a.lichessGameId, b.lichessGameId),
+        );
+      return answer(
+        theirs.slice(0, Number(limit)).map((g) => {
+          const opponentId = g.whiteId === memberId ? g.blackId : g.whiteId;
+          const opponent = opponentId === null ? undefined : people.get(opponentId);
+          return {
+            lichessGameId: g.lichessGameId,
+            date: g.matchdayDate,
+            whiteId: g.whiteId,
+            blackId: g.blackId,
+            winner: g.winner,
+            opponentId: isMember(opponent) ? opponent.id : null,
+            opponentName: isMember(opponent) ? opponent.name : null,
+            total: theirs.length,
+          };
+        }),
+      );
+    },
+
+  // gamesBetween: every Game between two Members, either way round, with its sides and winner.
+  [`select "whiteId", "blackId", "winner" from "game" where ("whiteId" = $1 and "blackId" = $2) or ("whiteId" = $2 and "blackId" = $1)`]:
+    (one, other) =>
+      answer(
+        [...games.values()]
+          .filter((g) => (g.whiteId === one && g.blackId === other) || (g.whiteId === other && g.blackId === one))
+          .map(({ whiteId, blackId, winner }) => ({ whiteId, blackId, winner })),
+      ),
 
   // countSignUps
   [`select count(*)::int as n from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null`]:
@@ -423,6 +475,27 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           }),
       ),
 
+  // getRecap: the Matchday's decisive Games, for its Awards, in the order they finished.
+  [`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt" from "game" where "matchdayDate" = $1 and "winner" is not null order by "finishedAt", "lichessGameId"`]:
+    (date) =>
+      answer(
+        [...games.values()]
+          .filter((g) => g.matchdayDate === date && g.winner !== null)
+          .sort((a, b) => a.finishedAt.getTime() - b.finishedAt.getTime() || (a.lichessGameId < b.lichessGameId ? -1 : 1))
+          .map((g) => ({
+            lichessGameId: g.lichessGameId,
+            whiteId: g.whiteId,
+            blackId: g.blackId,
+            winner: g.winner,
+            status: g.status,
+            plies: g.plies,
+            whiteRating: g.whiteRating,
+            blackRating: g.blackRating,
+            winnerClockCentis: g.winnerClockCentis,
+            finishedAt: new Date(g.finishedAt),
+          })),
+      ),
+
   // recapDates
   [`select to_char("date", 'YYYY-MM-DD') as "date" from "matchday" where "ingestedAt" is not null order by "date" desc`]: () =>
     answer(
@@ -432,7 +505,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         .map((m) => ({ date: m.date })),
     ),
 
-  // --- The schedule (lib/seasons.ts, lib/signups.ts) ---
+  // --- The schedule (lib/seasons.ts, lib/signups.ts), which the Leaderboards are also read against ---
 
   [`select "number", to_char("start", 'YYYY-MM-DD') as "start" from "season"`]: () => answer([...seasons.values()].map((s) => ({ ...s }))),
 
@@ -442,8 +515,8 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // addSeason
   [`insert into "season" ("number", "start") values ($1, $2) on conflict ("number") do nothing`]: (number, start) => {
-    if (seasons.has(String(number))) return answer([], 0);
-    seasons.set(String(number), { number: Number(number), start });
+    if (seasons.has(Number(number))) return answer([], 0);
+    seasons.set(Number(number), { number: Number(number), start });
     return answer([], 1);
   },
 
@@ -504,6 +577,57 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     () => {
       const latest = [...jobFailures.values()].sort((a, b) => b.at.getTime() - a.at.getTime() || b.id - a.id)[0];
       return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
+    },
+
+  // --- Season and all-time Leaderboards (lib/leaderboards.ts) ---
+
+  // getSeason: the Members' results on the Season's dates, oldest first, each with the Company of that night. $1 is an
+  // array of dates.
+  [`select to_char(r."matchdayDate", 'YYYY-MM-DD') as "date", r."userId" as "memberId", r."points", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = r."companyDomain" where r."matchdayDate" = any($1::date[]) and "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null order by r."matchdayDate"`]:
+    (...params) => {
+      const [dates] = given<[string[]]>(params);
+      return answer(
+        [...results.values()]
+          .filter((r) => dates.includes(r.matchdayDate) && isMember(people.get(r.userId)))
+          .sort((a, b) => (a.matchdayDate < b.matchdayDate ? -1 : a.matchdayDate > b.matchdayDate ? 1 : 0))
+          .map((r) => {
+            const person = people.get(r.userId)!;
+            const company = r.companyDomain ? companies.get(r.companyDomain) : undefined;
+            return {
+              date: r.matchdayDate,
+              memberId: r.userId,
+              points: r.points,
+              name: person.name,
+              companyDomain: company?.domain ?? null,
+              companyName: company?.name ?? null,
+              excluded: person.lichessMarked || person.lichessClosed,
+            };
+          }),
+      );
+    },
+
+  // getAllTime: how many Matchdays each Member has played, with the Company they are at now. Postgres gives no order
+  // without "order by", so neither does this: Members in the reverse of the order their first result was stored.
+  [`select u.id as "memberId", u.name, c."domain" as "companyDomain", c."name" as "companyName", u."lichessMarked" or u."lichessClosed" as "excluded", count(*)::int as "played" from "matchdayResult" r join "user" u on u.id = r."userId" left join "company" c on c."domain" = u."companyDomain" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null group by u.id, c."domain"`]:
+    () => {
+      const played = new Map<string, number>();
+      for (const r of results.values()) if (isMember(people.get(r.userId))) played.set(r.userId, (played.get(r.userId) ?? 0) + 1);
+      return answer(
+        [...played]
+          .reverse()
+          .map(([memberId, count]) => {
+            const person = people.get(memberId)!;
+            const company = person.companyDomain ? companies.get(person.companyDomain) : undefined;
+            return {
+              memberId,
+              name: person.name,
+              companyDomain: company?.domain ?? null,
+              companyName: company?.name ?? null,
+              excluded: person.lichessMarked || person.lichessClosed,
+              played: count,
+            };
+          }),
+      );
     },
 };
 

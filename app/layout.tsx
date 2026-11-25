@@ -52,6 +52,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               Offboard
             </Link>
             <nav aria-label="Site" className={site.nav}>
+              <Link href="/seasons">Season</Link>
+              <Link href="/all-time">All-time</Link>
               <Link href="/recaps">Recaps</Link>
             </nav>
           </header>

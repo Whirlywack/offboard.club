@@ -51,6 +51,7 @@ type Person = {
 };
 const at = new Date("2026-11-24T18:00:00Z");
 let people: Map<string, Person>;
+let teamRemovals: Map<string, string>; // "teamRemoval": each account's problem, by Lichess id
 
 const person = (id: string, more: Partial<Person> = {}): Person => ({
   id,
@@ -68,7 +69,7 @@ const person = (id: string, more: Partial<Person> = {}): Person => ({
   ...more,
 });
 
-// The two statements the connection makes, answered as Postgres would, unique "lichessId" included.
+// The statements the connection makes, answered as Postgres would, unique "lichessId" included.
 async function fakeQuery(sql: string, params: unknown[] = []) {
   if (/^select 1 from "user" where "lichessId" = \$1 and id <> \$2$/.test(sql)) {
     const [lichessId, id] = params;
@@ -88,7 +89,13 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
         lichessClosed: false,
         lichessConnectedAt: row.lichessConnectedAt ?? new Date(),
       });
-    return { rows: [] };
+    return { rows: [], rowCount: row ? 1 : 0 };
+  }
+  // The account kept for the Organiser to remove from the team by hand, once, as lib/fake-db.ts has it.
+  if (/^insert into "teamRemoval" \("lichessId", "problem"\) values \(\$1, \$2\)\s+on conflict \("lichessId"\) do update set "at" = now\(\), "problem" = excluded\."problem"$/.test(sql)) {
+    const [lichessId, problem] = params as [string, string];
+    teamRemovals.set(lichessId, problem);
+    return { rows: [], rowCount: 1 };
   }
   throw new Error(`unexpected query: ${sql}`);
 }
@@ -159,6 +166,7 @@ beforeEach(() => {
       person("other", { lichessId: "taken", lichessUsername: "Taken", lichessConnectedAt: at }),
     ].map((p) => [p.id, p]),
   );
+  teamRemovals = new Map();
   lichess.team.members.add("taken");
   signedIn = "newcomer";
   getSession.mockReset().mockImplementation(async () => {
@@ -259,6 +267,18 @@ describe("coming back from Lichess", () => {
     expect(join.body.get("password")).toBe("team password");
     expect(join.authorization).toMatch(/^Bearer lio_/);
     expect(lichess.calls.every((c) => c.userAgent?.includes("offboard.club"))).toBe(true);
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("keeps the account for the Organiser to remove from the team by hand when the person deletes theirs meanwhile", async () => {
+    // They press "Delete my account" in another tab while Lichess adds the account to the team.
+    lichess.override = (c) => void (c.path.endsWith("/join") && people.delete("newcomer"));
+    expect(await connectAs("bobby")).toBe("/welcome/profile"); // which sends them, signed out, home
+    expect(lichess.team.members.has("bobby")).toBe(true);
+    expect([...teamRemovals]).toEqual([
+      ["bobby", "Its owner deleted their account on Offboard while it was joining the Club's team, so it was never connected."],
+    ]);
+    expect(revoked()).toBe(true);
   });
 
   it("revokes the token once it has been used, and clears the cookie", async () => {

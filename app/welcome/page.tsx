@@ -39,6 +39,9 @@ async function Consent() {
         responsible for what the site keeps about you. It&apos;s all in <Link href="/privacy">Privacy and terms</Link>.
       </p>
       <ConsentForm name={session.user.name} />
+      <p className={`${ui.small} ${ui.muted}`}>
+        Rather not join? <Link href="/welcome/leave">Delete your account</Link>.
+      </p>
     </>
   );
 }

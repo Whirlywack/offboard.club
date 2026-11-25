@@ -184,7 +184,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             If you signed in but didn&apos;t finish joining: what came from LinkedIn, your sign-in records and any
-            acceptances, until you ask the Organiser to delete them.
+            acceptances, until you choose &ldquo;Delete your account&rdquo; on the sign-up step you stopped at.
           </li>
           <li>The site&apos;s copy of a Recap&apos;s post to the Telegram group: until the next Matchday starts.</li>
           <li>Deleted data stays in the database provider&apos;s restore history for up to 6 hours.</li>

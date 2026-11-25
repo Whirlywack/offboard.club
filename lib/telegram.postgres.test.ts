@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { skipMatchday } from "./reschedule";
 import { postgresStore } from "./seasons";
-import { deliverPosts, forgetPastPosts, forgetReminders, postNotice, queuePost, stuckPost } from "./telegram";
+import { deliverPosts, forgetPastPosts, forgetReminders, postNotice, queuePost, stuckPosts } from "./telegram";
 
 // The Telegram posts' real SQL against the database in DATABASE_URL (migrations/008_telegram.sql), inside one
 // transaction that is always rolled back, so nothing it does is kept; Telegram is the fake. The migration is applied
@@ -230,15 +230,21 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await client.query("rollback to savepoint unclaimed");
   });
 
-  it("finds the oldest post claimed more than 15 minutes ago and never sent, and no other", async () => {
+  it("finds the posts claimed more than 15 minutes ago, and after a time when given one, never sent, oldest first, and no other", async () => {
     await client.query(`delete from "telegramPost"`);
+    const claimed = (minutesAgo: number) => new Date(NOW.getTime() - minutesAgo * MINUTE);
     await add("sent long ago", { claimedMinutesAgo: 30, sent: true });
     await add("stuck", { claimedMinutesAgo: 20 });
-    await add("being sent", { claimedMinutesAgo: 10 });
+    await add("stuck all day", { claimedMinutesAgo: 24 * 60 - 1 });
+    await add("a day ago", { claimedMinutesAgo: 24 * 60 });
+    await add("being sent", { claimedMinutesAgo: 15 - 1 / 60 });
     await add("waiting");
-    expect(await stuckPost(NOW)).toBe("stuck");
-    await client.query(`delete from "telegramPost" where "key" = 'stuck'`);
-    expect(await stuckPost(NOW)).toBeNull();
+    const day = [
+      { text: "stuck all day", claimedAt: claimed(24 * 60 - 1) },
+      { text: "stuck", claimedAt: claimed(20) },
+    ];
+    expect(await stuckPosts(NOW, claimed(24 * 60))).toEqual(day);
+    expect(await stuckPosts(NOW, null)).toEqual([{ text: "a day ago", claimedAt: claimed(24 * 60) }, ...day]);
   });
 
   it("forgets the posts whose until has passed, and no other", async () => {

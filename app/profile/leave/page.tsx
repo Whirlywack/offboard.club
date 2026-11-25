@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 import { leaveClub } from "../../actions";
 import ui from "../../ui.module.css";
-import { LeaveButton } from "./leave-button";
+import styles from "../profile.module.css";
+import { LeaveActions } from "./leave-actions";
 import { requireSignedUp } from "@/lib/auth";
 import { isOrganiser } from "@/lib/organiser";
 
@@ -31,30 +31,23 @@ export default function LeavePage() {
 
 async function Confirm() {
   const person = await requireSignedUp();
+  // What goes, what stays and, for the Organiser, what stops, then the choice: one panel, as the Profile form is.
   return (
-    <>
-      <div className={`${ui.prose} ${ui.arrive}`}>
-        <p>When you delete your account:</p>
-        <ul>
-          <li>Your Profile goes: your name and photo, Company, position, LinkedIn link and what you&apos;re open to.</li>
-          <li>You disappear from every Leaderboard and every Recap, past and present, and from the Awards.</li>
-          <li>Your Lichess account is removed from the Club&apos;s Lichess team, and is no longer connected here.</li>
-          <li>Games you played stay in other Members&apos; histories, shown as played against a former member.</li>
-        </ul>
-        <p>Your Lichess account itself, and your Games on Lichess, stay as they are.</p>
-        {isOrganiser(person) && (
-          <p className={ui.alert}>
-            You&apos;re the Organiser. Your Lichess permission is revoked too, so Matchdays stop being created on
-            Lichess.
-          </p>
-        )}
-      </div>
-      <form action={leaveClub} className={`${ui.actions} ${ui.arrive}`}>
-        <LeaveButton />
-        <Link className={ui.quiet} href="/profile">
-          Keep my account
-        </Link>
-      </form>
-    </>
+    <form action={leaveClub} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
+      <p>When you delete your account:</p>
+      <ul className={styles.consequences}>
+        <li>Your Profile goes: your name and photo, Company, position, LinkedIn link and what you&apos;re open to.</li>
+        <li>You disappear from every Leaderboard and every Recap, past and present, and from the Awards.</li>
+        <li>Your Lichess account is removed from the Club&apos;s Lichess team, and is no longer connected here.</li>
+        <li>Games you played stay in other Members&apos; histories, shown as played against a former member.</li>
+      </ul>
+      <p>Your Lichess account itself, and your Games on Lichess, stay as they are.</p>
+      {isOrganiser(person) && (
+        <p className={ui.alert}>
+          You&apos;re the Organiser. Your Lichess permission is revoked too, so Matchdays stop being created on Lichess.
+        </p>
+      )}
+      <LeaveActions />
+    </form>
   );
 }

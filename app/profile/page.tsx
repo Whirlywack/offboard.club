@@ -37,7 +37,7 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
     <>
       <ProfileForm saved={profile} />
 
-      <section aria-labelledby="lichess" className={`${styles.lichess} ${ui.arrive}`}>
+      <section aria-labelledby="lichess" className={`${styles.section} ${ui.arrive}`}>
         <h2 id="lichess">Your Lichess account</h2>
         {profile && (
           <p>
@@ -60,17 +60,17 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
         <ConnectLichess label="Switch Lichess account" quiet />
       </section>
 
-      <section aria-labelledby="leave" className={ui.arrive}>
+      <section aria-labelledby="leave" className={`${styles.section} ${ui.arrive}`}>
         <h2 id="leave">Leave the Club</h2>
         <p className={ui.muted}>
           Deleting your account removes your Profile and your results from the site, and your Lichess account from the
           Club&apos;s Lichess team.
         </p>
-        <p>
+        <div className={ui.actions}>
           <Link className={ui.quiet} href="/profile/leave">
             Delete your account
           </Link>
-        </p>
+        </div>
       </section>
 
       <nav aria-label="More" className={ui.backLinks}>

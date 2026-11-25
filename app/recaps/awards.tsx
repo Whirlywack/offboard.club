@@ -66,9 +66,7 @@ export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames:
             )}
             {/* Lichess's board and page for the Game name both accounts, and someone who has left asked to be removed. */}
             {showGames && award.opponentLeft && (
-              <p className={`${ui.small} ${ui.muted}`}>
-                Their opponent has since left the Club, so the Game isn&apos;t shown.
-              </p>
+              <p className={styles.noGame}>Their opponent has since left the Club, so the Game isn&apos;t shown.</p>
             )}
           </li>
         ))}

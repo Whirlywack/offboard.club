@@ -187,7 +187,9 @@ describe("deleting your own account", () => {
     expect(edit).toContain('<h2 id="leave">Leave the Club</h2>');
     expect(edit).toMatch(/<a[^>]* href="\/profile\/leave">Delete your account<\/a>/);
     const confirm = await leavePage();
-    expect(confirm).toMatch(/<form[^>]*><button>Delete my account<\/button><a[^>]* href="\/profile">Keep my account<\/a><\/form>/);
+    // Keeping the account comes first, then deleting it, both inside the form that deletes.
+    expect(confirm).toMatch(/<form[^>]*>.*<a[^>]* href="\/profile">Keep my account<\/a><button[^>]*>Delete my account<\/button><\/div><\/form>/);
+    expect(confirm).not.toMatch(/aria-disabled|disabled=""/);
     expect(text(confirm)).toContain("You disappear from every Leaderboard and every Recap, past and present");
     expect(text(confirm)).toContain("Games you played stay in other Members' histories, shown as played against a former member.");
     expect(people.has("ana")).toBe(true);

@@ -11,19 +11,29 @@
 //   pnpm guards                             proposes changes to the files changed since origin/main and makes them:
 //                                           only a proposal, which misses any guard it does not recognise
 //
-// Line numbers are the file's as it is now. Each change runs the whole suite, stopped at its first failure, once the
-// suite has passed without it. The real-Postgres suites run too, on a throwaway database from `pnpm db:start`, when
-// asked or when the file changed has a <name>.postgres.test.ts beside it. A change to SQL is judged by them alone:
-// lib/fake-db.ts refuses any statement it was not written with, so every fast test that sends a changed statement
-// fails, whatever the change. Exits 0 only if every change went red.
+// Line numbers are the file's as it is now. Each change gets one verdict:
+//   RED       tests that pass without the change failed with it, and are named: each failing test is run again on the
+//             code as it is, and one that fails there too says nothing of the change
+//   GREEN     every test that ran passed, and none was skipped where the real-Postgres suites ran
+//   BROKEN    the change does not parse, TypeScript refuses it, a file no longer loads, or a changed migration does not
+//             apply: CI would refuse it before any test, so no test judged it
+//   UNJUDGED  the tests cannot say: the failures were there without the change, or were timeouts, or vitest failed
+//             outside any test, or no test ran, or a real-Postgres test was skipped
+//   NOT MADE  the place is not in the file as named
+// Each says which tests it rests on. The whole suite runs, stopped at its first failure, once it has passed without the
+// change; with the real-Postgres suites too, on a throwaway database from `pnpm db:start`, when asked, when the file
+// holds SQL, or when it has a <name>.postgres.test.ts beside it. A change inside SQL is judged by them alone, as
+// lib/fake-db.ts refuses any statement it was not written with, and a change to a migration by them alone on a database
+// migrated afresh with it. Exits 0 only if every place named went red; never when it proposed the places.
 //
 // Everything happens in a copy of the checkout in a temporary folder, with its own pnpm install, so a reviewer who may
-// not edit the worktree can run it, and the worktree is as it was however the run ends (scripts/check.mjs).
+// not edit the worktree can run it, and the worktree is as it was however the run ends (scripts/check.mjs). Neither
+// DATABASE_URL nor ALLOW_DB_TESTS reaches the tests but its own, and it refuses a DATABASE_URL not on this machine.
 import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { cleanUp, copyCheckout, git, readJson, relative, root, run, scratch, startDatabase } from "./check.mjs";
+import { cleanUp, copyCheckout, environmentProblem, git, readJson, relative, root, run, scratch, startDatabase, stopDatabase } from "./check.mjs";
 
 const USAGE = "Usage: pnpm guards [--pg] [--tests <file>] [<file>[:<line>[-<last>]] [--replace <text> <with>] [+ <place>]] ...";
 // What lib/fake-db.ts throws on a statement it does not know.
@@ -100,14 +110,40 @@ export function inSql(file, text, offset) {
   const source = parsed(file, text);
   const look = (node) => {
     if (offset < node.getStart(source) || offset >= node.getEnd()) return false;
-    if (ts.isTemplateLiteral(node))
-      return /^\s*(with|select|insert|update|delete)\s|\b(where|and|or|set|on)\s+("|\$\d|\w+\.")/.test(node.getText(source).slice(1, -1));
+    if (ts.isTemplateLiteral(node)) return sql(node, source);
     return ts.forEachChild(node, look) ?? false;
   };
   return look(source);
 }
+const sql = (template, source) =>
+  /^\s*(with|select|insert|update|delete)\s|\b(where|and|or|set|on)\s+("|\$\d|\w+\.")/.test(template.getText(source).slice(1, -1));
 
-const quote = (text) => (/^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`);
+const script = (file) => /\.(m?[jt]sx?)$/.test(file);
+
+// Whether `text`, the file `file`, holds SQL in a template literal anywhere.
+export function hasSql(file, text) {
+  if (!script(file)) return false;
+  const source = parsed(file, text);
+  const look = (node) => (ts.isTemplateLiteral(node) && sql(node, source)) || (ts.forEachChild(node, look) ?? false);
+  return look(source);
+}
+
+// What a parser says is wrong with `text`, the file `file`: TypeScript's for a script, JSON's for .json; null for any
+// other file, which is not parsed.
+export function parseErrors(file, text) {
+  if (file.endsWith(".json")) {
+    try {
+      JSON.parse(text);
+      return [];
+    } catch (error) {
+      return [error.message];
+    }
+  }
+  if (!script(file)) return null;
+  return parsed(file, text).parseDiagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, " "));
+}
+
+const quote =(text) => (/^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", `'\\''`)}'`);
 export const label = (change) =>
   change
     .map(({ file, first, last, replace }) =>
@@ -162,36 +198,66 @@ function proposals() {
     .flatMap(([name, lines]) => propose(name, readFileSync(join(root, name), "utf8"), lines));
 }
 
-// How a run of the tests ended: red (with the first tests that failed), green, refused (every test that failed did so
-// only because lib/fake-db.ts did not know a statement), or broken (a file that no longer loads, or no report).
-export function verdict(report, code) {
-  if (code === null) return { kind: "red", why: "the tests did not finish within 5 minutes and were stopped" };
+// How a run of the tests ended (vitest's JSON report, its exit code, and whether the real-Postgres suites ran): red,
+// with the tests that failed, still to be run again without the change; green; refused, when every test that failed did
+// so only because lib/fake-db.ts did not know a statement; broken; or unjudged.
+export function verdict(report, code, postgres) {
+  if (code === null) return { kind: "unjudged", why: "the tests did not finish within 5 minutes and were stopped" };
   if (!report) return { kind: "broken", why: "vitest wrote no report" };
   const failed = [];
+  const timedOut = [];
   let refused = 0;
   for (const file of report.testResults)
-    for (const test of file.assertionResults.filter((test) => test.status === "failed"))
-      if (test.failureMessages.some((message) => message.includes(FAKE_REFUSES))) refused++;
-      else failed.push(`${relative(file.name)} > ${test.fullName}`);
-  if (failed.length) return { kind: "red", why: `${failed.length} failed, first: ${failed.slice(0, 2).join("; ")}` };
+    for (const test of file.assertionResults.filter((test) => test.status === "failed")) {
+      const message = test.failureMessages.join("\n");
+      if (message.includes(FAKE_REFUSES)) refused++;
+      else if (/Test timed out in \d+ms/.test(message)) timedOut.push(`${relative(file.name)} > ${test.fullName}`);
+      else failed.push({ file: relative(file.name), name: test.fullName });
+    }
+  if (failed.length) return { kind: "red", failed };
+  if (timedOut.length) return { kind: "unjudged", why: `only by timing out, which load alone can do: ${timedOut.slice(0, 2).join("; ")}` };
   if (refused) return { kind: "refused" };
   const unloaded = report.testResults.find((file) => file.status === "failed" && file.message);
   if (unloaded)
     return { kind: "broken", why: `${relative(unloaded.name)} no longer loads: ${unloaded.message.replace(/\x1b\[[0-9;]*m/g, "").split("\n")[0]}` };
-  if (code !== 0) return { kind: "red", why: "vitest failed the run with an error outside any test" };
-  return { kind: "green", why: `no test noticed: ${report.numPassedTests} passed` };
+  if (code !== 0) return { kind: "unjudged", why: "vitest failed the run with an error outside any test" };
+  const tests = report.testResults.flatMap((file) => file.assertionResults.map((test) => ({ ...test, file: relative(file.name) })));
+  const passed = tests.filter((test) => test.status === "passed").length;
+  const skipped = tests.filter((test) => test.status !== "passed");
+  if (passed === 0) return { kind: "unjudged", why: "no test ran" };
+  if (postgres && skipped.length)
+    return { kind: "unjudged", why: `${skipped.length} tests were skipped, first: ${skipped.slice(0, 2).map((test) => `${test.file} > ${test.fullName}`).join("; ")}` };
+  return { kind: "green", why: `no test noticed: ${passed} passed` };
 }
+
+// A red run judged again by the same tests run without the change (`without`, their JSON report): red if some of the
+// tests that failed pass without it, naming them, and unjudged if none does.
+export function confirmed(red, without) {
+  const passed = new Set(
+    (without?.testResults ?? []).flatMap((file) => file.assertionResults.filter((test) => test.status === "passed").map((test) => `${relative(file.name)} > ${test.fullName}`)),
+  );
+  const names = red.failed.map(({ file, name }) => `${file} > ${name}`);
+  const noticed = names.filter((name) => passed.has(name));
+  if (noticed.length === 0) return { kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${names.slice(0, 2).join("; ")}` };
+  return { kind: "red", why: `${noticed.length} failed with the change and pass without it, first: ${noticed.slice(0, 2).join("; ")}` };
+}
+
+const NAMES = { red: "RED", green: "GREEN", broken: "BROKEN", unjudged: "UNJUDGED" };
 
 async function guards(args) {
   const { options, changes: named } = parse(args);
+  const problem = environmentProblem();
+  if (problem) throw new Error(problem);
   const proposed = named.length === 0;
   const changes = proposed ? proposals() : named;
+  const PROPOSED =
+    "These were only proposals, made by a few patterns: they judge no guard they did not name. Name each guard the branch adds or touches: pnpm guards <file>:<line>.";
   if (proposed)
-    say(
-      `No places were named, so ${changes.length === 1 ? "1 change is" : `${changes.length} changes are`} proposed for the lines changed since origin/main. ` +
-        "Only a proposal: a guard it does not recognise is not on it, and each guard the branch adds or touches still needs naming.",
-    );
-  if (changes.length === 0) return 0;
+    say(`No places were named, so ${changes.length === 1 ? "1 change is" : `${changes.length} changes are`} proposed for the lines changed since origin/main.`);
+  if (changes.length === 0) {
+    if (proposed) say(PROPOSED);
+    return 1;
+  }
   const folder = scratch("guards");
   const checkout = join(folder, "checkout");
   const log = join(folder, "guards.log");
@@ -216,19 +282,26 @@ async function guards(args) {
         located.push({ ...where, file: edit.file });
       }
       const changed = new Map();
+      let broken = null;
       for (const [file, text] of texts) {
-        const mine = located.filter((edit) => edit.file === file);
-        const result = apply(text, mine);
+        const result = apply(text, located.filter((edit) => edit.file === file));
         if (result === null) return { change, problem: `${file}: two of the edits overlap` };
         if (result === text) return { change, problem: `${file}: the edit changes nothing` };
         changed.set(file, result);
+        const [before, after] = [parseErrors(file, text), parseErrors(file, result)];
+        if (after && after.length > before.length) broken ??= `${file} no longer parses: ${after.find((error) => !before.includes(error)) ?? after[0]}`;
       }
+      const migration = change.some((edit) => edit.file.startsWith("migrations/"));
       const touchesFake = change.some((edit) => edit.file === "lib/fake-db.ts");
-      const sql = !touchesFake && located.some((edit) => inSql(edit.file, texts.get(edit.file), edit.start) || inSql(edit.file, texts.get(edit.file), Math.max(edit.start, edit.end - 1)));
+      const inside = (edit) => script(edit.file) && (inSql(edit.file, texts.get(edit.file), edit.start) || inSql(edit.file, texts.get(edit.file), Math.max(edit.start, edit.end - 1)));
+      const sql = !touchesFake && located.some(inside);
+      const holdsSql = change.some((edit) => hasSql(edit.file, texts.get(edit.file)));
       const beside = change.some((edit) => suites.includes(edit.file.replace(/\.m?[jt]sx?$/, ".postgres.test.ts")));
-      const postgres = options.tests.length ? postgresTests.length > 0 : options.pg || beside || sql;
-      if (sql && postgresTests.length === 0) return { change, problem: "a change to SQL is judged by the real-Postgres suites, and none of the --tests is one" };
-      return { change, texts, changed, located, sql, postgres };
+      const postgres = options.tests.length ? postgresTests.length > 0 : options.pg || beside || sql || holdsSql || migration;
+      if ((sql || migration) && postgresTests.length === 0)
+        return { change, problem: `a change to ${migration ? "a migration" : "SQL"} is judged by the real-Postgres suites, and none of the --tests is one` };
+      const types = change.some((edit) => /\.tsx?$/.test(edit.file));
+      return { change, texts, changed, located, broken, sql, migration, postgres, types };
     });
 
     let database = null;
@@ -238,21 +311,34 @@ async function guards(args) {
       if (!database) throw new Error(`pnpm db:start failed (${log}).`);
     }
     const report = join(folder, "report.json");
-    // Runs the test files `filters` (all of them if none) with `pnpm test`, stopped at the first failure, and judges the run.
-    const tests = async (filters, postgres) => {
+    // Runs the test files `filters` (all of them if none) with `pnpm test`, on the database `url` if any, and gives
+    // vitest's report and exit code.
+    const tests = async (filters, url, bail = true) => {
       rmSync(report, { force: true });
-      const env = { ...process.env, ...(postgres ? { ALLOW_DB_TESTS: "1", DATABASE_URL: database } : {}) };
-      const code = await run("pnpm", ["test", "--bail=1", "--reporter=json", `--outputFile=${report}`, ...filters], { cwd: checkout, log, env, limit: 5 * 60_000 });
-      return verdict(readJson(report), code);
+      const env = url ? { ALLOW_DB_TESTS: "1", DATABASE_URL: url } : {};
+      const flags = ["--reporter=json", `--outputFile=${report}`, ...(bail ? ["--bail=1"] : [])];
+      const code = await run("pnpm", ["test", ...flags, ...filters], { cwd: checkout, log, env, limit: 5 * 60_000 });
+      return { report: readJson(report), code };
     };
+    // The type errors TypeScript finds in the copy as it is now, when the checkout has a typecheck script.
+    const scripts = readJson(join(checkout, "package.json"))?.scripts ?? {};
+    const typesLog = join(folder, "types.log");
+    const typeErrors = async () => {
+      rmSync(typesLog, { force: true });
+      await run("pnpm", ["typecheck"], { cwd: checkout, log: typesLog });
+      return readFileSync(typesLog, "utf8").split("\n").filter((line) => /error TS\d+/.test(line));
+    };
+    const typesBefore = scripts.typecheck && plans.some((plan) => plan.types) ? await typeErrors() : null;
 
-    const before = await tests(options.tests, database !== null);
+    const before = await tests(options.tests, database?.url);
+    const baseline = verdict(before.report, before.code, database !== null);
     const scope = `${options.tests.length ? options.tests.join(", ") : "the whole suite"}${database ? " with the real-Postgres suites" : ""}`;
-    if (before.kind !== "green") throw new Error(`The tests fail before any change, so no change can be judged: ${before.why}`);
-    say(`The tests pass as the code is (${scope}: ${before.why.replace("no test noticed: ", "")}).\n`);
+    if (baseline.kind !== "green")
+      throw new Error(`The tests do not pass before any change, so no change can be judged: ${baseline.why ?? `${baseline.failed.length} failed, first: ${baseline.failed[0].file} > ${baseline.failed[0].name}`}`);
+    say(`The tests pass as the code is (${scope}: ${baseline.why.replace("no test noticed: ", "")}).\n`);
 
     const outcomes = [];
-    for (const plan of plans) {
+    for (const [n, plan] of plans.entries()) {
       if (plan.problem) {
         say(`NOT MADE  ${label(plan.change)}\n         ${plan.problem}`);
         outcomes.push("not made");
@@ -260,28 +346,55 @@ async function guards(args) {
       }
       for (const [file, text] of plan.changed) writeFileSync(join(checkout, file), text);
       let result;
+      let on = options.tests.length ? `the tests named (${options.tests.join(", ")})` : plan.postgres ? "the fast tests and the real-Postgres suites" : "the fast tests only: no real-Postgres suite ran";
+      let url = plan.postgres ? database.url : null;
       try {
-        result = plan.sql ? { kind: "refused" } : await tests(options.tests, plan.postgres);
-        if (result.kind === "refused" && plan.postgres) result = { ...(await tests(postgresTests, true)), alone: true };
+        const refused = plan.broken ? null : typesBefore && plan.types ? (await typeErrors()).find((line) => !typesBefore.includes(line)) : null;
+        if (plan.broken) result = { kind: "broken", why: plan.broken };
+        else if (refused) result = { kind: "broken", why: `TypeScript refuses the change, as CI's typecheck would: ${refused.trim()}` };
+        else if (plan.migration) {
+          on = "the real-Postgres suites alone, on a database migrated afresh with the change";
+          const fresh = await startDatabase(folder, `change-${n + 1}`, log);
+          if (!fresh) result = { kind: "broken", why: "the changed migrations do not apply to an empty database (pnpm db:start failed)" };
+          else {
+            url = fresh.url;
+            const { report: r, code } = await tests(postgresTests, fresh.url);
+            result = verdict(r, code, true);
+            await stopDatabase(folder, fresh.dir, log);
+          }
+        } else {
+          const whole = plan.sql ? null : await tests(options.tests, url);
+          result = whole ? verdict(whole.report, whole.code, plan.postgres) : { kind: "refused" };
+          if (result.kind === "refused" && plan.postgres) {
+            on = "the real-Postgres suites alone, as lib/fake-db.ts refuses a changed statement";
+            url = database.url;
+            const { report: r, code } = await tests(postgresTests, database.url);
+            result = verdict(r, code, true);
+          } else if (result.kind === "refused")
+            result = { kind: "unjudged", why: "the fast tests failed only because lib/fake-db.ts does not know the changed statement: run it again with --pg" };
+        }
       } finally {
         for (const [file, text] of plan.texts) writeFileSync(join(checkout, file), text);
       }
-      const name = { red: "RED", green: "GREEN", broken: "BROKEN", refused: "UNJUDGED" }[result.kind];
-      say(`${name.padEnd(8)}  ${label(plan.change)}`);
+      // A red run is run again, on the failing files alone, without the change: only a test that passes there noticed it.
+      if (result.kind === "red") {
+        const without = await tests([...new Set(result.failed.map((test) => test.file))], plan.migration ? database.url : url, false);
+        result = confirmed(result, without.report);
+      }
+      say(`${NAMES[result.kind].padEnd(8)}  ${label(plan.change)}`);
       for (const edit of plan.located) say(shown(plan.texts.get(edit.file), edit));
-      const why =
-        result.kind === "refused"
-          ? "the fast tests failed only because lib/fake-db.ts does not know the changed statement: run it again with --pg"
-          : result.why;
-      say(`         ${result.alone ? "by the real-Postgres suites alone, as lib/fake-db.ts refuses a changed statement: " : ""}${why}`);
+      say(`         ${result.why}${result.kind === "broken" ? "" : `, on ${on}`}`);
       outcomes.push(result.kind);
     }
     const red = outcomes.filter((kind) => kind === "red").length;
     say(`\n${red} of ${changes.length} changes went red.`);
-    const unnoticed = plans.filter((_, i) => outcomes[i] === "green").map((plan) => label(plan.change));
-    if (unnoticed.length) say(`No test noticed: ${unnoticed.join("; ")}.`);
+    for (const kind of ["green", "unjudged", "broken", "not made"]) {
+      const these = plans.filter((_, i) => outcomes[i] === kind).map((plan) => label(plan.change));
+      if (these.length) say(`${{ green: "No test noticed", unjudged: "Not judged", broken: "Broken", "not made": "Not made" }[kind]}: ${these.join("; ")}.`);
+    }
     say("Each change was made in the copy only, which is now removed; this checkout was not written to.");
-    return red === changes.length ? 0 : 1;
+    if (proposed) say(PROPOSED);
+    return !proposed && red === changes.length ? 0 : 1;
   } finally {
     cleanUp(folder);
   }

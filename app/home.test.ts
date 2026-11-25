@@ -16,10 +16,10 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 const DATE = "2026-11-29";
 let signedIn: string | null;
 
-// The next Matchday as the viewer gets it: the element inside the header's first <Suspense>.
+// The next Matchday as the viewer gets it: the element inside the first <Suspense> beside the opening pitch.
 async function nextMatchday() {
-  const header = Home().props.children[0];
-  const inner = header.props.children[2].props.children;
+  const side = Home().props.children[0].props.children[1];
+  const inner = side.props.children[0].props.children;
   const shown = await inner.type(inner.props);
   return shown ? renderToStaticMarkup(shown as ReactElement) : "";
 }
@@ -44,14 +44,17 @@ describe("the next Matchday's tournament on the home page", () => {
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
     signedIn = "member";
     const html = await nextMatchday();
-    expect(html).toContain('Next Matchday: <time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November at 20:00</time> Vilnius time.');
-    expect(html).toContain('<a href="https://lichess.org/swiss/AbCd1234" target="_blank" rel="noopener noreferrer">Join it on Lichess</a>');
+    expect(html).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November at 20:00</time>');
+    expect(html).toContain(
+      '<a href="https://lichess.org/swiss/AbCd1234" target="_blank" rel="noopener noreferrer">Join this Matchday on Lichess<span class="visually-hidden"> (opens in a new tab)</span></a>',
+    );
   });
 
   it("is not linked before it exists", async () => {
     signedIn = "member";
     const html = await nextMatchday();
-    expect(html).toContain("Next Matchday:");
+    expect(html).toContain("Next Matchday");
+    expect(html).toContain("Sunday 29 November at 20:00");
     expect(html).not.toContain("lichess.org/swiss");
   });
 
@@ -60,7 +63,7 @@ describe("the next Matchday's tournament on the home page", () => {
     for (const who of [null, "newcomer"]) {
       signedIn = who;
       const html = await nextMatchday();
-      expect(html).toContain("Next Matchday:");
+      expect(html).toContain("Sunday 29 November at 20:00");
       expect(html).not.toContain("lichess.org/swiss");
     }
   });

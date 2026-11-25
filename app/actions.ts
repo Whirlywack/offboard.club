@@ -11,7 +11,7 @@ import { readProfileForm } from "@/lib/profile";
 
 // Returns a message to show when sign-in cannot start; otherwise goes to LinkedIn.
 export async function signIn(): Promise<string> {
-  if (!linkedInConfigured) return "Sign-in with LinkedIn is not set up yet. Please try again later.";
+  if (!linkedInConfigured) return "Signing in with LinkedIn isn't set up yet. Please try again later.";
   let url: string | undefined;
   try {
     ({ url } = await auth.api.signInSocial({
@@ -21,7 +21,7 @@ export async function signIn(): Promise<string> {
   } catch (error) {
     console.error("LinkedIn sign-in could not start", error);
   }
-  if (!url) return "Sign-in is not working right now. Please try again in a few minutes.";
+  if (!url) return "LinkedIn sign-in isn't working right now. Please try again in a few minutes.";
   redirect(url);
 }
 
@@ -50,7 +50,7 @@ export async function consent(_previous: string, form: FormData): Promise<string
 // Returns a message when connecting cannot start. Lichess sends the person back to app/api/lichess/callback.
 export async function connectLichess(): Promise<string> {
   const { id } = await requireWelcomed();
-  if (!lichessConfigured()) return "Connecting Lichess is not set up yet. Please try again later.";
+  if (!lichessConfigured()) return "Connecting Lichess isn't set up yet. Please try again later.";
   const { url, cookie } = startConnection(id);
   (await cookies()).set(pendingCookie(cookie));
   redirect(url);

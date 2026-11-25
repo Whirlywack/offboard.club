@@ -1,0 +1,341 @@
+/*
+ * Offboard's design tokens and base styles. Every colour, type size, space, radius and timing lives here, so the
+ * direction can change in one place. Page layout lives in each page's CSS Module.
+ *
+ * Palette: near-black ink and warm off-white paper, from the placeholder logo, with one accent, marigold. Marigold
+ * is too light to be text on paper, so it is only ever a fill with ink on top. It marks "what is happening now":
+ * the next Matchday, the sign-up countdown, the current step, and selected text.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Colour */
+  --paper: #f4f1ea;
+  --raised: #fbf9f4;
+  --sunken: #e9e5dc;
+  --ink: #111111;
+  --muted: #5c5850; /* 6.3:1 on paper */
+  --line: rgb(17 17 17 / 0.12); /* dividers only */
+  --line-strong: #8f8a80; /* form control borders: 3:1 on paper */
+  --accent: #e4a23a; /* marigold: fills only */
+  --on-accent: #111111; /* 8.6:1 on marigold */
+  --error: #b3261e; /* 5.8:1 on paper */
+  --error-wash: rgb(179 38 30 / 0.07);
+  --button: var(--ink);
+  --on-button: var(--paper);
+  --focus: var(--ink);
+  --image-outline: oklch(0 0 0 / 0.1);
+  --shadow-raised:
+    0 0 0 1px rgb(17 17 17 / 0.07), 0 1px 2px -1px rgb(17 17 17 / 0.07), 0 2px 6px 0 rgb(17 17 17 / 0.04);
+  --logo-ground: #111111;
+  --logo-squares: #f4f1ea;
+  --logo-ring: transparent;
+
+  /* Type: a self-hosted serif (Newsreader) for headings, the system's own sans for everything you read and use */
+  --font-text: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --text-xs: 0.8125rem; /* 13px */
+  --text-sm: 0.9375rem; /* 15px */
+  --text-base: 1.0625rem; /* 17px */
+  --text-lg: 1.1875rem; /* 19px */
+  --text-xl: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  --text-2xl: clamp(2rem, 1.55rem + 2vw, 2.875rem);
+  --text-3xl: clamp(2.75rem, 1.7rem + 4.6vw, 5rem);
+  --leading-tight: 1.08;
+  --leading-snug: 1.3;
+  --leading-body: 1.55;
+  --tracking-caps: 0.06em;
+
+  /* Space: a 4px base */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --gutter: clamp(1.25rem, 0.75rem + 2.5vw, 2.5rem);
+  --space-panel: clamp(1rem, 0.5rem + 2.5vw, 1.5rem); /* inside a panel: tighter on a phone, so forms keep their width */
+  --measure: 38rem; /* a comfortable line of text */
+  --page: 68rem; /* the widest anything gets */
+
+  /* Shape: small radii, after the logo's square corners */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px; /* = radius-md + 4px, for anything wrapping a radius-md control at that padding */
+  --tap: 2.75rem; /* 44px: the smallest thing a thumb should have to hit */
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-press: 150ms;
+  --duration-hover: 150ms;
+  --duration-enter: 320ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121211;
+    --raised: #1c1b19;
+    --sunken: #262522;
+    --ink: #f4f1ea;
+    --muted: #aba59a; /* 7.7:1 on paper */
+    --line: rgb(244 241 234 / 0.13);
+    --line-strong: #6e6a62; /* 3.5:1 on paper */
+    --error: #ff8f80; /* 8.5:1 on paper */
+    --error-wash: rgb(255 143 128 / 0.09);
+    --button: #f4f1ea;
+    --on-button: #121211;
+    --image-outline: oklch(1 0 0 / 0.1);
+    --shadow-raised: 0 0 0 1px rgb(244 241 234 / 0.09);
+    --logo-ring: rgb(244 241 234 / 0.16);
+  }
+}
+
+/* Base */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-padding-top: var(--space-5);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-2xl);
+}
+
+h2 {
+  font-size: var(--text-xl);
+}
+
+h3 {
+  font-size: var(--text-lg);
+}
+
+p,
+li,
+dd,
+dt,
+label,
+legend,
+small {
+  text-wrap: pretty;
+}
+
+p,
+ol,
+ul,
+dl,
+dd,
+figure,
+fieldset {
+  margin: 0;
+}
+
+ol,
+ul {
+  padding: 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+time,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Links: an underline that firms up under the pointer */
+
+a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  transition: text-decoration-color var(--duration-hover) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+/* A link that opens another site in a new tab shows an arrow. It is silent on purpose: ExternalLink
+   (app/external-link.tsx) puts "(opens in a new tab)" in the markup, which every screen reader reads. */
+a[target="_blank"]::after {
+  content: "\2009↗" / "";
+  font-family: var(--font-text);
+  text-decoration: none;
+  display: inline-block;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Buttons: ink on paper, pressed in slightly when tapped */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--button);
+  color: var(--on-button);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--duration-press) var(--ease-out),
+    opacity var(--duration-press) ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Disabled only while it is working */
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Text fields: a plain box with a border strong enough to find */
+
+input:not([type="checkbox"], [type="radio"], [type="hidden"]) {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: max(16px, var(--text-base)); /* 16px or more, or iOS zooms in on focus */
+  transition: border-color var(--duration-hover) ease;
+}
+
+input:not([type="checkbox"], [type="radio"], [type="hidden"]):focus-visible {
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input[type="checkbox"] {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+/* Keyboard users can jump past the header */
+.skip-link {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 10;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--button);
+  color: var(--on-button);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--space-5)));
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* Hidden from the eye, read by a screen reader */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduced motion keeps the fades and colour changes, which help, and drops anything that moves */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled) {
+    transform: none;
+  }
+}

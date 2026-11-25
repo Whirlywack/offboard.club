@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ConnectLichess } from "../connect-lichess";
+import { ExternalLink } from "../external-link";
+import ui from "../ui.module.css";
+import styles from "./profile.module.css";
 import { ProfileForm } from "./profile-form";
 import { getProfile, requireSignedUp } from "@/lib/auth";
 import { lichessProblem } from "@/lib/connect-lichess";
@@ -11,12 +14,14 @@ export const metadata: Metadata = { title: "Edit your Profile" };
 
 export default function EditProfile({ searchParams }: PageProps<"/profile">) {
   return (
-    <main>
-      <h1>Edit your Profile</h1>
-      <p>
-        Members see your name and photo from LinkedIn and whatever you fill in here. Every field is optional: empty one
-        and save to clear it.
-      </p>
+    <main id="main" className={ui.page}>
+      <div className={ui.intro}>
+        <h1>Edit your Profile</h1>
+        <p className={ui.lede}>
+          Other Members see your name and photo from LinkedIn, plus anything you fill in here. Every field is optional;
+          empty one and save to clear it.
+        </p>
+      </div>
       <Suspense>
         <Edit searchParams={searchParams} />
       </Suspense>
@@ -32,31 +37,33 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
     <>
       <ProfileForm saved={profile} />
 
-      <section aria-labelledby="lichess">
-        <h2 id="lichess">Lichess</h2>
+      <section aria-labelledby="lichess" className={`${styles.lichess} ${ui.arrive}`}>
+        <h2 id="lichess">Your Lichess account</h2>
         {profile && (
           <p>
             You play as{" "}
-            <a href={lichessProfileUrl(profile.lichessUsername)} target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={lichessProfileUrl(profile.lichessUsername)}>
               {profile.lichessUsername}
-            </a>{" "}
+            </ExternalLink>{" "}
             on Lichess.
           </p>
         )}
-        <p>
-          To play with a different Lichess account, sign in to Lichess with it, then connect it here. Your Matchdays,
-          Games and Profile stay yours.
+        <p className={ui.muted}>
+          To play with a different account, sign in to Lichess with it first, then switch here. Your Matchdays, Games and
+          Profile stay with you.
         </p>
-        {problem && <p role="alert">{problem}</p>}
-        <ConnectLichess label="Connect a different Lichess account" />
+        {problem && (
+          <p role="alert" className={ui.alert}>
+            {problem}
+          </p>
+        )}
+        <ConnectLichess label="Switch Lichess account" quiet />
       </section>
 
-      <p>
-        <Link href={`/profiles/${id}`}>See your Profile</Link>
-      </p>
-      <p>
+      <nav aria-label="More" className={ui.backLinks}>
+        <Link href={`/profiles/${id}`}>See your Profile as Members see it</Link>
         <Link href="/">Home</Link>
-      </p>
+      </nav>
     </>
   );
 }

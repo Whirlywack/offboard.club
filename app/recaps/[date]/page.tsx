@@ -2,12 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { ExternalLink } from "../../external-link";
+import ui from "../../ui.module.css";
+import { longDate } from "../dates";
+import styles from "../recaps.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { companyLabel } from "@/lib/companies";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
 import { isRecapDate } from "@/lib/schedule";
-import { longDate } from "../dates";
 
 export async function generateMetadata({ params }: PageProps<"/recaps/[date]">): Promise<Metadata> {
   const { date } = await params;
@@ -20,17 +23,28 @@ export async function generateMetadata({ params }: PageProps<"/recaps/[date]">):
 // a 404.
 export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
   return (
-    <main>
+    <main id="main" className={ui.page}>
       <Suspense>
         <RecapOf params={params} />
       </Suspense>
-      <p>
+      <nav aria-label="More" className={ui.backLinks}>
         <Link href="/recaps">All Recaps</Link>
-      </p>
-      <p>
         <Link href="/">Home</Link>
-      </p>
+      </nav>
     </main>
+  );
+}
+
+// The Company as companyLabel names it, "Vinted (vinted.com)", with the domain in its own span so that a narrow
+// screen can put it on a line of its own.
+function CompanyName({ company }: { company: Parameters<typeof companyLabel>[0] }) {
+  const label = companyLabel(company);
+  const domainAt = label.lastIndexOf(" (");
+  if (domainAt < 0) return label;
+  return (
+    <>
+      {label.slice(0, domainAt)} <span className={styles.domain}>{label.slice(domainAt + 1)}</span>
+    </>
   );
 }
 
@@ -43,27 +57,30 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
     }),
     viewerIsMember(),
   ]);
-  if (recap === undefined) return <p>This Recap cannot be shown just now. Please try again later.</p>;
+  if (recap === undefined)
+    return <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>;
   if (!recap) notFound();
   return (
-    <article>
-      <h1>
-        Recap of <time dateTime={recap.date}>{longDate(recap.date)}</time>
-      </h1>
-      {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
-      {member && (
-        <p>
-          <a href={lichessSwissUrl(recap.lichessTournamentId)} target="_blank" rel="noopener noreferrer">
-            The Matchday on Lichess
-          </a>
-        </p>
-      )}
-      <section aria-labelledby="leaderboard">
+    <article className={styles.recap}>
+      <div className={ui.intro}>
+        <h1>
+          Recap of <time dateTime={recap.date}>{longDate(recap.date)}</time>
+        </h1>
+        {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
+        {member && (
+          <p className={styles.lichessLink}>
+            <ExternalLink href={lichessSwissUrl(recap.lichessTournamentId)}>
+              Open this Matchday on Lichess
+            </ExternalLink>
+          </p>
+        )}
+      </div>
+      <section aria-labelledby="leaderboard" className={styles.board}>
         <h2 id="leaderboard">Leaderboard</h2>
         {recap.leaderboard.length === 0 ? (
-          <p>Nobody is on this Matchday&apos;s Leaderboard.</p>
+          <p className={styles.empty}>Nobody is on this Matchday&apos;s Leaderboard.</p>
         ) : (
-          <table>
+          <table className={styles.table}>
             <thead>
               <tr>
                 <th scope="col">Rank</th>
@@ -79,12 +96,15 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
                   <th scope="row">
                     <Link href={`/profiles/${row.memberId}`}>{row.name}</Link>
                   </th>
-                  <td>{row.company && companyLabel(row.company)}</td>
+                  <td>{row.company && <CompanyName company={row.company} />}</td>
                   <td>{row.points}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+        {!member && recap.leaderboard.length > 0 && (
+          <p className={`${ui.small} ${ui.muted}`}>Names open Profiles, which only signed-in Members can see.</p>
         )}
       </section>
     </article>

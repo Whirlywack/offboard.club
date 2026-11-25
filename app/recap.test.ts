@@ -135,7 +135,7 @@ describe("a Recap", () => {
   it("says plainly that it cannot be shown when the database cannot be read", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.query.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
-    expect(await open(DATE)).toContain("This Recap cannot be shown just now.");
+    expect(await open(DATE)).toContain("This Recap can&#x27;t be shown right now.");
   });
 });
 
@@ -154,10 +154,10 @@ describe("the list of Recaps", () => {
 
   it("says so when there are none yet, and when the database cannot be read", async () => {
     resetDb();
-    expect(await list()).toContain("There are no Recaps yet");
+    expect(await list()).toContain("No Recaps yet");
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.query.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
-    expect(await list()).toContain("The Recaps cannot be shown just now.");
+    expect(await list()).toContain("The Recaps can&#x27;t be shown right now.");
   });
 
   it("is linked from the home page", () => {

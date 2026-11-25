@@ -233,7 +233,7 @@ describe("starting to connect", () => {
 
   it("says so, rather than failing, until the team is configured", async () => {
     vi.stubEnv("LICHESS_TEAM_PASSWORD", "");
-    expect(await connectLichess()).toMatch(/not set up yet/);
+    expect(await connectLichess()).toMatch(/isn't set up yet/);
     expect(jar.sets).toEqual([]);
   });
 });

@@ -52,7 +52,7 @@ const saved = (id: string) => `redirect /profiles/${id}`;
 const stored = () => [...companies.values()].map(({ domain, name, logoUrl }) => ({ domain, name, logoUrl }));
 const createdToday = (id: string) => people.get(id)?.companiesCreatedThatDay;
 
-const notAWebsite = "The Company website must be the address of a public website, such as vinted.com.";
+const notAWebsite = "That doesn't look like a public website address. Try one like vinted.com.";
 const vinted = { name: "Vinted", logoUrl: "https://www.vinted.com/favicon.ico" };
 // What fetchCompanyMeta gives for a website that fails, refuses or has no name.
 const fallback = async (domain: string) => ({ name: domain, logoUrl: null });

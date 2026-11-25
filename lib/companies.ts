@@ -42,7 +42,7 @@ export async function companyForWebsite(
 ): Promise<{ domain: string | null } | { problem: string }> {
   if (!website) return { domain: null };
   const domain = companyDomain(website);
-  if (!domain) return { problem: "The Company website must be the address of a public website, such as vinted.com." };
+  if (!domain) return { problem: "That doesn't look like a public website address. Try one like vinted.com." };
 
   if ((await db.query(`select 1 from "company" where "domain" = $1`, [domain])).rowCount) {
     // A Company whose website gave nothing but the domain is tried again, at most once a minute and FETCH_ATTEMPTS
@@ -59,7 +59,7 @@ export async function companyForWebsite(
   const today = new Date().toISOString().slice(0, 10);
   if (!(await takeNewCompanySlot(personId, today)))
     return {
-      problem: `Nobody has given this website before, and you have already added ${NEW_COMPANIES_PER_DAY} new Companies today, the most allowed in a day. Please try again tomorrow.`,
+      problem: `Nobody has given this website before, and you've already added ${NEW_COMPANIES_PER_DAY} new Companies today, which is the daily limit. Please try again tomorrow.`,
     };
   // The row goes in before the website is fetched, so two people giving the same new website at once make one
   // Company and one fetch: whoever loses the insert simply joins it and has their new Company for the day back.

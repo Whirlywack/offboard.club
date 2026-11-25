@@ -190,8 +190,9 @@ describe("deleting your own account", () => {
     // Keeping the account comes first, then deleting it, both inside the form that deletes.
     expect(confirm).toMatch(/<form[^>]*>.*<a[^>]* href="\/profile">Keep my account<\/a><button[^>]*>Delete my account<\/button><\/div><\/form>/);
     expect(confirm).not.toMatch(/aria-disabled|disabled=""/);
-    expect(text(confirm)).toContain("You disappear from every Leaderboard and every Recap, past and present");
-    expect(text(confirm)).toContain("Games you played stay in other Members' histories, shown as played against a former member.");
+    expect(text(confirm)).toContain("You disappear from every Leaderboard and Recap, including past ones.");
+    expect(text(confirm)).toContain("Other Members keep their Games against you, with you shown as “a former member”.");
+    expect(text(confirm)).toContain("If the site can't remove you from it, your Lichess username is kept so the Organiser can do it by hand.");
     expect(people.has("ana")).toBe(true);
     expect(lichess.calls).toEqual([]);
   });
@@ -206,7 +207,9 @@ describe("deleting your own account", () => {
   it("warns the Organiser alone that their Lichess permission goes too", async () => {
     expect(text(await leavePage())).not.toContain("You're the Organiser");
     signedIn = "organiser";
-    expect(text(await leavePage())).toContain("You're the Organiser. Your Lichess permission is revoked too, so Matchdays stop being created on Lichess.");
+    expect(text(await leavePage())).toContain(
+      "You're the Organiser. Deleting your account revokes your Lichess permission, so Matchdays stop being created on Lichess",
+    );
   });
 
   it("deletes the caller's account at the press of the button, signs them out and says so", async () => {
@@ -218,8 +221,9 @@ describe("deleting your own account", () => {
     expect([...people.keys()]).toEqual(["organiser", "ben", "cid", "half"]);
     expect(await countSignUps()).toBe(3);
     const left = renderToStaticMarkup(LeftPage());
-    expect(left).toContain("<h1>You&#x27;ve left the Club</h1>");
-    expect(left).toContain("Your account is deleted, and you&#x27;re signed out.");
+    // The page reads nothing, so it says only what is true for anyone who opens it.
+    expect(left).toContain("<h1>After you leave the Club</h1>");
+    expect(text(left)).toContain("If you've just deleted your account, it's gone and you're signed out.");
   });
 
   it("refuses a signed-out caller and one part-way through signing up, deleting nothing", async () => {
@@ -287,7 +291,7 @@ describe("the Club's Lichess team", () => {
         job: JOB,
         at: NOW,
         matchdayDate: null,
-        problem: `Someone who left the Club could not be removed from the Club's Lichess team: ${why} Remove lichess-ana from the team on Lichess by hand.`,
+        problem: `Remove lichess-ana from the Lichess team by hand. They left the Club, but the site couldn't: ${why}`,
       },
     ]);
     // The account is the only thing about them kept.
@@ -304,14 +308,15 @@ describe("the Club's Lichess team", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await leaving).toBe("/left");
     expect(people.has("ana")).toBe(false);
-    expect([...jobFailures.values()][0].problem).toContain(": Lichess took more than 25 s. Remove lichess-ana from the team on Lichess by hand.");
+    expect([...jobFailures.values()][0].problem).toContain("the site couldn't: Lichess took more than 25 s.");
   });
 
   it("shows the Organiser the failure on their page", async () => {
     lichess.team.withoutRemoving.add("boss");
     await redirectedTo(() => leaveClub());
     signedIn = "organiser";
-    expect(text(await organiserPage())).toContain("Someone who left the Club could not be removed from the Club's Lichess team");
+    // What to do comes first, with the account to do it to.
+    expect(text(await organiserPage())).toContain("Remove lichess-ana from the Lichess team by hand.");
   });
 
   it("records one failure when the same person is removed twice at once", async () => {

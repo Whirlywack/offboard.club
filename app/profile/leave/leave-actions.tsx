@@ -17,7 +17,7 @@ export function LeaveActions() {
         Keep my account
       </Link>
       <button className={styles.delete} disabled={pending}>
-        {pending ? "Deleting your account…" : "Delete my account"}
+        {pending ? "Deleting…" : "Delete my account"}
       </button>
     </div>
   );

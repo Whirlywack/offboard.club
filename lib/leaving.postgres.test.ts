@@ -100,7 +100,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       {
         job: JOB,
         matchdayDate: null,
-        problem: `Someone who left the Club could not be removed from the Club's Lichess team: LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known. Remove ${GONE}-on-lichess from the team on Lichess by hand.`,
+        problem: `Remove ${GONE}-on-lichess from the Lichess team by hand. They left the Club, but the site couldn't: LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.`,
       },
     ]);
     vi.unstubAllEnvs();

@@ -303,8 +303,8 @@ describe("connecting the Organiser's Lichess account", () => {
     lichess.team.withoutTournaments.add("boss");
     expect(await connectAs("boss")).toBe("/organiser?lichess=connected");
     const html = await openPage();
-    expect(html).toContain("who has the team&#x27;s permissions to manage tournaments and to remove members");
-    expect(html).toContain("The second is how the site removes someone who leaves the Club from the team.");
+    expect(html).toContain("a leader of the Club&#x27;s team with its “Tournaments” and “Remove” permissions.");
+    expect(html).toContain("Managing the team is how the site removes people from it when they leave the Club.");
     expect(html).not.toContain("can be removed from the team");
   });
 

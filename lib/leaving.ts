@@ -51,10 +51,11 @@ const ended = (why: string) => (why.endsWith(".") ? why : `${why}.`);
 
 // Removes the account from the Club's Lichess team with the Organiser's permission: null once Lichess has answered that
 // it did, or why not as a sentence for the Organiser. Lichess answers the same when it keeps the account because it
-// leads the team (kickFromTeam), so a leader who leaves stays in the team with nothing recorded.
+// leads the team (kickFromTeam), so a leader who leaves stays in the team with nothing recorded. The sentence opens
+// with what the Organiser must do and the account to do it to; each one is recorded, as it names its own account.
 async function leaveTeam(lichessId: string, now: Date): Promise<string | null> {
   const cannot = (why: string) =>
-    `Someone who left the Club could not be removed from the Club's Lichess team: ${ended(why)} Remove ${lichessId} from the team on Lichess by hand.`;
+    `Remove ${lichessId} from the Lichess team by hand. They left the Club, but the site couldn't: ${ended(why)}`;
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return cannot("LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.");
   const permission = await organiserToken(now);

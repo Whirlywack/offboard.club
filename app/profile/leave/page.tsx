@@ -20,7 +20,7 @@ export default function LeavePage() {
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <h1>Leave the Club</h1>
-        <p className={ui.lede}>Deleting your account can&apos;t be undone.</p>
+        <p className={ui.lede}>This can&apos;t be undone.</p>
       </div>
       <Suspense>
         <Confirm />
@@ -31,20 +31,29 @@ export default function LeavePage() {
 
 async function Confirm() {
   const person = await requireSignedUp();
-  // What goes, what stays and, for the Organiser, what stops, then the choice: one panel, as the Profile form is.
+  // What goes, what stays and, for the Organiser, what stops, then the choice: one panel, as the Profile form is. What
+  // stays is all of it: Games (their side empty), everything on Lichess but the team and, only when removing them from
+  // the team fails, their Lichess id in the failure recorded for the Organiser (lib/leaving.ts). An Award won against
+  // them keeps its winner and shows nothing of them.
   return (
     <form action={leaveClub} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
       <p>When you delete your account:</p>
       <ul className={styles.consequences}>
-        <li>Your Profile goes: your name and photo, Company, position, LinkedIn link and what you&apos;re open to.</li>
-        <li>You disappear from every Leaderboard and every Recap, past and present, and from the Awards.</li>
-        <li>Your Lichess account is removed from the Club&apos;s Lichess team, and is no longer connected here.</li>
-        <li>Games you played stay in other Members&apos; histories, shown as played against a former member.</li>
+        <li>Your name, photo, email address and Profile are deleted.</li>
+        <li>You disappear from every Leaderboard and Recap, including past ones.</li>
+        <li>Your Lichess account is disconnected and removed from the Club&apos;s Lichess team.</li>
+        <li>Other Members keep their Games against you, with you shown as &ldquo;a&nbsp;former member&rdquo;.</li>
       </ul>
-      <p>Your Lichess account itself, and your Games on Lichess, stay as they are.</p>
+      <p>
+        Nothing changes on Lichess except the team. If the site can&apos;t remove you from it, your Lichess username is
+        kept so the Organiser can do it by hand.
+      </p>
       {isOrganiser(person) && (
         <p className={ui.alert}>
-          You&apos;re the Organiser. Your Lichess permission is revoked too, so Matchdays stop being created on Lichess.
+          You&apos;re the Organiser. Deleting your account revokes your Lichess permission, so Matchdays stop being
+          created on Lichess and people who leave aren&apos;t removed from the team. Until ORGANISER_USER_ID changes,
+          there&apos;s no Organiser, even if you sign up again. Lichess may keep you in the team if your account leads
+          it.
         </p>
       )}
       <LeaveActions />

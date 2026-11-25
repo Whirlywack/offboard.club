@@ -22,7 +22,7 @@ import { done, doneSince, failed, failingJobs, runJob, sentence, skipped, type J
 import { organiserPermission, type OrganiserPermission } from "./organiser-lichess";
 import { JOB as POST } from "./post-to-telegram";
 import { ZONE } from "./schedule";
-import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, queuePost, type Delivery } from "./telegram";
+import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, groupId, queuePost, sendMessage, type Delivery } from "./telegram";
 
 export const JOB = "alert-organiser";
 
@@ -120,6 +120,30 @@ async function alert(now: Date): Promise<JobRun> {
   const warning = permissionAlert(await organiserPermission(), now);
   if (warning) await queueAlert(warning.text, warning.until);
   return outcome(await deliverAlerts(chat, now));
+}
+
+// --- A test message, from the Organiser page ---
+
+// The bot's token and the chats' ids are kept on Vercel as secrets, which nobody can read back, so the Organiser checks
+// them by sending a message: to their own chat, or to the group, where everyone sees it. One try, sent at once, neither
+// queued nor tried again. What happened, as a sentence for the page: Telegram's own reason when it refused, which is
+// never the token (lib/telegram.ts), and what is likely wrong when that reason says (Telegram answers 401 "Unauthorized"
+// to a token it does not know, and 400 "chat not found" or 403 "Forbidden: ..." to a chat the bot has no way into).
+export async function sendTestMessage(to: "me" | "group"): Promise<{ text: string; problem: boolean }> {
+  const chat = to === "me" ? organiserChat() : groupId();
+  const needs = [!botSetUp() && "TELEGRAM_BOT_TOKEN", !chat && (to === "me" ? "TELEGRAM_ORGANISER_CHAT_ID" : "TELEGRAM_GROUP_ID")].filter((name) => name !== false);
+  if (!chat || needs.length > 0)
+    return { text: `${needs.join(" and ")} ${needs.length === 1 ? "is" : "are"} missing or not in the form .env.example gives, so nothing was sent.`, problem: true };
+  const sent = await sendMessage(chat, to === "me" ? "A test message from Offboard: the bot's alerts reach you here." : "A test message from Offboard's bot: its posts reach this group.");
+  if (sent.posted === true) return { text: `Telegram took it: check ${to === "me" ? "your chat with the bot" : "the group"}.`, problem: false };
+  const hint = /Unauthorized|Not Found/.test(sent.problem)
+    ? " Check TELEGRAM_BOT_TOKEN: it is the whole token @BotFather gave."
+    : /chat not found|Forbidden/.test(sent.problem)
+      ? to === "me"
+        ? " Open the bot in Telegram and press Start, then check TELEGRAM_ORGANISER_CHAT_ID."
+        : " Check TELEGRAM_GROUP_ID, and that the bot is in the group."
+      : "";
+  return { text: `${sent.posted === "perhaps" ? "It isn't known whether Telegram took it" : "Nothing was sent"}: ${sentence(sent.problem)}.${hint}`, problem: true };
 }
 
 // What a run says of a delivery. An alert Telegram refused, or never got, waits for the next run; one it may have sent

@@ -8,10 +8,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
+import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/organiser-callback/route";
-import { connectOrganiserLichess } from "./organiser/actions";
+import { connectOrganiserLichess, testTelegram } from "./organiser/actions";
 import OrganiserPage, { generateMetadata } from "./organiser/page";
 
 const { getSession, jar } = vi.hoisted(() => {
@@ -518,8 +519,13 @@ describe("the scheduled jobs on the Organiser page", () => {
   it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
     vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
+    const off = "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.";
     let html = await openPage();
-    expect(html).toMatch(alertSaying("Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up."));
+    expect(html).toMatch(alertSaying(off));
+    // Once, though the last run said the same.
+    ran(30, "skipped", off, "backup");
+    html = await openPage();
+    expect(html.split(off.replaceAll("'", "&#x27;")).length - 1).toBe(1);
     expect(html).toMatch(
       alertSaying("Alerts are off: TELEGRAM_ORGANISER_CHAT_ID is missing or not in the form .env.example gives, so the bot can't message you."),
     );
@@ -545,6 +551,88 @@ describe("the Organiser page as a whole", () => {
     const parts = ["lichess", "cancellations", "removals", "schedule", "remove", "telegram", "jobs"].map((id) => `<h2 id="${id}">`);
     const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure"].map((title) => `<h3>${title}</h3>`);
     for (const part of [...parts, ...jobs]) expect([part, html.split(part).length - 1]).toEqual([part, 1]);
+  });
+});
+
+describe("a test message from the Organiser page", () => {
+  const TOKEN = "a-pretend-telegram-token";
+  const [GROUP, CHAT] = ["@pretend_group", "123456789"];
+  let telegram: ReturnType<typeof createFakeTelegram>;
+  const press = (to: string) => {
+    const form = new FormData();
+    form.set("to", to);
+    return testTelegram(null, form);
+  };
+
+  beforeEach(() => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    vi.stubEnv("TELEGRAM_GROUP_ID", GROUP);
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", CHAT);
+    vi.stubEnv("TELEGRAM_URL", "");
+    telegram = createFakeTelegram({ token: TOKEN, chats: [GROUP, CHAT] });
+    vi.stubGlobal("fetch", telegram.fetch);
+  });
+
+  it("offers both, and says everyone in the group sees the one sent there", async () => {
+    const html = await openPage();
+    const section = html.slice(html.indexOf('<h2 id="telegram">'), html.indexOf("</section>", html.indexOf('<h2 id="telegram">')));
+    expect(section).toMatch(/<button [^>]*value="me" name="to">Send a test message to me<\/button>/);
+    expect(section).toMatch(/<button [^>]*value="group" name="to">Send a test message to the group<\/button>/);
+    expect(section).toContain("Everyone in the group sees the one sent to the group.");
+  });
+
+  it("sends one message, at once, to the Organiser's own chat or to the group, and says Telegram took it", async () => {
+    expect(await press("me")).toEqual({ text: "Telegram took it: check your chat with the bot.", problem: false });
+    expect(await press("group")).toEqual({ text: "Telegram took it: check the group.", problem: false });
+    expect(telegram.posts).toEqual([
+      { chatId: CHAT, text: "A test message from Offboard: the bot's alerts reach you here." },
+      { chatId: GROUP, text: "A test message from Offboard's bot: its posts reach this group." },
+    ]);
+  });
+
+  it("says a token Telegram doesn't know apart from a chat it has no way into, never showing the token", async () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "not-the-bots-token");
+    const wrong = await press("me");
+    expect(wrong).toEqual({
+      text: "Nothing was sent: Telegram refused it: Unauthorized. Check TELEGRAM_BOT_TOKEN: it is the whole token @BotFather gave.",
+      problem: true,
+    });
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
+    vi.stubEnv("TELEGRAM_GROUP_ID", "@not_the_group");
+    expect(await press("group")).toEqual({
+      text: "Nothing was sent: Telegram refused it: Bad Request: chat not found. Check TELEGRAM_GROUP_ID, and that the bot is in the group.",
+      problem: true,
+    });
+    // As Telegram answers a person the bot knows of, from the group, who has never pressed Start in its chat.
+    telegram.override = () => Response.json({ ok: false, error_code: 403, description: "Forbidden: bot can't initiate conversation with a user" }, { status: 403 });
+    expect(await press("me")).toEqual({
+      text: "Nothing was sent: Telegram refused it: Forbidden: bot can't initiate conversation with a user. Open the bot in Telegram and press Start, then check TELEGRAM_ORGANISER_CHAT_ID.",
+      problem: true,
+    });
+    expect(JSON.stringify(wrong)).not.toContain("not-the-bots-token");
+    // Each press one request, none tried again.
+    expect(telegram.calls).toHaveLength(3);
+  });
+
+  it("sends nothing, and says which setting is missing, when one is", async () => {
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
+    expect(await press("me")).toEqual({ text: "TELEGRAM_ORGANISER_CHAT_ID is missing or not in the form .env.example gives, so nothing was sent.", problem: true });
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    expect(await press("group")).toEqual({ text: "TELEGRAM_BOT_TOKEN is missing or not in the form .env.example gives, so nothing was sent.", problem: true });
+    vi.stubEnv("TELEGRAM_GROUP_ID", "");
+    expect(await press("group")).toEqual({
+      text: "TELEGRAM_BOT_TOKEN and TELEGRAM_GROUP_ID are missing or not in the form .env.example gives, so nothing was sent.",
+      problem: true,
+    });
+    expect(telegram.calls).toEqual([]);
+  });
+
+  it("is not found by anyone but the Organiser, and sends nothing", async () => {
+    signedIn = "member";
+    await expect(press("group")).rejects.toThrow("not found");
+    signedIn = null;
+    await expect(press("me")).rejects.toThrow("not found");
+    expect(telegram.calls).toEqual([]);
   });
 });
 

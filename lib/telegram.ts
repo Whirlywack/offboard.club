@@ -28,7 +28,8 @@ const setting = (name: Setting) => {
 };
 
 export const botSetUp = () => setting("TELEGRAM_BOT_TOKEN") !== null;
-export const postingSetUp = () => botSetUp() && setting("TELEGRAM_GROUP_ID") !== null;
+export const groupId = () => setting("TELEGRAM_GROUP_ID");
+export const postingSetUp = () => botSetUp() && groupId() !== null;
 
 // Whether a value is in the form of a bot's token, which goes in a request's path.
 export const isBotToken = (value: string) => FORMS.TELEGRAM_BOT_TOKEN.test(value);
@@ -173,7 +174,7 @@ async function deliver(chat: string | null, now: Date, prefix: string): Promise<
 }
 
 // The posts waiting for the Club's group, alerts never among them.
-export const deliverPosts = (now: Date) => deliver(setting("TELEGRAM_GROUP_ID"), now, "");
+export const deliverPosts = (now: Date) => deliver(groupId(), now, "");
 
 // The alerts waiting for the Organiser, to their own chat.
 export const deliverAlerts = (chat: string, now: Date) => deliver(chat, now, ALERT);

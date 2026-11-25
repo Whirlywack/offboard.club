@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import profile from "../profile/profile.module.css";
 import ui from "../ui.module.css";
-import { changeSunday, setStart } from "./actions";
+import { changeSunday, setStart, testTelegram } from "./actions";
 import styles from "./organiser.module.css";
 import type { Said } from "@/lib/reschedule";
 
@@ -89,6 +89,25 @@ export function SeasonStart({ seasons, first }: { seasons: SeasonChoice[]; first
       </div>
       <div className={ui.actions}>
         <button disabled={pending}>Set start</button>
+      </div>
+    </form>
+  );
+}
+
+// The two test messages, which check the Telegram settings no one can read back on Vercel: one press, one message.
+export function TestMessages() {
+  const [said, action, pending] = useActionState(testTelegram, null);
+  return (
+    <form action={action} className={styles.part}>
+      <p className={styles.detail}>A test message checks the settings. Everyone in the group sees the one sent to the group.</p>
+      {pending ? <p className={styles.notice}>Sending…</p> : <Outcome said={said} pending={false} />}
+      <div className={ui.actions}>
+        <button className={ui.quiet} name="to" value="me" disabled={pending}>
+          Send a test message to me
+        </button>
+        <button className={ui.quiet} name="to" value="group" disabled={pending}>
+          Send a test message to the group
+        </button>
       </div>
     </form>
   );

@@ -6,7 +6,7 @@ import profile from "../profile/profile.module.css";
 import ui from "../ui.module.css";
 import { connectOrganiserLichess, tournamentCancelled } from "./actions";
 import { ConnectButton } from "./connect-button";
-import { SeasonStart, Sundays } from "./forms";
+import { SeasonStart, Sundays, TestMessages } from "./forms";
 import styles from "./organiser.module.css";
 import { TeamRemovals } from "./team-removals";
 import { alertsProblem, JOB as ALERTS, JOB_TITLES } from "@/lib/alerts";
@@ -158,6 +158,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
             home page.
           </p>
         )}
+        <TestMessages />
       </section>
 
       <section aria-labelledby="jobs" className={styles.section}>
@@ -343,7 +344,8 @@ function JobStatus({ title, neverRun, run, now, daily = false, off = null }: Sta
           {run.outcome === "failed" ? (
             <Alert>{run.detail}</Alert>
           ) : (
-            <p className={styles.detail}>{run.detail}</p>
+            // Said once: a run that did nothing because the job is off says what the alert above says.
+            run.detail !== off && <p className={styles.detail}>{run.detail}</p>
           )}
           {late && (
             <Alert>

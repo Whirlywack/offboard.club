@@ -120,10 +120,28 @@ describe("a Member's Profile seen by another Member", () => {
       "https://lichess.org/Game0004/white",
       "https://lichess.org/Game0003/black",
       "https://lichess.org/Game0002/black",
-      "https://lichess.org/Game0001/white",
     ]);
     expect(text(links[0][2])).toBe("Game against Ben Kazlauskas on Lichess (opens in a new tab)");
-    expect(text(links[3][2])).toBe("Game against a former member on Lichess (opens in a new tab)");
+  });
+
+  it("does not link a Game against someone who has left to Lichess, whose page would name their account", async () => {
+    const html = await open("ana");
+    expect(html).toContain("<li><p>Won against a former member</p></li>");
+    expect(html).not.toContain("lichess.org/Game0001");
+  });
+
+  it("keeps each Matchday's Games together, even when one finished after a later Matchday's", async () => {
+    // A Game of 15 November recorded as finishing after every Game of 22 November.
+    game("Late0001", "2026-11-15", "ana", "cid", "white");
+    const html = await open("ana");
+    expect(dates(html)).toEqual(["/recaps/2026-11-22", "/recaps/2026-11-15"]);
+    expect(rows(html)).toEqual([
+      "Lost to Ben Kazlauskas",
+      "Drew with Aušrinė Žemaitytė-Kazlauskienė",
+      "Won against Aušrinė Žemaitytė-Kazlauskienė",
+      "Lost to Ben Kazlauskas",
+      "Won against a former member",
+    ]);
   });
 
   it("shows Matchdays played and a Streak of two or more", async () => {

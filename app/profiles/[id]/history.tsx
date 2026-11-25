@@ -123,12 +123,13 @@ export function Games({
                     <p>
                       {said[game.result]} {joining[game.result]} <Opponent game={game} />
                     </p>
-                    <ExternalLink href={lichessGameUrl(game.lichessGameId, game.colour)}>
-                      <span className="visually-hidden">
-                        Game {game.opponent ? `against ${game.opponent.name}` : "against a former member"} on{" "}
-                      </span>
-                      Lichess
-                    </ExternalLink>
+                    {/* Lichess's page for a Game names both accounts, and someone who has left asked to be removed. */}
+                    {game.opponent && (
+                      <ExternalLink href={lichessGameUrl(game.lichessGameId, game.colour)}>
+                        <span className="visually-hidden">Game against {game.opponent.name} on </span>
+                        Lichess
+                      </ExternalLink>
+                    )}
                   </li>
                 ))}
               </ol>

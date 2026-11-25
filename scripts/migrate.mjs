@@ -1,16 +1,25 @@
 // Applies the migrations/*.sql files that have not run yet, in name order, in one transaction,
 // and records each in schema_migrations. Run with `pnpm migrate`; DATABASE_URL comes from the environment.
 //
-// The live database is migrated by the production deploy and by nothing else: `pnpm build` runs this with
-// --on-deploy, which applies migrations only when Vercel is building production (VERCEL_ENV=production) and does
-// nothing anywhere else. So a migration reaches the live database once it has merged, and the deploy fails,
-// leaving the previous one live, if it cannot be applied.
+// The live database is migrated by the production deploy of `main` and by nothing else: `pnpm build` runs this with
+// --on-deploy, which applies migrations only when Vercel is building production (VERCEL_ENV=production) from the
+// main branch, and does nothing in a preview build or on a laptop. So a migration reaches the live database once it
+// has merged, and the deploy fails, leaving the previous one live, if it cannot be applied.
 import { readdir, readFile } from "node:fs/promises";
 import pg from "pg";
 
-if (process.argv.includes("--on-deploy") && process.env.VERCEL_ENV !== "production") {
-  console.log("not a production deploy: migrations left alone");
-  process.exit(0);
+if (process.argv.includes("--on-deploy")) {
+  if (process.env.VERCEL_ENV !== "production") {
+    console.log("not a production deploy: migrations left alone");
+    process.exit(0);
+  }
+  // Promoting a preview, or `vercel --prod` from a branch, is also built as production. That would run an unmerged
+  // branch's migrations on the live database, so such a build is stopped here instead.
+  const branch = process.env.VERCEL_GIT_COMMIT_REF;
+  if (branch !== "main") {
+    console.error(`A production build of ${branch ? `the branch "${branch}"` : "no known branch"}, not of main: stopped, and the live database left alone.`);
+    process.exit(1);
+  }
 }
 
 if (!process.env.DATABASE_URL) {
@@ -31,12 +40,12 @@ try {
   const applied = new Set(rows.map((row) => row.name));
   const pending = (await readdir(dir)).filter((name) => name.endsWith(".sql") && !applied.has(name)).sort();
   for (const name of pending) {
+    console.log(`applying ${name}`); // said first, so a failure is seen to be this file's
     await client.query(await readFile(new URL(name, dir), "utf8"));
     await client.query("insert into schema_migrations (name) values ($1)", [name]);
-    console.log(`applied ${name}`);
   }
   await client.query("commit");
-  if (pending.length === 0) console.log("nothing to apply");
+  console.log(pending.length === 0 ? "nothing to apply" : `applied ${pending.length}`);
 } catch (error) {
   await client.query("rollback");
   throw error;

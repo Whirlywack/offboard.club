@@ -16,9 +16,12 @@ import { backUp, dumpDatabase, dumpPathname, LEFT_OUT, restoreDump, unpackDump, 
 // one: ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/backup.postgres.test.ts
 vi.mock("@/lib/db", async () => {
   const { default: pg } = await import("pg");
+  const { EventEmitter } = await import("node:events");
   // The app's statements go to whichever database the case has chosen; `between`, if set, runs after each statement on
   // a connection the app took for itself, such as the dump's.
   let pool: pg.Pool | null = null;
+  // Each pool's connections that are open: made ("connect") and not yet closed ("remove").
+  const open = new Map<pg.Pool, Set<pg.PoolClient>>();
   const current = () => {
     if (!pool) throw new Error("no database chosen");
     return pool;
@@ -39,9 +42,29 @@ vi.mock("@/lib/db", async () => {
           release: (error?: Error) => client.release(error),
         };
       },
+      // Points the app at `url`, or at nothing, once every connection to the database before is closed. pool.end()
+      // resolves as soon as it has asked its connections to close (pg-pool's _remove calls client.end() without waiting),
+      // so the pool's own "remove", which comes once a connection has closed, is waited for, one for each it made: a
+      // database dropped after this has nobody connected for `drop ... with (force)` to terminate, whose error would
+      // reach the pool as an unhandled one.
       use: async (url: string | null) => {
-        await pool?.end();
+        if (pool) {
+          const ending = pool;
+          const closed = open.get(ending)!.size === 0 ? Promise.resolve() : EventEmitter.once(ending, "closed");
+          await ending.end();
+          await closed;
+        }
         pool = url ? new pg.Pool({ connectionString: url, max: 2 }) : null;
+        if (pool) {
+          const made = pool;
+          const connected = new Set<pg.PoolClient>();
+          open.set(made, connected);
+          made.on("connect", (client: pg.PoolClient) => connected.add(client));
+          made.on("remove", (client: pg.PoolClient) => {
+            connected.delete(client);
+            if (connected.size === 0) made.emit("closed");
+          });
+        }
       },
       test,
     },
@@ -191,12 +214,19 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     dump = await dumpDatabase();
   }, 60_000);
 
+  // Every connection to the databases made here is closed before they are dropped: the app's pool by use(null), each
+  // other by on(), which ends it. "with (force)" is only for one a killed run left behind.
   afterAll(async () => {
     await use(null);
     try {
-      for (const name of made) await admin.query(`drop database if exists ${name} with (force)`);
+      const { rows } = await admin.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity where datname = any($1)`, [made]);
+      expect(rows[0].n).toBe(0);
     } finally {
-      await admin.end();
+      try {
+        for (const name of made) await admin.query(`drop database if exists ${name} with (force)`);
+      } finally {
+        await admin.end();
+      }
     }
   }, 30_000);
 

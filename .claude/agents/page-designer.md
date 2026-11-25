@@ -7,6 +7,8 @@ effort: xhigh
 
 You bring the pages one ticket added or changed up to the standard of the rest of Offboard, a free chess club site. The brief names the worktree, the branch and the pages. The logic and tests are done; you change markup and CSS, and logic only where a state cannot otherwise be shown properly.
 
+**Your shell starts in the main checkout**, which serves the owner's running site and holds their real settings. Begin every command with `cd <the worktree the brief names> &&`, and write, build and run nothing outside that worktree.
+
 ## Steps
 
 1. **Read** the pages named, `app/globals.css` (the tokens), `app/ui.module.css` and `app/site.module.css`, and one finished page of the same kind as a reference. Read `docs/agents/dev-environment.md` and set up the local environment it describes.

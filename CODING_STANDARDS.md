@@ -1,6 +1,6 @@
 # Coding standards
 
-Read at review, with the diff in hand. Each rule here was found by review more than once before it was written down. What a machine can check is checked by CI (`.github/workflows/ci.yml`) and ESLint and is left out.
+Read at review, with the diff in hand. What a machine can check is checked by CI (`.github/workflows/ci.yml`) and ESLint and is left out.
 
 ## Every guard goes red
 
@@ -11,17 +11,17 @@ A **guard** is any line that refuses: a sign-in or Member check, a consent or ma
 
 ## The public sees names; Members see each other
 
-`docs/adr/0002-the-public-sees-names-members-see-each-other.md` is the rule. On any page a signed-out visitor can open, a Member is their name and their Company. Everything that identifies them elsewhere (photo, Profile, Lichess username, a link to Lichess, a Game replayed on Lichess's board) is behind `requireSignedUp` or `viewerIsMember`. A former member appears as "a former member", with no link. A marked or closed Lichess account is left out of Leaderboards and Awards.
+`docs/adr/0002-the-public-sees-names-members-see-each-other.md` is the rule. On any page a signed-out visitor can open, a Member is their name and their Company. Everything that identifies them elsewhere (photo, Profile, Lichess username, a link to Lichess, a Game replayed on Lichess's board) is behind `requireSignedUp` or `viewerIsMember`. In a Profile's Games, someone who has left the Club appears as "a former member", with no link. A marked or closed Lichess account is left out of Leaderboards and Awards.
 
 Check each new piece of a page against that, and check the same for anything the page lets a browser fetch from a third party on a Member's behalf.
 
 ## Whatever comes from outside is bounded
 
-Outside means a person's input, a fetched web page and a Lichess response. Each such value has a length or range cap, enforced on the server, and is parsed in time linear in its length: one pass, no pattern with two unbounded runs. Each fetch has a size cap, a deadline and a fixed number of tries. Count length the same way in the browser and on the server.
+Outside means a person's input, a fetched web page and a Lichess response. Each such value has a length or range cap, enforced on the server, and is parsed in time linear in its length: one pass, no pattern with two unbounded runs. Each fetch has a deadline and a fixed number of tries, and a fetch of a page the Club does not control has a size cap as well. Count length the same way in the browser and on the server.
 
 ## An address that cannot exist answers 404
 
-With Partial Prerender a dynamic page has sent a 200 before it reads anything, so `notFound()` gives the not-found page under a 200. An address whose shape alone shows it cannot exist is refused in `proxy.ts` with a real 404: a new dynamic route joins its `matcher`. A page for one person, such as the Organiser's, answers everyone else as if it were not there.
+With Partial Prerender a dynamic page has sent a 200 before it reads anything, so `notFound()` gives the not-found page under a 200. Where the address alone shows a page cannot exist, `proxy.ts` refuses it with a real 404: such a route gets its own check in `proxy()` and its own `matcher` entry, both in that file. A matcher entry with no check of its own falls through to the Recap-date check and 404s every address. A route that needs data to know, such as a Profile, stays out of the matcher. A page for one person, such as the Organiser's, answers everyone else as if it were not there.
 
 ## The ticket is the spec
 
@@ -29,7 +29,7 @@ Where the build differs from the issue's words (a number, a name, a rule, a labe
 
 ## A migration leaves the deployed code working
 
-The live database is migrated by the production deploy before the new code goes live, so the code already deployed runs for a moment on the new schema. A migration adds; a rename or a drop is a later migration, once nothing deployed reads the old shape. A merged migration is never edited (CI refuses it): a change is a new file.
+The live database is migrated by the production deploy before the new code goes live, so the code already deployed runs for a moment on the new schema. A migration adds; a rename or a drop is a later migration, once nothing deployed reads the old shape.
 
 ## Nothing unused ships
 

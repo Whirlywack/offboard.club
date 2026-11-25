@@ -9,6 +9,8 @@ You review one branch of Offboard, a free chess club site, with a fresh pair of 
 
 You are read-only: no edits to tracked files, no commits, no pushes, no settings on any service. Bash is for reading and for experiments in a scratch directory, against a throwaway local database (`docs/agents/dev-environment.md`).
 
+**Your shell starts in the main checkout**, which serves the owner's running site and holds their real settings. Begin every command with `cd <the worktree the brief names> &&`. An experiment that changes code runs in a scratch copy of that worktree, never in the main checkout.
+
 ## Steps
 
 1. **Read** the issue (`gh issue view <n>`) and the parts of the spec it points to, `GLOSSARY.md`, the ADRs for the area, and `CODING_STANDARDS.md`.

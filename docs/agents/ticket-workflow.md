@@ -2,7 +2,7 @@
 
 For the session that takes tickets from issue to merged pull request. An agent given one stage reads only its own definition in `.claude/agents/`.
 
-Each ticket is a sub-issue of the spec (#1). The owner merges; nothing else reaches `main`.
+Tickets cut from the spec are sub-issues of #1; later ones stand alone. The owner merges; nothing else reaches `main`.
 
 ## Stages
 
@@ -12,9 +12,7 @@ Each stage is its own agent with a fresh context, and hands over through the bra
 2. **Design**: `page-designer`, in the builder's worktree, when the ticket adds or changes a page. Give it the pages and a folder for screenshots.
 3. **Copy**: `page-copywriter`, in the same worktree, when the ticket has reader-facing words.
 4. **Review**: `ticket-reviewer`, on the finished branch. Send each finding back to the agent whose stage owns it (a message resumes that agent with its context), then have the review repeated on what changed, until it finds nothing material.
-5. **Pull request**: opened by this session, to `main`, with the `pr` skill's template. The body ends with `Closes #<n>` and records what review found and what could not be verified. CI must be green before the link goes to the owner.
-
-Design and copy are separate stages because one long run that builds, designs, writes and checks carries everything it has read to the end, and that was the largest cost of the first tickets.
+5. **Pull request**: opened by this session, to `main`, with the `pr` skill's template. The body ends with `Closes #<n>` and records what review found, what could not be verified, and each place the build differs from the issue's words (from the builder's report), with the issue edited or a `ready-for-human` issue opened for each. CI must be green before the link goes to the owner.
 
 ## Running several tickets
 
@@ -25,6 +23,6 @@ Design and copy are separate stages because one long run that builds, designs, w
 
 ## What only the owner decides
 
-- **Product and privacy questions** raised by a build or a review become an issue labelled `ready-for-human`, with the options and what the site does meanwhile. A question that exists only in a conversation is lost when the conversation ends.
+- **Product and privacy questions** raised by a build or a review become an issue labelled `ready-for-human` (here: anything only the owner can do or decide), with the options and what the site does meanwhile. A question that exists only in a conversation is lost when the conversation ends.
 - **Anything on a third-party service** (GitHub settings, Vercel, Neon, Lichess, LinkedIn, Telegram): read that service's current documentation first, then tell the owner what the step does, what it puts in their name and whether it can be undone. This covers statements about what a service will do after they click, not only setup steps.
 - **The live site and its data.** Agents work on local databases with pretend keys (`docs/agents/dev-environment.md`). Migrations reach the live database through the production deploy.

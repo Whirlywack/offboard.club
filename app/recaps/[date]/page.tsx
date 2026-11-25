@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { ExternalLink } from "../../external-link";
 import ui from "../../ui.module.css";
@@ -8,6 +9,7 @@ import { longDate } from "../dates";
 import styles from "../recaps.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { companyLabel } from "@/lib/companies";
+import { seasonOfMatchday } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
 import { isRecapDate } from "@/lib/schedule";
@@ -50,12 +52,14 @@ function CompanyName({ company }: { company: Parameters<typeof companyLabel>[0] 
 
 async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
   const { date } = await params;
-  const [recap, member] = await Promise.all([
+  await connection(); // the Matchday's Season is read from the schedule as of now
+  const [recap, member, season] = await Promise.all([
     getRecap(date).catch((error: Error) => {
       console.error("A Recap could not be read:", error.message);
       return undefined;
     }),
     viewerIsMember(),
+    seasonOfMatchday(date, new Date()).catch(() => null),
   ]);
   if (recap === undefined)
     return <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>;
@@ -66,6 +70,11 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
         <h1>
           Recap of <time dateTime={recap.date}>{longDate(recap.date)}</time>
         </h1>
+        {season && (
+          <p className={ui.small}>
+            Matchday {season.number} of <Link href={`/seasons/${season.season}`}>Season {season.season}</Link>
+          </p>
+        )}
         {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
         {member && (
           <p className={styles.lichessLink}>

@@ -4,11 +4,13 @@ import { Suspense } from "react";
 import { signOut } from "./actions";
 import { Avatar } from "./avatar";
 import styles from "./home.module.css";
+import leaderboards from "./leaderboards.module.css";
 import { SignIn } from "./sign-in";
 import ui from "./ui.module.css";
 import { getSession } from "@/lib/auth";
 import { mustWelcome } from "@/lib/consent";
 import { organiserEmail } from "@/lib/contact";
+import { newChampions } from "@/lib/leaderboards";
 import { mustConnectLichess } from "@/lib/members";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { upcomingMatchday } from "@/lib/seasons";
@@ -106,6 +108,23 @@ export default function Home() {
         </div>
       </section>
 
+      <section className={styles.section} aria-labelledby="leaderboards">
+        <h2 id="leaderboards">Leaderboards</h2>
+        <div className={styles.sectionText}>
+          <Suspense>
+            <SeasonChampions />
+          </Suspense>
+          <p>
+            The Season Leaderboard adds up each Member&apos;s best four Matchdays. The all-time one counts only how many
+            Sundays you&apos;ve played, so anyone can top it by showing up.
+          </p>
+          <p className={leaderboards.links}>
+            <Link href="/seasons">This Season&apos;s Leaderboard</Link>
+            <Link href="/all-time">All-time Leaderboard</Link>
+          </p>
+        </div>
+      </section>
+
       <section className={styles.section} aria-labelledby="recaps">
         <h2 id="recaps">Recaps</h2>
         <div className={styles.sectionText}>
@@ -160,6 +179,34 @@ async function NextMatchday() {
         Season 1 starts once sixteen Members have joined, on the first Sunday at least a week later.
       </p>
     </div>
+  );
+}
+
+// The champion of the Season that has just ended, from its sixth Matchday until the next Season's first. Left out, and
+// logged, if the database cannot be read.
+async function SeasonChampions() {
+  await connection();
+  const named = await newChampions(new Date()).catch(
+    (error: Error) => void console.error("Home page could not read the Season champion:", error.message),
+  );
+  if (!named) return null;
+  const names = new Intl.ListFormat("en-GB", { type: "conjunction" }).format(named.champions.map((c) => c.name));
+  const season = <Link href={`/seasons/${named.season}`}>Season {named.season}</Link>;
+  return (
+    <p className={`${leaderboards.homeChampion} ${ui.arrive}`}>
+      <span className={ui.marker} aria-hidden="true" />
+      <span>
+        {named.champions.length > 1 ? (
+          <>
+            <strong>{names}</strong> share the {season} title.
+          </>
+        ) : (
+          <>
+            <strong>{names}</strong> is the {season} champion.
+          </>
+        )}
+      </span>
+    </p>
   );
 }
 

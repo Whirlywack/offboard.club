@@ -1,10 +1,14 @@
-// The public Season and all-time Leaderboard pages, as a signed-out visitor sees them. Faked: the session, the clock and the database (lib/fake-db.ts),
+// The public Season and all-time Leaderboard pages, the Season champion on the home page, and the links between them
+// and the Recaps, as a signed-out visitor sees them. Faked: the session, the clock and the database (lib/fake-db.ts),
 // filled in as ingestion and the schedule leave it. Everything else is the app's own code.
-import type { ReactElement, ReactNode } from "react";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addCompany, addPerson, db, matchdays, people, resetDb, results, seasons, skippedSundays } from "@/lib/fake-db";
 import AllTimePage from "./all-time/page";
+import RootLayout from "./layout";
+import Home from "./page";
+import RecapPage from "./recaps/[date]/page";
 import SeasonPage from "./seasons/[number]/page";
 import CurrentSeasonPage from "./seasons/page";
 
@@ -13,6 +17,7 @@ vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ connection: async () => {} }));
+vi.mock("next/font/google", () => ({ Newsreader: () => ({ variable: "newsreader" }) }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);
@@ -47,6 +52,19 @@ const season = (number: string) =>
   streamed(SeasonPage({ params: Promise.resolve({ number }), searchParams: Promise.resolve({}) }));
 const currentSeason = () => streamed(CurrentSeasonPage());
 const allTime = () => streamed(AllTimePage(), 1);
+const recap = (date: string) => streamed(RecapPage({ params: Promise.resolve({ date }), searchParams: Promise.resolve({}) }));
+
+// The home page's Season champion line, found by name in the page's tree.
+async function homeChampion() {
+  const find = (node: ReactNode): ReactElement | undefined => {
+    if (!isValidElement(node)) return Array.isArray(node) ? node.map(find).find(Boolean) : undefined;
+    if (typeof node.type === "function" && node.type.name === "SeasonChampions") return node;
+    return find((node.props as { children?: ReactNode }).children);
+  };
+  const element = find(Home())!;
+  const shown = await (element.type as () => Promise<ReactNode>)();
+  return shown ? renderToStaticMarkup(shown as ReactElement) : "";
+}
 
 // A Leaderboard's rows as text, cell by cell.
 const rows = (html: string) =>
@@ -212,5 +230,43 @@ describe("the all-time Leaderboard", () => {
     expect(await allTime()).toContain("Nobody is on it yet.");
     unreachable();
     expect(await allTime()).toContain("This Leaderboard can&#x27;t be shown right now.");
+  });
+});
+
+describe("the Season champion on the home page", () => {
+  it("is named from the sixth Matchday until the next Season's first is ingested", async () => {
+    SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
+    expect(await homeChampion()).toBe("");
+    ingested(SEASON_1[5], [["ana", 3]]);
+    expect(text(await homeChampion())).toContain("Ana Petraitė is the Season 1 champion.");
+    expect(await homeChampion()).toContain('href="/seasons/1"');
+    ingested(SEASON_2[0], [["cid", 5]]);
+    expect(await homeChampion()).toBe("");
+  });
+
+  it("names everyone sharing the title", async () => {
+    SEASON_1.forEach((date) => ingested(date, [["cid", 4], ["ana", 4]]));
+    expect(text(await homeChampion())).toContain("Ana Petraitė and Cidas Jonaitis share the Season 1 title.");
+  });
+
+  it("is left out when the database cannot be read", async () => {
+    unreachable();
+    expect(await homeChampion()).toBe("");
+  });
+});
+
+describe("links to the Leaderboards", () => {
+  it("are on the home page and in the site header", () => {
+    const home = renderToStaticMarkup(Home());
+    const header = renderToStaticMarkup(RootLayout({ children: null, params: Promise.resolve({}) }) as ReactElement);
+    for (const html of [home, header]) for (const href of ['href="/seasons"', 'href="/all-time"']) expect(html).toContain(href);
+  });
+
+  it("go from a Recap to its Season, and not from a Matchday outside every Season", async () => {
+    seasonOne();
+    ingested(WEEK_OFF, [["cid", 5]]);
+    expect(text(await recap(SEASON_1[2]))).toContain("Matchday 3 of Season 1");
+    expect(await recap(SEASON_1[2])).toContain('href="/seasons/1"');
+    expect(await recap(WEEK_OFF)).not.toContain("/seasons/");
   });
 });

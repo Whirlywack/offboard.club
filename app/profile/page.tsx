@@ -60,6 +60,19 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
         <ConnectLichess label="Switch Lichess account" quiet />
       </section>
 
+      <section aria-labelledby="leave" className={ui.arrive}>
+        <h2 id="leave">Leave the Club</h2>
+        <p className={ui.muted}>
+          Deleting your account removes your Profile and your results from the site, and your Lichess account from the
+          Club&apos;s Lichess team.
+        </p>
+        <p>
+          <Link className={ui.quiet} href="/profile/leave">
+            Delete your account
+          </Link>
+        </p>
+      </section>
+
       <nav aria-label="More" className={ui.backLinks}>
         <Link href={`/profiles/${id}`}>See your Profile as Members see it</Link>
         <Link href="/">Home</Link>

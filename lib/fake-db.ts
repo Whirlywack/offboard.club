@@ -579,6 +579,28 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
     },
 
+  // --- Leaving the Club (lib/leaving.ts) ---
+
+  // removeMember: the person's Lichess account, if they are there at all.
+  [`select "lichessId" from "user" where id = $1`]: (id) => {
+    const person = people.get(id);
+    return answer(person ? [{ lichessId: person.lichessId }] : []);
+  },
+
+  // removeMember, with what Postgres does by the foreign keys onto "user": their results and the Organiser's permission
+  // they connected go with them (on delete cascade), and their side of each Game empties (on delete set null). Their
+  // sessions and account rows would go too; there are none here.
+  [`delete from "user" where id = $1`]: (id) => {
+    if (!people.delete(id)) return answer([], 0);
+    for (const [key, result] of results) if (result.userId === id) results.delete(key);
+    for (const game of games.values()) {
+      if (game.whiteId === id) game.whiteId = null;
+      if (game.blackId === id) game.blackId = null;
+    }
+    for (const [key, row] of organiserLichess) if (row.userId === id) organiserLichess.delete(key);
+    return answer([], 1);
+  },
+
   // --- Season and all-time Leaderboards (lib/leaderboards.ts) ---
 
   // getSeason: the Members' results on the Season's dates, oldest first, each with the Company of that night. $1 is an

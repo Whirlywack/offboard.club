@@ -9,8 +9,9 @@
 //
 // club: Season 1 over with one champion, Season 2 over with a Sunday not played and a shared title, Season 3 under way
 // with a skipped Sunday, a warm-up before Season 1 (all draws) and a Matchday in the week off that nobody now on the
-// Leaderboards played; the Organiser (org) connected and the hourly job run. season-over: Season 1 just over, its champion
-// on the home page, Season 2's first results not in, the Organiser's permission expired and the job's failure recorded.
+// Leaderboards played; the Organiser (org) connected, the hourly job run, and gone left and removed from the Lichess
+// team. season-over: Season 1 just over, its champion on the home page, Season 2's first results not in, the Organiser's
+// permission expired and the job's failure recorded, then gone left and could not be removed from the Lichess team.
 // empty: two sign-ups short of sixteen, nothing played or connected. Each has step1 and step2 part-way through signing up.
 //
 // Names are chess puns and faces drawings. Seeded links still reach real sites if clicked, under names they do not allow:
@@ -27,6 +28,7 @@ import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { GAMES_SHOWN, getHistory } from "@/lib/history";
 import { lastFailure, lastRun } from "@/lib/jobs";
 import { getAllTime, getSeason, newChampions, readLeaderboards, seasonOfMatchday } from "@/lib/leaderboards";
+import { JOB as LEAVING_JOB, removeMember } from "@/lib/leaving";
 import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
 import { finishOrganiserConnection, organiserPermission, startOrganiserConnection } from "@/lib/organiser-lichess";
@@ -51,6 +53,7 @@ type Person = {
 };
 
 const ORGANISER = "org";
+const GONE = "gone";
 
 const PEOPLE: Person[] = [
   { id: ORGANISER, name: "Rasa Arbiter", rating: 1560, plays: /^(warmup|s1m[1-4]|s2m[2-6]|s3)/, position: "Engineering lead",
@@ -78,8 +81,8 @@ const PEOPLE: Person[] = [
     about: "Lichess marked the account, so it is left off every Leaderboard and Award" },
   { id: "closed", name: "Greta Closedfile", rating: 1400, plays: /^(s1m[1-3]|off)$/, closed: true,
     about: "the Lichess account is closed, so likewise" },
-  { id: "gone", name: "Paulius Resigns", rating: 1550, plays: /^(warmup|s1m[1-4]|off)$/, leaves: true,
-    about: "left the Club: their results went with them, and their Games show 'a former member'" },
+  { id: GONE, name: "Paulius Resigns", rating: 1550, plays: /^(warmup|s1m[1-4]|off)$/, leaves: true,
+    about: "left the Club: their results and Awards went with them, their Games show 'a former member', and Awards won against them show no Game" },
   { id: "newbie", name: "Lukas Firstmove", rating: null, joins: "lately",
     about: "a Member who has not played a Matchday yet, whose account had no blitz rating" },
   { id: "guest", name: "Ieva Bye", rating: 1300, plays: /^s3m3$/, joins: "s3m3", noGames: true,
@@ -297,8 +300,6 @@ async function seed(name: string) {
            "blackRating", "winnerClockCentis", "finishedAt") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         game,
       );
-    // Leaving deletes the account: the results go, and each Game stays with that side empty.
-    await client.query(`delete from "user" where id = any($1)`, [people.filter((p) => p.leaves).map((p) => p.id)]);
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -313,14 +314,17 @@ async function seed(name: string) {
   for (const p of people) console.log(`  ${p.id.padEnd(10)} ${p.name.padEnd(40)} ${p.about ?? "a Member who plays some Sundays"}`);
 }
 
-// The Organiser's Lichess permission and the hourly job's runs, written by the site's own code against an in-process
-// fake Lichess, so nothing leaves this process: the Organiser connects as the leader of the Club's team, then the job
-// runs once. In season-over the permission has since expired, and the job runs at the next Matchday's due time at the
-// latest, so that it reaches the permission and records the failure.
+// The Organiser's Lichess permission, the hourly job's runs and the one who left, written by the site's own code against
+// an in-process fake Lichess, so nothing leaves this process: the Organiser connects as the leader of the Club's team,
+// the job runs once, and then the one who left leaves (lib/leaving.ts), which removes them from the team. In
+// season-over the permission has since expired, and the job runs at the next Matchday's due time at the latest, so that
+// it reaches the permission and records the failure; leaving after it, the one who left cannot be removed from the team,
+// and that is the failure the Organiser page shows.
 async function organiser(name: string) {
   const org = PEOPLE.find((p) => p.id === ORGANISER)!;
   const lichess = createFakeLichess({ teamId: process.env.LICHESS_TEAM_ID!, teamPassword: "", accounts: [{ id: lichessId(org), username: lichessName(org) }] });
   lichess.team.leaders.add(lichessId(org));
+  for (const p of PEOPLE) if (!p.step) lichess.team.members.add(lichessId(p));
   lichess.signedInAs = lichessId(org);
   const realFetch = globalThis.fetch;
   globalThis.fetch = lichess.fetch as typeof fetch;
@@ -334,6 +338,10 @@ async function organiser(name: string) {
     const next = await upcomingMatchday(now);
     const due = next ? dueFrom(next.start) : now;
     await createUpcomingMatchday(name === "season-over" && due > now ? due : now);
+    for (const p of PEOPLE.filter((person) => person.leaves)) {
+      if (!(await removeMember(p.id))) throw new Error(`${p.id} could not leave: they were not there.`);
+      if (name === "club" && lichess.team.members.has(lichessId(p))) throw new Error(`${p.id} left, but is still in the fake Lichess team.`);
+    }
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -369,6 +377,7 @@ async function check(name: string) {
       ["nothing on the Organiser page: no permission, no run, no failure", permission === null && run === null && failure === null],
     );
   } else {
+    const gone = PEOPLE.find((p) => p.id === GONE)!;
     const [s1, s2, s3, s4, s5] = await Promise.all([1, 2, 3, 4, 5].map(season));
     const champions = await newChampions(now);
     const histories = new Map(
@@ -394,6 +403,9 @@ async function check(name: string) {
       ["a marked and a closed Lichess account, which played but are on no Leaderboard",
         ["marked", "closed"].every((id) => histories.get(id)!.played > 0 && !onLeaderboards.has(id))],
       ["Games against a former member", [...histories.values()].some((h) => h.games.some((g) => g.opponent === null))],
+      ["the one who left is in no Recap, on no Leaderboard and has no Profile",
+        !onLeaderboards.has(gone.id) && !recaps.some((r) => r.awards.some((a) => a.memberId === gone.id)) && (await getProfile(gone.id)) === null],
+      ["an Award won against a former member, whose Game is shown to nobody", recaps.some((r) => r.awards.some((a) => a.opponentLeft))],
       ["a Member with every optional Profile field and a Company",
         !!(ana?.company && ana.position && ana.openTo && ana.linkedInUrl)],
       ["a Member with none of them", !!plain && !plain.company && !plain.position && !plain.openTo && !plain.linkedInUrl],
@@ -406,7 +418,9 @@ async function check(name: string) {
         ["Season 2's first Matchday started, its results not in yet",
           !!s2?.matchdays && played(s2) === 0 && !s2.over && matchdayStart(s2.matchdays[0].date) <= now],
         ["the Organiser's permission has expired, and the job's failure is recorded",
-          !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
+          !!permission && permission.expiresAt <= now && run?.outcome === "failed" && run.detail.includes("expired")],
+        ["the one who left could not be removed from the Lichess team, the last failure, naming the account to remove by hand",
+          failure?.job === LEAVING_JOB && failure.problem.includes(lichessId(gone)) && failure.problem.includes("expired")],
       );
     else {
       const ana = histories.get("ana")!;

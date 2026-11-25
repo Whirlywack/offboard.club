@@ -1,6 +1,7 @@
 // A fake Lichess for tests and local runs: the authorization page, the token endpoint, the account, public users one at
-// a time and in bulk, joining a team, revoking a token, and Swiss tournaments with their results and Games, behaving as
-// Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org's source (lila) does:
+// a time and in bulk, joining a team and removing a member from it, revoking a token, and Swiss tournaments with their
+// results and Games, behaving as Lichess's OpenAPI spec describes and, where lichess.org differs, as lichess.org's
+// source (lila) does:
 // - a wrong team password is a 400 there, a 403 in the spec;
 // - "tosViolation" is shown to everyone except the account itself, so never on /api/account;
 // - a closed ("disabled") account's token is refused, and its public user is only { id, username, disabled };
@@ -12,7 +13,13 @@
 // - a new Swiss tournament needs a token with tournament:write whose account leads the team with its permission for
 //   tournaments, else 404 "You're not a leader of that team", whatever the team's page shows; its form is checked as
 //   lila's SwissForm checks it, and it must start after `now()`;
-// - a team's tournaments can be listed by exact name, creator and status.
+// - a team's tournaments can be listed by exact name, creator and status;
+// - removing a member from a team (TeamApi.kickUser) needs a token with team:lead, else 403 "Missing scope: team:lead",
+//   and a team Lichess has, else 404; its account must lead the team with the team's permission to remove members, else
+//   400 "Insufficient team permissions". Then it answers { ok: true } whoever it names, removing them only if they are
+//   a member who does not lead the team: lila's TeamApi.kick leaves an account not in the team alone, and keeps the
+//   team's creator, and any other leader unless the remover has the team's Admin permission, which this fake gives
+//   nobody.
 //
 // Use `fetch` in place of the global one. The authorization page is the browser's, not the site's, so visits to it
 // are not recorded in `calls`; it approves as `signedInAs`, or declines when that is null.
@@ -67,13 +74,15 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
     accounts: new Map(options.accounts.map((account) => [account.id, account])),
     tournaments: new Map((options.tournaments ?? []).map((swiss) => [swiss.id, swiss])),
     // `leaders` are shown publicly on the team's page; of those, `withoutTournaments` lack the team's permission for
-    // tournaments, which lila needs to create one (Swiss.apiCreate: isGranted(teamId, _.Tour)).
+    // tournaments, which lila needs to create one (Swiss.apiCreate: isGranted(teamId, _.Tour)), and `withoutRemoving`
+    // its permission to remove members, which lila needs to remove one (TeamApi.kickUser: isGranted(teamId, _.Kick)).
     team: {
       id: options.teamId,
       password: options.teamPassword,
       members: new Set<string>(),
       leaders: new Set<string>(),
       withoutTournaments: new Set<string>(),
+      withoutRemoving: new Set<string>(),
     },
     calls: [] as FakeCall[],
     tokens,
@@ -149,6 +158,16 @@ export function createFakeLichess(options: { teamId: string; teamPassword: strin
         if (decodeURIComponent(join[1]) !== fake.team.id) return json({ error: "Not found" }, 404);
         if (call.body.get("password") !== fake.team.password) return json({ error: "This team requires a password." }, 400);
         fake.team.members.add(token.accountId); // already a member: nothing changes, still ok
+        return json({ ok: true });
+      }
+      const kick = /^\/api\/team\/([^/]+)\/kick\/([^/]+)$/.exec(call.path);
+      if (call.method === "POST" && kick) {
+        if (!token.scope.split(" ").includes("team:lead")) return json({ error: "Missing scope: team:lead" }, 403);
+        if (decodeURIComponent(kick[1]) !== fake.team.id) return json({ error: "Not found." }, 404);
+        if (!fake.team.leaders.has(token.accountId) || fake.team.withoutRemoving.has(token.accountId))
+          return json({ error: "Insufficient team permissions" }, 400);
+        const member = decodeURIComponent(kick[2]).toLowerCase();
+        if (!fake.team.leaders.has(member)) fake.team.members.delete(member);
         return json({ ok: true });
       }
       return json({ error: "Not found" }, 404);

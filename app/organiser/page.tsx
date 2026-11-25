@@ -92,9 +92,9 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <Permission permission={permission} now={now} />
         <p className={`${ui.small} ${ui.muted}`}>
           Before you connect, sign in to Lichess as a leader of the Club&apos;s Lichess team who has the team&apos;s
-          permission to manage tournaments: Lichess lets only those leaders create them. Lichess then asks you to let
-          Offboard create tournaments and manage the teams you lead. The site doesn&apos;t use the second yet. It asks
-          now so that you won&apos;t have to connect again once it can remove a Member from the team.
+          permissions to manage tournaments and to remove members: Lichess lets only those leaders create tournaments
+          and remove members. Lichess then asks you to let Offboard create tournaments and manage the teams you lead. The
+          second is how the site removes someone who leaves the Club from the team.
         </p>
         <form action={connectOrganiserLichess} className={ui.actions}>
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />

@@ -143,8 +143,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       ],
       // ana, with Black, mated ben on her 74th move (148 half-moves) with 5.30 seconds on her clock.
       awards: [
-        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 530, name: "ingest-test-ana", colour: "black", plies: 148 },
-        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 74, name: "ingest-test-ana", colour: "black", plies: 148 },
+        { kind: "leastTimeLeft", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 530, name: "ingest-test-ana", colour: "black", plies: 148, opponentLeft: false },
+        { kind: "fastestCheckmate", memberId: "ingest-test-ana", lichessGameId: "T5PhEOXy", value: 74, name: "ingest-test-ana", colour: "black", plies: 148, opponentLeft: false },
       ],
     });
     expect(await getRecap("2026-11-23")).toBeNull();

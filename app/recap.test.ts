@@ -351,6 +351,35 @@ describe("a Recap's Awards", () => {
     expect(html).not.toContain("lichess.org/embed");
   });
 
+  it("shows nobody the Game of an Award won against someone who has since left, as Lichess's board names their account", async () => {
+    // Ben's mate is of someone who has left since; Cora's win wins the other two.
+    played("BENMATES", "ben", null, { status: "mate", plies: 21, winnerClockCentis: 9_000 });
+    played("CORAWINS", "cora", "ana", { whiteRating: 1450, blackRating: 1500, winnerClockCentis: 4_000 });
+
+    let html = await open(DATE);
+    expect(html).toContain("Signed-in Members can replay some of these Games.");
+    expect(html).not.toMatch(/BENMATES|CORAWINS/);
+
+    asMember();
+    html = await open(DATE);
+    expect(awardsIn(html)).toEqual([
+      { title: "Biggest upset", winner: "Cora Jonaitė", feat: "Beat someone rated 50 points higher.", game: "https://lichess.org/CORAWINS/white" },
+      { title: "Closest call", winner: "Cora Jonaitė", feat: "Won with 40.0 seconds left on the clock.", game: "https://lichess.org/CORAWINS/white" },
+      { title: "Fastest checkmate", winner: "Ben Kazlauskas", feat: "Checkmated their opponent in 11 moves.", game: null },
+    ]);
+    expect(html).toContain("Their opponent has since left the Club, so the Game isn&#x27;t shown.");
+    expect(html).not.toContain("BENMATES");
+    expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the biggest upset<\/span>/);
+    expect(html).not.toContain("of the fastest checkmate</span>");
+
+    // With only that Award, a visitor is not told of Games to replay.
+    games.delete("CORAWINS");
+    getSession.mockResolvedValue(null);
+    html = await open(DATE);
+    expect(awardsIn(html)?.map((a) => a.title)).toEqual(["Closest call", "Fastest checkmate"]);
+    expect(html).not.toContain("Signed-in Members can replay");
+  });
+
   it("puts the Game on Lichess's own board, sandboxed, lazy, titled and sending no referrer", async () => {
     played("CLOSE001", "ana", "ben", { winner: "black", whiteRating: 1500, blackRating: 1700, plies: 57 });
     const [award] = (await getRecap(DATE))!.awards;

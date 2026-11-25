@@ -30,13 +30,12 @@ export default function PrivacyPage() {
         <h2 id="who">Who runs Offboard</h2>
         <p>
           Offboard is run by one volunteer, the Organiser, who is responsible for what the site keeps (its
-          &ldquo;controller&rdquo;, in GDPR terms). It isn&apos;t a company and makes no money. You&apos;ll see the
-          Organiser&apos;s name on the welcome step, before you agree to anything.
+          &ldquo;controller&rdquo;, in GDPR terms). You&apos;ll see the Organiser&apos;s name on the welcome step, before
+          you agree to anything.
         </p>
         {contact ? (
           <p>
-            Write to the Organiser at <a href={`mailto:${contact}`}>{contact}</a> about anything on this page. It&apos;s
-            free, and you&apos;ll hear back within a month.
+            Write to the Organiser at <a href={`mailto:${contact}`}>{contact}</a> about anything on this page.
           </p>
         ) : (
           <p>The Organiser&apos;s contact address isn&apos;t set up yet.</p>
@@ -59,6 +58,7 @@ export default function PrivacyPage() {
             and browser, and whether Lichess has marked or closed your account.
           </li>
         </ul>
+        <p>Being listed in public is a condition of membership, so objecting to it means leaving the Club.</p>
         <p>Lichess shows your username and Games publicly on its own site.</p>
       </section>
 
@@ -67,12 +67,13 @@ export default function PrivacyPage() {
         <p>
           To leave, choose &ldquo;Delete your account&rdquo; on <Link href="/profile">Edit your Profile</Link>. Your
           account, Profile, Lichess connection, results and acceptances are deleted at once, and you&apos;re signed out and
-          taken off every Leaderboard, Recap and Award. Your Lichess account leaves the Club&apos;s Lichess team; if that
-          fails, the site keeps its id so the Organiser can remove it by hand.
+          taken off every Leaderboard, Recap and Award. The site asks Lichess to remove the Lichess account you have
+          connected from the Club&apos;s Lichess team.
         </p>
         <p>
           Your Games stay in your opponents&apos; histories, against &ldquo;a former member&rdquo;, with the Game&apos;s id
-          on Lichess and both ratings. Your Lichess account and its Games stay as they are.
+          on Lichess and both ratings. An Award someone won against you stays theirs, and its Game is no longer shown. Your
+          Lichess account and its Games stay as they are.
         </p>
       </section>
 
@@ -86,13 +87,12 @@ export default function PrivacyPage() {
           <li>
             <strong>From Lichess, when you connect it:</strong> your account&apos;s id, username and blitz rating. After
             each Matchday you play, the rating is checked again, along with whether Lichess has marked or closed the
-            account. The permission you give on Lichess is used once, to add you to the Club&apos;s private team, then
-            revoked and never stored.
+            account. The permission you give on Lichess reads your account and joins the Club&apos;s team, then is
+            revoked.
           </li>
           <li>
             <strong>From each Matchday you play, as Lichess records it:</strong> your place, points and rating that night,
-            your Company at the time, and your Games against other Members: who played whom, the result, how it ended, how
-            many moves, both ratings, the winner&apos;s time left, when it finished and the Game&apos;s id on Lichess.
+            your Company at the time, and your Games against other Members.
           </li>
           <li>
             <strong>From your Profile, all optional:</strong> your Company&apos;s website, from which the site fetches the
@@ -102,20 +102,19 @@ export default function PrivacyPage() {
             <strong>From the welcome step:</strong> when you accepted the terms of membership and the house rules.
           </li>
           <li>
-            <strong>From each sign-in:</strong> when it expires, your IP address and your browser&apos;s name and version.
+            <strong>From each sign-in:</strong> when it began and when it expires, your IP address, and your
+            browser&apos;s user agent, which names your browser, operating system and device.
           </li>
         </ul>
-        <p>
-          Your email is kept only because the sign-in software needs one. Nothing uses it, and Offboard sends no email.
-        </p>
+        <p>Offboard sends no email, and no page shows your email address.</p>
       </section>
 
       <section aria-labelledby="why" className={styles.section}>
         <h2 id="why">Why it&apos;s kept</h2>
         <ul>
           <li>
-            <strong>Running your membership:</strong> your account, sign-in, Profile, Matchdays, Games and Leaderboards are
-            what you join for (contract, GDPR Art. 6(1)(b)).
+            <strong>Running your membership:</strong> your account, sign-in, Profile, Matchdays and Games are what you
+            join for (contract, GDPR Art. 6(1)(b)).
           </li>
           <li>
             <strong>Legitimate interests</strong> (GDPR Art. 6(1)(f)):
@@ -155,11 +154,6 @@ export default function PrivacyPage() {
             Club&apos;s private team. Opening an Award&apos;s Game loads Lichess&apos;s board from lichess.org.
           </li>
         </ul>
-        <p>Vercel and Neon handle the data only for Offboard.</p>
-      </section>
-
-      <section aria-labelledby="transfers" className={styles.section}>
-        <h2 id="transfers">Outside the EU</h2>
         <p>
           Vercel and Databricks are US companies, so some data may be handled in the USA. Both are certified under the
           EU-U.S. Data Privacy Framework, and their data processing agreements (
@@ -177,8 +171,12 @@ export default function PrivacyPage() {
           <li>Your account, Profile, Lichess connection, results and acceptances: while you&apos;re a Member.</li>
           <li>Each sign-in&apos;s record, with its IP address and browser: until you sign out of it or leave.</li>
           <li>
-            If you signed in but didn&apos;t finish joining: what came from LinkedIn, until you ask the Organiser to delete
-            it.
+            If the site can&apos;t remove your Lichess account from the Club&apos;s team when you leave: the account&apos;s
+            id, until the Organiser has removed it by hand.
+          </li>
+          <li>
+            If you signed in but didn&apos;t finish joining: what came from LinkedIn, your sign-in records and any
+            acceptances, until you ask the Organiser to delete them.
           </li>
           <li>Deleted data stays in the database provider&apos;s restore history for up to 6 hours.</li>
           <li>The hosting provider&apos;s logs of requests and errors: 1 day.</li>
@@ -204,15 +202,9 @@ export default function PrivacyPage() {
         <h2 id="complaints">Complaints</h2>
         <p>
           Please write to the Organiser first. You can also complain to the data protection authority of the EU country you
-          live in, or to Lithuania&apos;s State Data Protection Inspectorate (Valstybinė duomenų apsaugos inspekcija):
+          live in, or to Lithuania&apos;s State Data Protection Inspectorate (Valstybinė duomenų apsaugos inspekcija,{" "}
+          <ExternalLink href="https://vdai.lrv.lt/en">vdai.lrv.lt</ExternalLink>).
         </p>
-        <address>
-          L. Sapiegos g. 17, LT-10312 Vilnius
-          <br />
-          <a href="mailto:ada@ada.lt">ada@ada.lt</a>, +370 5 271 2804
-          <br />
-          <ExternalLink href="https://vdai.lrv.lt/en">vdai.lrv.lt</ExternalLink>
-        </address>
       </section>
 
       <section aria-labelledby="cookies" className={styles.section}>
@@ -224,7 +216,7 @@ export default function PrivacyPage() {
         <ul>
           <li>
             <strong>Your sign-in</strong> (<code>__Secure-better-auth.session_token</code>): keeps you signed in for 7
-            days, extended while you use the site. Signing out removes it.
+            days. Signing out removes it.
           </li>
           <li>
             <strong>While you sign in</strong> (<code>__Secure-better-auth.state</code>): protects that step from forgery,
@@ -242,8 +234,7 @@ export default function PrivacyPage() {
         <h2 id="fair-play">Fair play</h2>
         <p>
           If Lichess marks your account for breaking its terms, or closes it, you&apos;re left off Leaderboards and Awards
-          while that lasts. Lichess decides. Offboard reads only what Lichess shows publicly and never says why someone
-          isn&apos;t listed. This is the only thing the site decides about you automatically, and it has no legal or similar
+          while that lasts. This is the only thing the site decides about you automatically, and it has no legal or similar
           effect.
         </p>
       </section>
@@ -252,8 +243,8 @@ export default function PrivacyPage() {
         <h2 id="terms">Terms of membership</h2>
         <ul>
           <li>
-            <strong>Who may join:</strong> anyone 18 or over who works in tech in or around Vilnius. Nobody checks that you
-            work in tech. Each Member connects one Lichess account, which no other Member may use.
+            <strong>Who may join:</strong> anyone 18 or over who works in tech in or around Vilnius. Each Member connects
+            one Lichess account, which no other Member may use.
           </li>
           <li>
             <strong>Public listing:</strong> your name, and your Company if you add one, appear publicly on Leaderboards, in
@@ -273,7 +264,7 @@ export default function PrivacyPage() {
             deletes their account, as leaving does.
           </li>
           <li>
-            <strong>Free, with no prizes:</strong> not even for the Season champion.
+            <strong>Free, with no prizes.</strong>
           </li>
           <li>
             <strong>Liability:</strong> Offboard comes as it is, without warranty, and the Organiser&apos;s liability is

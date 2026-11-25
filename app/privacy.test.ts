@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HOUSE_RULES } from "@/lib/consent";
 import { addPerson, db, people, resetDb } from "@/lib/fake-db";
+import GlobalError from "./global-error";
 import RootLayout from "./layout";
 import PrivacyPage from "./privacy/page";
 import { SignIn } from "./sign-in";
@@ -71,7 +72,7 @@ describe("the privacy and terms page", () => {
 
   it("says what is kept, from LinkedIn, Lichess, Matchdays and the Profile", () => {
     const kept = section(privacyPage(), "kept");
-    for (const fact of ["your name, the address of your photo, your email address", "your account's id, username and blitz rating", "marked or closed", "Company", "position", "LinkedIn profile", "open to", "Games", "IP address"])
+    for (const fact of ["your name, the address of your photo, your email address", "your account's id, username and blitz rating", "marked or closed", "Company", "position", "LinkedIn profile", "open to", "Games", "IP address", "user agent"])
       expect(kept).toContain(markup(fact));
   });
 
@@ -82,27 +83,34 @@ describe("the privacy and terms page", () => {
     );
     expect(shown).toContain("<strong>Signed-in Members:</strong> also your photo, Profile, Lichess username, blitz rating and Games");
     expect(shown).toContain("<strong>Only the Organiser,</strong> who can read everything the site keeps: your email address");
+    expect(shown).toContain("Being listed in public is a condition of membership, so objecting to it means leaving the Club.");
   });
 
   it("names who else handles the data, and where", () => {
-    const others = section(privacyPage(), "others") + section(privacyPage(), "transfers");
+    const others = section(privacyPage(), "others");
     for (const fact of ["Vercel", "Neon", "Databricks", "Frankfurt", "Washington, D.C., USA", "LinkedIn", "Lichess", "Data Privacy Framework", "Standard Contractual Clauses"])
       expect(others).toContain(markup(fact));
   });
 
   it("says how long things are kept, and how to change, see or delete them, leaving included", () => {
     const html = privacyPage();
-    expect(section(html, "how-long")).toContain(markup("Your account, Profile, Lichess connection, results and acceptances: while you're a Member."));
+    const howLong = section(html, "how-long");
+    expect(howLong).toContain(markup("Your account, Profile, Lichess connection, results and acceptances: while you're a Member."));
+    expect(howLong).toContain("until the Organiser has removed it by hand");
     const leaving = section(html, "leaving");
     expect(leaving).toContain('To leave, choose “Delete your account” on <a href="/profile">Edit your Profile</a>');
     expect(leaving).toContain("results and acceptances are deleted at once");
+    expect(leaving).toContain("The site asks Lichess to remove the Lichess account you have connected from the Club");
     expect(leaving).toContain(markup("Your Games stay in your opponents' histories"));
+    expect(leaving).toContain("its Game is no longer shown");
     expect(section(html, "rights")).toContain("a copy of your data");
-    expect(section(html, "complaints")).toContain("ada@ada.lt");
+    expect(section(html, "complaints")).toContain('href="https://vdai.lrv.lt/en"');
   });
 
-  it("discloses the sign-in cookie and its 7 days", () => {
-    expect(section(privacyPage(), "cookies")).toContain("<code>__Secure-better-auth.session_token</code>): keeps you signed in for 7");
+  it("discloses the sign-in cookie and its 7 days, which use does not extend", () => {
+    expect(section(privacyPage(), "cookies")).toContain(
+      "<code>__Secure-better-auth.session_token</code>): keeps you signed in for 7 days. Signing out removes it.",
+    );
   });
 
   it("states the terms of membership: 18 or over, public listing, and the house rules accepted on the welcome step", async () => {
@@ -121,6 +129,11 @@ describe("the link to the page", () => {
   it("is in the footer of every page", () => {
     const html = renderToStaticMarkup(RootLayout({ children: createElement("main"), params: Promise.resolve({}) }) as ReactElement);
     expect(html.slice(html.indexOf("<footer"))).toContain('<a href="/privacy">Privacy and terms</a>');
+  });
+
+  it("is beside Home on the page shown when the whole site fails, which has no footer", () => {
+    const html = renderToStaticMarkup(createElement(GlobalError, { error: null, retry: () => {} }));
+    expect(html).toMatch(/<a class="[^"]+" href="\/">Home<\/a><a href="\/privacy">Privacy and terms<\/a>/);
   });
 
   it("is beside the sign-in button, which says the site stores the LinkedIn name, photo and email at each sign-in", () => {

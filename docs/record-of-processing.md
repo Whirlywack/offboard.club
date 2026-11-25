@@ -14,16 +14,16 @@ Members; people who signed in with LinkedIn but have not finished joining; the O
 
 | Purpose | Personal data | Where it is kept | Basis (Art 6(1)) |
 |---|---|---|---|
-| Account and sign-in | From LinkedIn at each sign-in: name, photo address, email, email-verified flag, LinkedIn subject id. LinkedIn tokens are nulled (`lib/auth.ts`) | `user.name`, `image`, `email`, `emailVerified`; `account.accountId` | (b) contract. The email is kept only because Better Auth requires one; nothing reads it |
-| Sessions and security | Session token, expiry, IP address, user agent; OAuth state (10 min) | `session`; `verification` | (f) protecting accounts and the service |
+| Account and sign-in | From LinkedIn at each sign-in: name, photo address, email, email-verified flag, LinkedIn subject id. LinkedIn tokens are nulled (`lib/auth.ts`) | `user.name`, `image`, `email`, `emailVerified`; `account.accountId` | (b) contract. Better Auth requires the email, and looks it up when a LinkedIn account it has not seen signs in; Offboard sends no email and no page shows it |
+| Sessions and security | Session token, created and expiry times, IP address, full user-agent string (browser, operating system, device); OAuth state (10 min) | `session`; `verification` | (f) protecting accounts and the service |
 | Membership terms | When public listing and the house rules were accepted | `user.publicDisplayConsentAt`, `houseRulesAcceptedAt` | (b) contract |
 | Matchdays | Lichess id, username, blitz rating, connected-at; marked and closed flags, refreshed for each Matchday played; membership of the Club's Lichess team | `user.lichess*`; on Lichess | (b) contract |
 | Results and Games | Rank, points, rating and Company per Matchday; Games: Lichess game id, players, result, status, plies, both ratings, winner's clock, finish time | `matchdayResult`; `game` | (b) contract |
 | Profiles | Company website (registrable domain, with name and logo fetched from it), position, LinkedIn profile link, "open to" line; new Companies created per day | `user.companyDomain`, `position`, `linkedInUrl`, `openTo`, `companiesCreatedOn`, `companiesCreatedThatDay`; `company` | (b) contract |
 | Public Leaderboards, Recaps, Awards and Season champion | Name, Company, place, points, Season score, Matchdays played, Awards | Read from the above | (f) the Club's visibility to people deciding whether to join (ADR 0002). A condition of membership; objecting means leaving (#34 decision) |
 | Fair play | Marked and closed flags, used to leave someone off Leaderboards and Awards unnamed | `user.lichessMarked`, `lichessClosed` | (f) honest rankings |
-| Games of someone who has left | Their side nulled; Lichess game id and both ratings stay | `game` | (f) opponents' own record |
-| Removal from the Lichess team that failed | The Lichess id to remove by hand (#15) | `jobFailure` | (f) completing the removal |
+| Games of someone who has left | Their side nulled; Lichess game id and both ratings stay. An Award won against them keeps its winner and shows its Game to nobody | `game` | (f) opponents' own record |
+| Removal from the Lichess team that failed | The connected Lichess id to remove by hand, when the site gave up, and why (#15) | `teamRemoval` | (f) completing the removal |
 | Creating Matchdays | The Organiser's Lichess token, AES-256-GCM | `organiserLichess` | (f), the Organiser's own data |
 | Logs | Error text from scheduled jobs; server request logs | `jobFailure`, `scheduledJob`; Vercel | (f) running the service |
 
@@ -47,13 +47,13 @@ USA, through Vercel (EU-U.S. Data Privacy Framework and 2021 SCCs, Module Two) a
 
 | Data | Kept |
 |---|---|
-| Account, Profile, Lichess connection, results, acceptances | While a Member; deleted at once on leaving (`delete from "user"`, #15) |
-| People who signed in but did not finish joining | Until they ask the Organiser to delete it. No inactive-account purge (#34 decision) |
-| Games of someone who has left | Kept, side nulled |
-| Sessions with IP and user agent | Cookie 7 days, extended on use; the row until signed out or the account is deleted (expired rows are not purged) |
+| Account, Profile, Lichess connection, results, acceptances | While a Member. Leaving deletes the `user` row at once, and with it the sessions, the LinkedIn `account` row and the results; the site then asks Lichess to remove the connected account from the Club's team (`lib/leaving.ts`, #15) |
+| People who signed in but did not finish joining | Their LinkedIn data, sessions and any acceptances, until they ask the Organiser to delete them. No inactive-account purge (#34 decision) |
+| Games of someone who has left | Kept, side nulled, including through a redo of the Matchday |
+| Sessions with IP and user agent | Cookie 7 days from sign-in. The row's expiry moves on as the site is used, and the row stays until signed out or the account is deleted (expired rows are not purged) |
 | OAuth state, pending-Lichess cookie | 5 to 10 minutes |
-| A failed removal's note naming the Lichess id | Not deleted automatically |
-| The Organiser's Lichess token | Until replaced, expired (one year) or the Organiser's account is deleted |
+| A failed team removal (`teamRemoval`) | Until the Organiser has removed the account on Lichess and pressed Done on the Organiser page |
+| The Organiser's Lichess token | Until replaced or expired (one year); deleted, and revoked on Lichess, when the Organiser's account is deleted |
 | Neon restore history | 6 hours |
 | Vercel runtime logs | 1 day |
 | Neon `development` branch | A copy of live data made 2026-11-25, with no expiry; deletions do not reach it |

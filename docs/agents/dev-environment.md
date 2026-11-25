@@ -40,6 +40,13 @@ The local site can still reach the real internet when something is clicked. "Sig
 
 A worktree starts with no `.env.local`, and the local environment above makes one. A copy of the main checkout's file would hand an agent real keys.
 
+## Checking a branch, and its guards
+
+Both work on a copy of the worktree (its tracked files and untracked ones git does not ignore) in a temporary folder, with Postgres servers of their own from `pnpm db:start --dir`, and remove it all however they end. They write nothing in the worktree, so a reviewer can run them, and two worktrees can run them at once. Run them as a background task.
+
+- **`pnpm check`** (about a minute): no merged migration edited, every migration on an empty database, lint, typecheck, every test with the real-Postgres suites, the build, and CI's three seeds with CI's settings. A skipped test fails it. Its last lines are the tallies a report gives.
+- **`pnpm guards <file>:<line>`** deletes that line and runs the tests: RED means a test noticed, GREEN that none did. `<file>:<first>-<last>` deletes lines; `--replace <text> <with>` after a place replaces text that is there once instead; `+` makes two places one change, such as a query and its copy in `lib/fake-db.ts`. The real-Postgres suites run too with `--pg`, or when the file has a `.postgres.test.ts` beside it, and a change to SQL is judged by them alone, as the fake refuses any statement it was not written with. `--tests <file>` runs only that file, to see whether a test that claims a guard bites. With no places it proposes and runs some for the lines changed since `origin/main`: only a proposal.
+
 ## Tests
 
 - `pnpm test` runs everything except the `*.postgres.test.ts` suites. Those run when `ALLOW_DB_TESTS=1` and `DATABASE_URL` are both set, each inside a transaction that is rolled back.

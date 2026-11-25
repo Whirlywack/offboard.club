@@ -1,10 +1,11 @@
 // The next Matchday on the home page: its time for everyone, and its Lichess tournament for Members once the site has
-// created it. Faked: the session and the database (lib/fake-db.ts). Everything else is the app's own code.
+// created it; and who is signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts).
+// Everything else is the app's own code.
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addPerson, matchdays, people, resetDb, seasons } from "@/lib/fake-db";
-import { NextMatchday } from "./page";
+import { NextMatchday, You } from "./page";
 
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
@@ -135,5 +136,22 @@ describe("the Matchday under way on the home page", () => {
         expect(html).not.toContain("lichess.org/swiss");
       }
     }
+  });
+});
+
+// Who is signed in, when the database cannot be reached (#55): Better Auth reads a session from the database only when
+// there is a session cookie, so the viewer is signed in and must not be offered to sign in again.
+describe("the signed-in panel on the home page", () => {
+  const you = async () => renderToStaticMarkup((await You()) as ReactElement);
+
+  it("says plainly that the sign-in cannot be checked when the session cannot be read", async () => {
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    const html = await you();
+    expect(html).toContain("Your sign-in can&#x27;t be checked right now. Please try again in a minute.");
+    expect(html).not.toContain("Sign in with LinkedIn");
+  });
+
+  it("offers to sign in when nobody is signed in", async () => {
+    expect(await you()).toContain("Sign in with LinkedIn");
   });
 });

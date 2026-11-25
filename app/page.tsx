@@ -250,9 +250,11 @@ async function SeasonChampions() {
 }
 
 // Who is signed in, or the way to sign in. A Member also gets the Telegram group's invite link, which nobody else is
-// given. Exported for app/home.test.ts.
+// given. A session that cannot be read (only one with a session cookie is read, from the database) is said so plainly,
+// not shown as signed out. Exported for app/home.test.ts.
 export async function You() {
-  const session = await getSession().catch(() => null);
+  const session = await getSession().catch(() => undefined);
+  if (session === undefined) return <p className={ui.alert}>Your sign-in can&apos;t be checked right now. Please try again in a minute.</p>;
   if (!session) return <SignIn />;
   const { name, image } = session.user;
   const unfinished = mustWelcome(session.user) || mustConnectLichess(session.user);

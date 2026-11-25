@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@vercel/blob": "2.9.0",
+    "@vercel/functions": "3.11.3",
     "better-auth": "^1.7.27",
     "next": "16.4.6",
     "pg": "^8.23.1",

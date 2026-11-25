@@ -25,6 +25,7 @@ const REAL_DATABASE = "postgres://someone:a-pretend-password@ep-pretend-123.eu-c
 
 // The Matchday of Sunday 29 November 2026 starts at 20:00 Vilnius time, 18:00 UTC.
 const DATE = "2026-11-29";
+const DAY = "Sunday 29 November"; // as the job's sentences write it, on one line
 const START = matchdayStart(DATE);
 const TOURNAMENT = "PreTend1";
 const MINUTE = 60_000;
@@ -108,7 +109,7 @@ describe("collecting the results of the Matchday just played", () => {
     const run = await runAt(OVER);
     expect(run).toEqual({
       outcome: "done",
-      detail: `Collected the results of the Matchday of ${DATE}: 3 Members played, with 2 Games between them. Its Recap is public.`,
+      detail: `Collected the results of ${DAY}: 3 Members played 2 Games. The Recap is public.`,
       matchdayDate: DATE,
     });
     expect(matchdays.get(DATE)).toEqual({ date: DATE, lichessTournamentId: TOURNAMENT, ingestedAt: expect.any(Date) });
@@ -149,7 +150,7 @@ describe("collecting the results of the Matchday just played", () => {
     const early = await runAt(after(40));
     expect(early).toEqual({
       outcome: "skipped",
-      detail: `Tournament ${TOURNAMENT}, the Matchday of ${DATE}, has not finished on Lichess yet; its results are collected once it has.`,
+      detail: `The tournament for ${DAY} hasn't finished yet.`,
       matchdayDate: DATE,
     });
     expect(requests()).toEqual([`GET /api/swiss/${TOURNAMENT}`]);
@@ -169,7 +170,7 @@ describe("collecting the results of the Matchday just played", () => {
     for (const at of [after(95), after(24 * 60)])
       expect(await runAt(at)).toEqual({
         outcome: "skipped",
-        detail: `The results of the Matchday of ${DATE} are in, and its Recap is public.`,
+        detail: `The Recap of ${DAY} is public.`,
         matchdayDate: DATE,
       });
     expect(lichess.calls).toEqual([]);
@@ -181,7 +182,7 @@ describe("collecting the results of the Matchday just played", () => {
     await vi.advanceTimersByTimeAsync(SETTLE_MS);
     const runs = await both;
     expect(runs.map((r) => r.outcome).sort()).toEqual(["done", "skipped"]);
-    expect(runs.find((r) => r.outcome === "skipped")?.detail).toBe("Another run of this job is still working, so this one did nothing.");
+    expect(runs.find((r) => r.outcome === "skipped")?.detail).toBe("Another run was already working on it.");
     expect(requests().filter((r) => r.endsWith("/results"))).toHaveLength(1);
     expect(results.size).toBe(3);
   });
@@ -192,7 +193,7 @@ describe("collecting the results of the Matchday just played", () => {
     people.get("cora")!.lichessId = "lichess-cora-new";
     expect(await runAt(OVER)).toMatchObject({
       outcome: "done",
-      detail: `Collected the results of the Matchday of ${DATE}: 1 Member played, with 0 Games between them. Its Recap is public.`,
+      detail: `Collected the results of ${DAY}: 1 Member played 0 Games. The Recap is public.`,
     });
     expect((await getRecap(DATE))?.leaderboard.map((row) => [row.rank, row.name])).toEqual([[1, "Member ana"]]);
     expect((await getAllTime()).map((row) => [row.name, row.played])).toEqual([["Member ana", 1]]);
@@ -202,7 +203,7 @@ describe("collecting the results of the Matchday just played", () => {
     // A minute before 20:00 the latest Sunday is the one before, which had none.
     expect(await runAt(after(-1))).toEqual({
       outcome: "skipped",
-      detail: "Sunday 2026-11-22 has no tournament on Lichess, so there are no results to collect.",
+      detail: "There's no tournament on Lichess for Sunday 22 November.",
       matchdayDate: "2026-11-22",
     });
     expect(lichess.calls).toEqual([]);
@@ -219,7 +220,12 @@ describe("collecting the results of the Matchday just played", () => {
 });
 
 describe("a failure to collect", () => {
-  const cannot = (why: string) => ({ outcome: "failed", detail: `The results of the Matchday of ${DATE} could not be collected: ${why}`, matchdayDate: DATE });
+  // What went wrong, then what to do: runs look after the Matchday until the next Sunday's starts, a week on.
+  const cannot = (why: string) => ({
+    outcome: "failed",
+    detail: `Couldn't collect the results of ${DAY}: ${why} If it hasn't worked by Sunday 6 December at 20:00, run pnpm ingest ${TOURNAMENT}.`,
+    matchdayDate: DATE,
+  });
 
   it("is recorded for the Organiser, stores nothing, and is retried on the next check", async () => {
     lichess.override = (call) => (call.path.endsWith("/games") ? Response.json({ error: "Oops" }, { status: 500 }) : undefined);
@@ -241,9 +247,12 @@ describe("a failure to collect", () => {
 
   it("says why when Lichess no longer has the tournament", async () => {
     lichess.tournaments.clear();
-    expect(await runAt(OVER)).toEqual(
-      cannot(`Lichess has no tournament ${TOURNAMENT}. Lichess deletes a tournament that fewer than two players joined an hour after its start.`),
-    );
+    // Nothing to collect, then or later, so nothing to do.
+    expect(await runAt(OVER)).toEqual({
+      outcome: "failed",
+      detail: `Lichess no longer has the tournament for ${DAY}, so there are no results. It deletes one an hour after the start if fewer than two players joined.`,
+      matchdayDate: DATE,
+    });
     expect(jobFailures.size).toBe(1);
   });
 
@@ -279,7 +288,7 @@ describe("a failure to collect", () => {
     let finished = 0;
     const run = collectResults(OVER).finally(() => (finished = Date.now()));
     await vi.advanceTimersByTimeAsync(300_000);
-    expect(await run).toEqual(cannot("Lichess took more than 240 s."));
+    expect(await run).toEqual(cannot("Lichess took more than 4 minutes."));
     expect(finished - started).toBe(240_000);
     expect(results.size + games.size).toBe(0);
     expect(jobFailures.size).toBe(1);

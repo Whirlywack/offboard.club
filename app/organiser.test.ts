@@ -150,7 +150,7 @@ describe("who the Organiser is", () => {
     expect(html).toContain("<h1>Organiser</h1>");
     expect(html).toContain("Lichess isn&#x27;t connected, so Matchdays aren&#x27;t being created on Lichess.");
     expect(html).toContain("<button>Connect Lichess</button>");
-    expect(html).toContain("No scheduled job has failed.");
+    expect(html).toContain("No job has failed.");
   });
 
   it("titles the tab for the Organiser alone, and as the not-found page for anyone else", async () => {
@@ -409,8 +409,8 @@ describe("the scheduled jobs on the Organiser page", () => {
 
   // Each job has its own part of the page, from its heading to the next.
   describe.each([
-    ["create-matchdays", "Creating Matchdays", "Creating Matchdays has never run. Vercel runs it every hour"],
-    ["collect-results", "Collecting results", "Collecting results has never run. Vercel runs it every five minutes on Sunday evenings and every hour otherwise"],
+    ["create-matchdays", "Creating Matchdays", "It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it every hour."],
+    ["collect-results", "Collecting results", "It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it at least once an hour."],
   ])("%s", (job, title, neverRun) => {
     const part = async () => {
       const html = await openPage();
@@ -423,7 +423,7 @@ describe("the scheduled jobs on the Organiser page", () => {
       ran(30, "skipped", `What ${job} did.`, job);
       const html = await part();
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">\d{1,2} \w+ \d{4} at \d\d:\d\d<\/time><\/dd>/);
-      expect(html).toContain("<dt>Outcome</dt><dd>Skipped</dd>");
+      expect(html).toContain("<dt>Outcome</dt><dd>Nothing to do</dd>");
       // The outcome first, in the same place for every job, so that a glance down the box finds each job's.
       expect(html.indexOf("<dt>Outcome</dt>")).toBeLessThan(html.indexOf("<dt>Last run</dt>"));
       expect(html).toContain(`>What ${job} did.</p>`);
@@ -438,12 +438,12 @@ describe("the scheduled jobs on the Organiser page", () => {
     it("flags plainly a last run more than two hours old, and marks its time", async () => {
       ran(119, "skipped", "Nothing to do.", job);
       let html = await part();
-      expect(html).not.toContain("more than two hours ago");
+      expect(html).not.toContain("for over two hours");
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">/);
       ran(121, "skipped", "Nothing to do.", job);
       html = await part();
       expect(html).toMatch(
-        alertSaying("The last run was more than two hours ago, though the job runs every hour, so runs aren't getting through."),
+        alertSaying("It hasn't run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled."),
       );
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+" class="[^"]+">/);
     });
@@ -457,12 +457,8 @@ describe("the scheduled jobs on the Organiser page", () => {
   });
 
   it.each([
-    ["unset", "", "CRON_SECRET is not set, so every scheduled run is refused: no Matchday is created and no results are collected."],
-    [
-      "shorter than 16 characters",
-      "short-secret",
-      "CRON_SECRET is shorter than 16 characters, so every scheduled run is refused: no Matchday is created and no results are collected.",
-    ],
+    ["unset", "", "CRON_SECRET isn't set, so the site refuses every scheduled run."],
+    ["shorter than 16 characters", "short-secret", "CRON_SECRET is shorter than 16 characters, so the site refuses every scheduled run."],
   ])("says so when CRON_SECRET is %s, without showing it", async (_, secret, line) => {
     vi.stubEnv("CRON_SECRET", secret);
     ran(30);
@@ -471,18 +467,21 @@ describe("the scheduled jobs on the Organiser page", () => {
     if (secret) expect(html).not.toContain(secret);
   });
 
-  it("shows the latest failure of any scheduled job in one line, from when it began", async () => {
-    jobFailures.set("1", { id: 1, job: "create-matchdays", at: new Date("2026-11-24T10:07:00Z"), matchdayDate: "2026-11-29", problem: "The Matchday of 2026-11-29 could not be created: oops." });
+  it("shows the latest failure of any scheduled job in one line: which job, from when, and why", async () => {
+    jobFailures.set("1", { id: 1, job: "create-matchdays", at: new Date("2026-11-24T10:07:00Z"), matchdayDate: null, problem: "The job stopped: oops." });
     let html = await openPage();
+    // A failure in words any job could use, placed by the job's name.
+    expect(html).toContain("<dt>Job</dt><dd>Creating Matchdays</dd>");
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-24T10:07:00.000Z">24 November 2026 at 12:07</time></dd>');
-    expect(html).toMatch(/>The Matchday of 2026-11-29 could not be created: oops\.<\/p>/);
-    expect(html).not.toMatch(alertSaying("The Matchday of 2026-11-29")); // history, which may be long over: not an alert
-    expect(html).not.toContain("No scheduled job has failed.");
-    jobFailures.set("2", { id: 2, job: "collect-results", at: new Date("2026-11-29T20:05:00Z"), matchdayDate: "2026-11-29", problem: "The results of the Matchday of 2026-11-29 could not be collected: oops." });
+    expect(html).toMatch(/>The job stopped: oops\.<\/p>/);
+    expect(html).not.toMatch(alertSaying("The job stopped")); // history, which may be long over: not an alert
+    expect(html).not.toContain("No job has failed.");
+    jobFailures.set("2", { id: 2, job: "collect-results", at: new Date("2026-11-29T20:05:00Z"), matchdayDate: "2026-11-29", problem: "Couldn't collect the results of Sunday 29 November: oops." });
     html = await openPage();
+    expect(html).toContain("<dt>Job</dt><dd>Collecting results</dd>");
     expect(html).toContain('<dt>Began</dt><dd><time dateTime="2026-11-29T20:05:00.000Z">29 November 2026 at 22:05</time></dd>');
-    expect(html).toMatch(/>The results of the Matchday of 2026-11-29 could not be collected: oops\.<\/p>/);
-    expect(html).not.toContain("could not be created");
+    expect(html).toMatch(/>Couldn&#x27;t collect the results of Sunday 29 November: oops\.<\/p>/);
+    expect(html).not.toContain("The job stopped");
   });
 });
 

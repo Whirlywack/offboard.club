@@ -41,7 +41,7 @@ export async function runJob(job: string, work: () => Promise<JobRun>): Promise<
     [job, hold],
   );
   const previous = rows[0];
-  if (!previous) return skipped("Another run of this job is still working, so this one did nothing.");
+  if (!previous) return skipped("Another run was already working on it.");
 
   let run: JobRun;
   try {

@@ -189,7 +189,7 @@ describe("creating the upcoming Matchday's tournament", () => {
   it("creates it once when two runs start at the same moment", async () => {
     const runs = await Promise.all([runAt(DUE), runAt(DUE)]);
     expect(runs.map((r) => r.outcome).sort()).toEqual(["done", "skipped"]);
-    expect(runs.find((r) => r.outcome === "skipped")?.detail).toBe("Another run of this job is still working, so this one did nothing.");
+    expect(runs.find((r) => r.outcome === "skipped")?.detail).toBe("Another run was already working on it.");
     expect(creations()).toHaveLength(1);
     expect(created()).toHaveLength(1);
     expect(matchdays.get(DATE)?.lichessTournamentId).toBe(created()[0].id);

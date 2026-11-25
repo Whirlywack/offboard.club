@@ -84,8 +84,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <p className={ui.eyebrow}>Only you can see this page</p>
         <h1>Organiser</h1>
         <p className={ui.lede}>
-          The site creates each Matchday on Lichess six days ahead, with the Lichess account you connect here, and
-          collects its results once it has been played. This page shows whether that&apos;s working.
+          This page shows whether the site is creating Matchdays on Lichess and collecting their results.
         </p>
       </div>
 
@@ -114,14 +113,14 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <h2 id="jobs">Scheduled jobs</h2>
         {secretProblem && <Alert>{secretProblem}</Alert>}
         <JobStatus
-          title="Creating Matchdays"
-          neverRun="Creating Matchdays has never run. Vercel runs it every hour once the site is deployed with CRON_SECRET set. Until it runs, no Matchday is created."
+          title={JOBS[CREATE]}
+          neverRun="It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it every hour."
           run={creating}
           now={now}
         />
         <JobStatus
-          title="Collecting results"
-          neverRun="Collecting results has never run. Vercel runs it every five minutes on Sunday evenings and every hour otherwise, once the site is deployed with CRON_SECRET set. Until it runs, no results are collected and no Recap is published."
+          title={JOBS[COLLECT]}
+          neverRun="It hasn't run yet. Once the site is deployed with CRON_SECRET set, Vercel runs it at least once an hour."
           run={collecting}
           now={now}
         />
@@ -252,7 +251,10 @@ function Unreadable({ lichessId }: { lichessId: string }) {
   );
 }
 
-const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Skipped", failed: "Failed" };
+const OUTCOMES: Record<Outcome, string> = { done: "Done", skipped: "Nothing to do", failed: "Failed" };
+
+// Each scheduled job by its name on the page, over its own part and in the last failure.
+const JOBS: Record<string, string> = { [CREATE]: "Creating Matchdays", [COLLECT]: "Collecting results" };
 
 // A scheduled job's last run, and plainly when it has never run or has not run for over two hours. The outcome comes
 // first, in the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome
@@ -280,8 +282,8 @@ function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: str
           )}
           {late && (
             <Alert>
-              The last run was more than two hours ago, though the job runs every hour, so runs aren&apos;t getting
-              through. Check that CRON_SECRET is set on Vercel and that the project&apos;s cron jobs are enabled.
+              It hasn&apos;t run for over two hours. Check that CRON_SECRET is set on Vercel and that cron jobs are
+              enabled.
             </Alert>
           )}
         </>
@@ -292,7 +294,8 @@ function JobStatus({ title, neverRun, run, now }: { title: string; neverRun: str
   );
 }
 
-// The most recent failure of any scheduled job, as of when it began: a problem that stands for days is one failure.
+// The most recent failure of any scheduled job, which job it was and when it began: a problem that stands for days is
+// one failure.
 function LastFailure({ failure }: { failure: Failure | null }) {
   return (
     <div className={styles.part}>
@@ -300,6 +303,7 @@ function LastFailure({ failure }: { failure: Failure | null }) {
       {failure ? (
         <>
           <dl className={styles.facts}>
+            <Fact label="Job">{JOBS[failure.job] ?? failure.job}</Fact>
             <Fact label="Began">
               <Time at={failure.at} as={DATE_TIME} />
             </Fact>
@@ -307,7 +311,7 @@ function LastFailure({ failure }: { failure: Failure | null }) {
           <p className={styles.detail}>{failure.problem}</p>
         </>
       ) : (
-        <p className={styles.detail}>No scheduled job has failed.</p>
+        <p className={styles.detail}>No job has failed.</p>
       )}
     </div>
   );

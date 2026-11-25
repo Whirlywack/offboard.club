@@ -20,7 +20,7 @@
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { getSwiss, timeLimit } from "./lichess";
 import { ingestTournament, matchdayOn } from "./matchdays";
-import { latestSunday } from "./schedule";
+import { addDays, latestSunday, matchdayStart, ZONE } from "./schedule";
 
 export const JOB = "collect-results";
 
@@ -34,30 +34,45 @@ export const collectResults = (now: Date) => runJob(JOB, () => collect(now));
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+// Dates as the Organiser page writes them, a Matchday as "Sunday 29 November" and an instant as "Sunday 6 December at
+// 20:00", each kept on one line as the Season page keeps its dates.
+const whole = (text: string) => text.replaceAll(" ", " ");
+const day = (date: string) =>
+  whole(new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" }));
+const moment = (at: Date) =>
+  whole(at.toLocaleString("en-GB", { timeZone: ZONE, weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }));
+
 async function collect(now: Date): Promise<JobRun> {
   const date = latestSunday(now);
+  const sunday = day(date);
   const matchday = await matchdayOn(date);
   const id = matchday?.lichessTournamentId;
-  if (!id) return skipped(`Sunday ${date} has no tournament on Lichess, so there are no results to collect.`, date);
-  const collected = skipped(`The results of the Matchday of ${date} are in, and its Recap is public.`, date);
+  if (!id) return skipped(`There's no tournament on Lichess for ${sunday}.`, date);
+  const collected = skipped(`The Recap of ${sunday} is public.`, date);
   if (matchday.ingested) return collected;
 
-  const cannot = (why: string) => failed(`The results of the Matchday of ${date} could not be collected: ${sentence(why)}.`, date);
-  const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 1000} s`);
+  // The same words for the same cause, so that a failure that stands is recorded once (runJob). Runs look after this
+  // Matchday until the next Sunday's starts (latestSunday), then leave it to `pnpm ingest`.
+  const lastTry = moment(matchdayStart(addDays(date, 7)));
+  const cannot = (why: string) =>
+    failed(`Couldn't collect the results of ${sunday}: ${sentence(why)}. If it hasn't worked by ${lastTry}, run pnpm ingest ${id}.`, date);
+  const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 60_000} minutes`);
   try {
     const swiss = await getSwiss(id, deadline.signal);
     // lila deletes a Swiss tournament that has not had two players an hour after its start, and its creator can delete
-    // one before it starts.
+    // one before it starts. Either way there is nothing to collect, or to ingest later.
     if (!swiss)
-      return cannot(`Lichess has no tournament ${id}. Lichess deletes a tournament that fewer than two players joined an hour after its start`);
-    if (swiss.status !== "finished")
-      return skipped(`Tournament ${id}, the Matchday of ${date}, has not finished on Lichess yet; its results are collected once it has.`, date);
+      return failed(
+        `Lichess no longer has the tournament for ${sunday}, so there are no results. It deletes one an hour after the start if fewer than two players joined.`,
+        date,
+      );
+    if (swiss.status !== "finished") return skipped(`The tournament for ${sunday} hasn't finished yet.`, date);
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
     const ingestion = await ingestTournament(id, { signal: deadline.signal });
     if (ingestion.outcome === "unchanged") return collected; // by `pnpm ingest`, in the meantime
     if (ingestion.outcome === "refused") return cannot(ingestion.problem);
     return done(
-      `Collected the results of the Matchday of ${date}: ${count(ingestion.members, "Member", "Members")} played, with ${count(ingestion.games, "Game", "Games")} between them. Its Recap is public.`,
+      `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
       date,
     );
   } catch (error) {

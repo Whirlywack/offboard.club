@@ -347,7 +347,8 @@ async function start(dir, port) {
     throw new Error(`${dir} uses port ${portOf(variables(saved).DATABASE_URL)}: leave out --port, or give another --dir.`);
   const pg = postgres();
   const record = recorder();
-  let text = saved ?? block(await freeSet(port));
+  let text = saved;
+  if (!saved) await freeSet(port); // a --port, or a range, with no free set refused before anything is made
   if (saved && running(pg, dir)) {
     const made = madeBy(dir);
     say(
@@ -362,13 +363,6 @@ async function start(dir, port) {
         ? "It sorts text by code point (the builtin C.UTF-8) and keeps time in UTC, as the live database does."
         : `It sorts text by code point (C, as Postgres ${pg.major} has no builtin C.UTF-8, so upper() and lower() change ASCII letters alone, where the live database's change every letter) and keeps time in UTC.`,
     );
-    // A port this worktree's own site or fakes hold is not taken by anyone else.
-    const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
-    const takenNow = saved ? (await Promise.all(portsOf(saved).map(async (each) => !own.has(each) && (await held(each)) && each))).filter(Boolean) : [];
-    if (takenNow.length) {
-      text = moved(saved, await freeSet(port));
-      say(`The ports ${dir} had are taken now (${takenNow.join(", ")}), so it has the first free set: ${portsOf(text).join(", ")}.`);
-    }
     const made = saved && madeBy(dir);
     const fresh = made !== pg.major || madeAs(dir) !== madeAsNow(pg.major);
     if (fresh) {
@@ -379,6 +373,17 @@ async function start(dir, port) {
       else if (made) say(`${dir} was made to sort or keep time otherwise than the live database does, so it was made again, empty.`);
       run(`${pg.dir}/initdb`, ["-D", dir, ...initdb(pg.major)], { ...process.env, TZ: "UTC" });
       writeFileSync(`${dir}/offboard.initdb`, `${madeAsNow(pg.major)}\n`);
+    }
+    // The ports are chosen, or checked, only now, just before Postgres takes them, not before initdb: ports chosen a
+    // second before Postgres took them were free that second for another db:start to choose as well, and to take once
+    // this folder's Postgres had stopped.
+    if (!saved) text = await freeSet(port).then(block, (error) => (rmSync(dir, { recursive: true, force: true }), Promise.reject(error)));
+    // A port this worktree's own site or fakes hold is not taken by anyone else.
+    const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
+    const takenNow = saved ? (await Promise.all(portsOf(saved).map(async (each) => !own.has(each) && (await held(each)) && each))).filter(Boolean) : [];
+    if (takenNow.length) {
+      text = moved(saved, await freeSet(port));
+      say(`The ports ${dir} had are taken now (${takenNow.join(", ")}), so it has the first free set: ${portsOf(text).join(", ")}.`);
     }
     if (fresh || text !== saved) writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 }); // at once, so that a start that fails after this resumes
     if (saved && text !== saved && envLocal() === saved) {
@@ -401,7 +406,9 @@ async function start(dir, port) {
         if (running(pg, dir)) break; // pg_ctl stopped waiting, but the server came up all the same: it is this folder's
         const holder = await held(postgres);
         const lost = existsSync(log) && readFileSync(log).subarray(logged).toString().includes("Address already in use");
-        if (tries === 10 || !(holder || lost)) throw error;
+        if (!(holder || lost)) throw error;
+        if (tries === 10)
+          throw new Error(`Postgres lost its port as it started, ${tries} times in a row, the last time ${postgres}, so ${dir} was not started. Its log: ${log}.`);
         if (holder) {
           const before = text;
           text = moved(text, await freeSet(port, randomInt(SETS)));

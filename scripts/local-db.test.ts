@@ -69,11 +69,12 @@ describe("a checkout's .env.local", () => {
 });
 
 // What a child of these tests is given of this process's environment, with `extra`: nothing the caller exported that
-// could point it at a real database or at another checkout's processes, such as the repository's own registry.
+// could point it at a real database or at another checkout's processes: no registry, no database, no PG* and no GIT_*
+// variable, such as the GIT_DIR git gives a hook run in a worktree, which names the repository's own git folder.
 function childEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
   const env = { ...process.env, ...extra };
   for (const name of Object.keys(env))
-    if (!Object.hasOwn(extra, name) && (/^PG/.test(name) || ["DATABASE_URL", "ALLOW_DB_TESTS", "OFFBOARD_LOCAL_REGISTRY"].includes(name))) delete env[name];
+    if (!Object.hasOwn(extra, name) && (/^(PG|GIT_)/.test(name) || ["DATABASE_URL", "ALLOW_DB_TESTS", "OFFBOARD_LOCAL_REGISTRY"].includes(name))) delete env[name];
   return env;
 }
 const run = (command: string, args: string[], env: Record<string, string | undefined> = {}, cwd?: string) =>
@@ -339,10 +340,8 @@ afterAll(() => {
 });
 
 const tool = (root: string, ...args: string[]) => run(process.execPath, [join(root, "scripts/local-db.mjs"), ...args]);
-const gitEnv = childEnv();
-for (const name of Object.keys(gitEnv)) if (name.startsWith("GIT_")) delete gitEnv[name];
 const git = (dir: string, ...args: string[]) =>
-  execFileSync("git", ["-C", dir, "-c", "user.name=Pretend", "-c", "user.email=pretend@example.invalid", ...args], { env: gitEnv, stdio: "ignore" });
+  execFileSync("git", ["-C", dir, "-c", "user.name=Pretend", "-c", "user.email=pretend@example.invalid", ...args], { env: childEnv(), stdio: "ignore" });
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -476,6 +475,26 @@ describe("what these tools start is recorded", () => {
     }
   });
 
+  it("by these tests in their own repositories' registries, whatever GIT_DIR their caller exported, as git does for a hook", () => {
+    const repo = repository();
+    const another = repository(); // with a true record of a running process in its git folder, as the main checkout's is
+    const running = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: childEnv() });
+    children.push(running);
+    const [, start, command] = /^(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/.exec(
+      execFileSync("ps", ["-ww", "-o", "lstart=,command=", "-p", String(running.pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).trim(),
+    )!;
+    mkdirSync(join(another, ".git/offboard-local"));
+    writeFileSync(join(another, ".git/offboard-local", `${running.pid}.json`), JSON.stringify({ kind: "site", port: 3000, folder: another, worktree: another, pid: running.pid, start, command }));
+    process.env.GIT_DIR = join(another, ".git");
+    try {
+      expect(tool(repo, "list").stdout).toBe("Nothing these tools started is running.\n");
+      expect(tool(repo, "stop-all", "--all").stdout).toBe("Nothing these tools started is running.\n");
+      expect(alive(running.pid!)).toBe(true);
+    } finally {
+      delete process.env.GIT_DIR;
+    }
+  });
+
   it("only while its process runs", () => {
     const root = repository();
     const gone = spawnSync(process.execPath, ["-e", ""]).pid;
@@ -526,10 +545,14 @@ describe("db:start in a folder it has used before", () => {
     await query(databaseUrl(first), "create table kept ()");
     // Its own fake, on a port of its set; when another process holds that port already, the set is held all the same.
     const ours = await fakeTelegram(root, { port: portIn(first, "TELEGRAM_URL") }).then(() => true, () => false);
+    let stopped: string[] = [];
     try {
       expect(tool(root, "stop").status).toBe(0);
       const again = tool(root, "start");
       expect(again.status, again.stderr).toBe(0);
+      // With its own fake holding a port of its set, no other checkout's db:start takes the set, so its ports are as
+      // free as it left them, and it stays on them.
+      if (ours) expect(again.stdout).not.toContain("taken now");
       // It moves only off a port another process holds, and names it, never off its own fake's. Another checkout's
       // db:start can take a stopped folder's ports, and then it moves, as it must, keeping its data and .env.local in step.
       const takenNow = /had are taken now \(([\d, ]*)\)/.exec(again.stdout)?.[1];
@@ -543,9 +566,11 @@ describe("db:start in a folder it has used before", () => {
       const refused = new RegExp(`^${dir.replaceAll(".", "\\.")} uses port ${postgres}: leave out --port, or give another --dir\\.$`);
       refuses(process.execPath, [join(root, "scripts/local-db.mjs"), "start", "--port", String(another)], refused);
     } finally {
-      // What it started, stopped even when it fails, so that the tests after it find the folder as they expect.
-      expect(rows(tool(root, "stop-all", "--dir", root).stdout).map(({ kind }) => kind).sort()).toEqual(ours ? ["Postgres", "fake Telegram"] : ["Postgres"]);
+      // What it started, stopped even when it fails, so that the tests after it find the folder as they expect; checked
+      // only after, so that a failure above is the one reported.
+      stopped = rows(tool(root, "stop-all", "--dir", root).stdout).map(({ kind }) => String(kind));
     }
+    expect(stopped.sort()).toEqual(ours ? ["Postgres", "fake Telegram"] : ["Postgres"]);
   }, 60_000);
 
   it("starts on the first free ports when its own have been taken since, and rewrites its block and the .env.local that was it", async () => {
@@ -618,9 +643,13 @@ describe("db:start in a folder it has used before", () => {
     expect(readFileSync(join(dir, "offboard.initdb"), "utf8")).toMatch(/ TZ=UTC\n$/);
   }, 60_000);
 
-  it("dev:local runs the site, which is listed and stopped with the server it started", async () => {
+  it("dev:local runs the site, on a port held for a moment only as it starts, which is listed and stopped with its server", async () => {
     writeFileSync(envLocal, blockIn(dir));
+    // Its site's port held as dev:local starts, as another db:start trying it would, and let go 100 ms later: before
+    // dev:local asks again whether it is taken, however soon after starting it first asks.
+    const release = await squat(portIn(blockIn(dir), "BETTER_AUTH_URL"));
     const dev = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "dev"], { cwd: root, env: childEnv() });
+    setTimeout(() => void release(), 100);
     children.push(dev);
     const exited = new Promise((done) => dev.once("exit", done));
     await new Promise<void>((ready, failed) => {
@@ -670,14 +699,76 @@ describe("db:start beside others starting at the same time", () => {
 
   // A folder whose Postgres has run and is stopped, while its own fake Telegram holds a port of its set: so no other
   // checkout's db:start takes the set meanwhile, and what happens to it is what the test does.
+  // When another process held that port before the fake could, it is another folder, up to three times.
   async function stoppedButHeld() {
-    const root = repository();
-    const started = tool(root, "start");
-    expect(started.status, started.stderr).toBe(0);
-    await fakeTelegram(root, { port: portIn(blockIn(join(root, ".local-db")), "TELEGRAM_URL") }).catch(() => {}); // or another holds that port
-    expect(tool(root, "stop").status).toBe(0);
-    return { root, block: blockIn(join(root, ".local-db")) };
+    for (let tries = 1; ; tries++) {
+      const root = repository();
+      const started = tool(root, "start");
+      expect(started.status, started.stderr).toBe(0);
+      const ours = await fakeTelegram(root, { port: portIn(blockIn(join(root, ".local-db")), "TELEGRAM_URL") }).then(() => true, () => false);
+      expect(tool(root, "stop").status).toBe(0);
+      if (ours || tries === 3) return { root, block: blockIn(join(root, ".local-db")), ours };
+      tool(root, "stop-all", "--dir", root);
+    }
   }
+
+  // A child of db:start's, and its output, and a promise of how it ended.
+  function starting(root: string, env: Record<string, string> = {}) {
+    const child = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { env: childEnv(env) });
+    children.push(child);
+    const output = { stdout: "", stderr: "" };
+    child.stdout!.on("data", (chunk) => (output.stdout += chunk));
+    child.stderr!.on("data", (chunk) => (output.stderr += chunk));
+    return { child, output, ended: new Promise<number | null>((done) => child.once("exit", done)) };
+  }
+
+  it("stays on its ports when one was taken for a moment only as it started, as another db:start trying it takes it", async () => {
+    const { root, block, ours } = await stoppedButHeld();
+    // Its Lichess port held, and let go 60 ms after db:start's first line: after it first asks whether the port is
+    // taken, and before it asks again.
+    const release = await squat(portIn(block, "LICHESS_URL"));
+    const { child, output, ended } = starting(root);
+    child.stdout!.once("data", () => setTimeout(() => void release(), 60));
+    const status = await ended;
+    // Not moved for it: a start that then loses its port to a holder moves, as it must, but says "taken a moment ago".
+    expect([status, output.stdout], output.stderr).toEqual([0, ours ? expect.not.stringContaining("taken now") : expect.any(String)]);
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 60_000);
+
+  it("chooses a new folder's ports after initdb, so that a set taken while initdb runs is not the one it gets", async () => {
+    const root = repository();
+    const slow = join(root, "slow");
+    const holding = join(slow, "holding");
+    mkdirSync(slow);
+    // An initdb that, once the real one is done, has the first free set's site port taken, as another db:start that
+    // chose the set meanwhile would; it writes down "<pid> <port>".
+    const hold = [
+      `const net = require("node:net");`,
+      `const free = (port) => new Promise((done) => { const s = net.createServer().once("error", () => done(false)).listen({ port, host: "127.0.0.1", exclusive: true }, () => s.close(() => done(true))); });`,
+      `(async () => { for (let n = 0; n < 100; n++) {`,
+      `  let all = true; for (const port of [55432 + n, 3100 + n, 8089 + n, 8189 + n]) if (!(await free(port))) { all = false; break; }`,
+      `  if (all) return net.createServer().listen(3100 + n, "127.0.0.1", () => require("node:fs").writeFileSync(process.argv[1], process.pid + " " + (3100 + n)));`,
+      `} })();`,
+    ].join(" ");
+    const lines = [
+      "#!/bin/sh",
+      `"${bin}/initdb" "$@" || exit 1`,
+      `"${process.execPath}" -e '${hold}' "${holding}" > /dev/null 2>&1 &`, // holding no pipe of db:start's open
+      `for i in $(seq 1 300); do [ -e "${holding}" ] && break; sleep 0.01; done`,
+    ];
+    writeFileSync(join(slow, "initdb"), `${lines.join("\n")}\n`, { mode: 0o755 });
+    writeFileSync(join(slow, "pg_ctl"), `#!/bin/sh\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    try {
+      const started = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${slow}:${process.env.PATH}` });
+      expect(started.status, started.stderr).toBe(0);
+      const site = Number(readFileSync(holding, "utf8").split(" ")[1]);
+      expect(portIn(blockIn(join(root, ".local-db")), "BETTER_AUTH_URL")).not.toBe(site);
+      expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+    } finally {
+      const holder = existsSync(holding) && Number(readFileSync(holding, "utf8").split(" ")[0]);
+      if (holder) process.kill(holder);
+    }
+  }, 60_000);
 
   it("moves to another free set when its Postgres port is taken between its choice and its start", async () => {
     const { root } = await stoppedButHeld();
@@ -738,14 +829,22 @@ describe("db:start beside others starting at the same time", () => {
     expect(tool(root, "stop").status).toBe(0);
   }, 60_000);
 
-  it("does not try again when its start fails for another reason", async () => {
+  const addressInUse = `LOG:  could not bind IPv4 address "127.0.0.1": Address already in use`;
+
+  it("does not try a port again when its start fails for another reason, whatever an earlier start left in its log", async () => {
     const { root } = await stoppedButHeld();
     const failing = join(root, "failing");
     mkdirSync(failing);
-    writeFileSync(join(failing, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) echo 'pretend failure' >&2; exit 1 ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    // A pg_ctl whose every start fails for a reason of its own; it writes down the port of each.
+    const fail = `echo "$*" | sed -n 's/.* -p \\([0-9]*\\) .*/\\1/p' >> "${failing}/ports"; echo 'pretend failure' >&2; exit 1`;
+    writeFileSync(join(failing, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) ${fail} ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
     writeFileSync(join(failing, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 }); // so that db:start takes the folder for a Postgres
+    writeFileSync(join(root, ".local-db/postgres.log"), `${addressInUse}\n`, { flag: "a" }); // from a start before this one
     const failed = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${failing}:${process.env.PATH}` });
-    expect([failed.status, failed.stdout, failed.stderr.match(/pretend failure/g)]).toEqual([1, expect.not.stringContaining("taken a moment ago"), ["pretend failure"]]);
+    // Each port tried once: none again for this failure, though one lost to a real holder meanwhile is left for another.
+    const ports = readFileSync(join(failing, "ports"), "utf8").split("\n").filter(Boolean);
+    expect([failed.status, ports.length > 0, new Set(ports).size], failed.stdout).toEqual([1, true, ports.length]);
+    expect(failed.stderr).toContain("pretend failure");
     expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
   }, 60_000);
 
@@ -754,16 +853,47 @@ describe("db:start beside others starting at the same time", () => {
     const tried = join(root, "tried");
     mkdirSync(tried);
     // A pg_ctl whose first start fails as Postgres's does when the port is held at that instant, then is pg_ctl. It
-    // writes down the port it was given, in "once".
+    // writes down the port it was given, in "once", and has it held for 80 ms, as another db:start trying it would,
+    // which is after db:start first asks whether it is taken and before it asks again.
     const log = join(root, ".local-db/postgres.log");
-    const lose = `[ -e "${tried}/once" ] || { echo "$*" | sed -n 's/.* -p \\([0-9]*\\) .*/\\1/p' > "${tried}/once"; echo 'LOG:  could not bind IPv4 address "127.0.0.1": Address already in use' >> "${log}"; exit 1; }`;
-    writeFileSync(join(tried, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) ${lose} ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    const holding = join(tried, "holding");
+    const hold = [
+      `const write = (what) => require("node:fs").writeFileSync(process.argv[2], what);`,
+      `const server = require("node:net").createServer().once("error", () => write("held"))`,
+      `  .listen(Number(process.argv[1]), "127.0.0.1", () => { write(String(process.pid)); setTimeout(() => server.close(), 80); });`,
+    ].join(" ");
+    const lose = [
+      `[ -e "${tried}/once" ] || {`,
+      `  port=$(echo "$*" | sed -n 's/.* -p \\([0-9]*\\) .*/\\1/p'); echo "$port" > "${tried}/once"`,
+      `  "${process.execPath}" -e '${hold}' "$port" "${holding}" > /dev/null 2>&1 &`,
+      `  for i in $(seq 1 200); do [ -e "${holding}" ] && break; sleep 0.01; done`,
+      `  echo '${addressInUse}' >> "${log}"; exit 1; }`,
+    ].join("\n");
+    writeFileSync(join(tried, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*)\n${lose}\n;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
     writeFileSync(join(tried, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
     const started = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${tried}:${process.env.PATH}` });
     expect([started.status, started.stdout], started.stderr).toEqual([0, expect.not.stringContaining("taken a moment ago")]);
+    expect(readFileSync(holding, "utf8")).toMatch(/^\d+$/);
     const block = blockIn(join(root, ".local-db"));
     expect(portIn(block, "DATABASE_URL"), started.stdout).toBe(Number(readFileSync(join(tried, "once"), "utf8")));
     expect(await query(databaseUrl(block), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 60_000);
+
+  it("gives up after 10 starts that lost their port, and says where to look", async () => {
+    const { root } = await stoppedButHeld();
+    const lose = join(root, "lose");
+    mkdirSync(lose);
+    const dir = join(root, ".local-db");
+    const log = join(dir, "postgres.log");
+    // A pg_ctl whose every start fails as Postgres's does when its port is held at that instant; it counts its starts.
+    writeFileSync(join(lose, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) echo start >> "${lose}/starts"; echo '${addressInUse}' >> "${log}"; exit 1 ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(lose, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
+    // With a deadline of its own, as a db:start that never gave up would never end.
+    const failed = spawnSync(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { env: childEnv({ PATH: `${lose}:${process.env.PATH}` }), encoding: "utf8", timeout: 30_000 });
+    const port = portIn(blockIn(dir), "DATABASE_URL");
+    expect([failed.status, readFileSync(join(lose, "starts"), "utf8").split("\n").filter(Boolean).length]).toEqual([1, 10]);
+    expect(failed.stderr.trim().split("\n").at(-1)).toBe(`Postgres lost its port as it started, 10 times in a row, the last time ${port}, so ${dir} was not started. Its log: ${log}.`);
     expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
   }, 60_000);
 });

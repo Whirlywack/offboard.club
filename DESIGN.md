@@ -195,10 +195,15 @@ The pieces several pages share, and where they live:
 
 ### Buttons
 - **Shape:** square (0).
-- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`). Full width on a phone where it is the plate's one action.
-- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px.
-- **On black:** a paper block with black text, by the Turned-Over Rule.
+- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`, which is the same size and type, so a link and a button side by side match). Full width on a phone where it is the plate's one action.
+- **Quiet:** the choice beside it, `ui.quiet` on a `<button>` or a link: the same size, no fill, a 1px outline in `--line-strong`; under the pointer a faint wash of ink and the outline in ink.
+- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px (not with reduced motion). The `<button>` rule's hover is no more specific than `button` itself, so a button with a class of its own (`ui.quiet`, a text button) keeps its own background under the pointer.
+- **On black:** a paper block with black text, by the Turned-Over Rule; a quiet one keeps paper text on black.
 - **In the header:** 44px tall, 20px either side, 14px.
+
+### Alert
+- **Style:** `ui.alert`, what went wrong, on the ground itself: 600 15px in `--error`, after a 7px square of the same red on the middle of its first line, as the strip's square marks what is happening now. No panel, no tint, no stripe. 5.7:1 on the grey; on the grey only, as the red does not read on black.
+- **Use:** beside the field or the button it is about, or in place of a part of a page that cannot be shown (the database down). With `role="alert"` where it arrives after the page.
 
 ### Ruled link list
 - **Style:** places to go, one to a row between 1px rules (`--line`), each in the display serif at 25px (`min(2.7vw, 40px)` on a desktop), at least 68px tall (92px), with a 22px arrow at the end that leans 5px forward under the pointer. `RuledLinks` takes `[href, label]` pairs and a `className` to place it.
@@ -260,7 +265,7 @@ How a photograph meets the page is most of this look.
 
 ## Kept for the pages not yet redesigned
 
-`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker` and `arrive` are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
+`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, `--error-wash` (which `ui.alert` no longer reads), the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker`, `arrive` and `backLinks` (a row of small underlined links at a page's foot, where a redesigned page has `RuledLinks`) are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
 
 ## Adding to this file
 

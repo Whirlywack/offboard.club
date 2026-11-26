@@ -54,16 +54,21 @@ afterEach(() => {
 // The whole page as its reader gets it once every streamed part has arrived, as the text they read, top to bottom. Each
 // part is kept in its place, however large, where React would otherwise send a large one last for its script to move.
 async function page(query: Record<string, string> = {}) {
-  const home = Home({ params: Promise.resolve({}), searchParams: Promise.resolve(query) });
-  const { prelude } = await prerenderToNodeStream(home, { progressiveChunkSize: Number.POSITIVE_INFINITY });
-  let html = "";
-  for await (const chunk of prelude) html += chunk;
-  return html
+  return (await markup(query))
     .replace(/<script>[\s\S]*?<\/script>/g, "") // React's own, for a form sent before the page is interactive
     .replace(/<[^>]+>/g, " ")
     .replaceAll("&#x27;", "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// The same page as HTML.
+async function markup(query: Record<string, string> = {}) {
+  const home = Home({ params: Promise.resolve({}), searchParams: Promise.resolve(query) });
+  const { prelude } = await prerenderToNodeStream(home, { progressiveChunkSize: Number.POSITIVE_INFINITY });
+  let html = "";
+  for await (const chunk of prelude) html += chunk;
+  return html;
 }
 
 // The words of the home page's deck (#74), in the order of the approved mock-up (#77). Initials stand in for a photo, and
@@ -181,6 +186,20 @@ describe("the home page as each reader meets it", () => {
     expect(await page({ signin: "failed" })).toContain(
       "Sign in with LinkedIn LinkedIn sign-in isn't working right now. Please try again in a few minutes. Signing in lets",
     );
+  });
+
+  it("gives a visitor a second button in the header that sends the same sign-in form", async () => {
+    const html = await markup();
+    const form = /<form id="([^"]+)"/.exec(html)?.[1];
+    const sends = [...html.matchAll(/<button form="([^"]+)"[^>]*>Sign in with LinkedIn<\/button>/g)].map(([, id]) => id);
+    expect(form).toBe("sign-in");
+    expect(sends).toEqual([form]);
+  });
+
+  it("reads the strip as words, its label and what it says a space apart", async () => {
+    seasons.clear();
+    const strip = /<a href="#season"[^>]*>([\s\S]*?)<\/a>/.exec(await markup())![1];
+    expect(strip.replace(/<[^>]+>/g, "")).toBe(TO_GO);
   });
 
   it("says the Telegram group is still to come while no invite link is set", async () => {

@@ -2,13 +2,17 @@
 // site's not-found page, a Profile, Recap or Season that is not there, and the two error pages.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import PageError from "./error";
 import GlobalError from "./global-error";
 import NotFound from "./not-found";
 import NoProfile from "./profiles/[id]/not-found";
 import NoRecap from "./recaps/[date]/not-found";
 import NoSeason from "./seasons/[number]/not-found";
+
+// The address the error page is shown at, which its header depends on.
+const at = vi.hoisted(() => ({ path: null as string | null }));
+vi.mock("next/navigation", async (original) => ({ ...(await original<object>()), usePathname: () => at.path }));
 
 // The words a reader reads, top to bottom.
 const words = (element: ReactElement) =>
@@ -39,6 +43,15 @@ describe("a page that failed", () => {
       "This page didn't load Something broke on our side. Try again now or in a few minutes. Try again Home Error reference: 4259457142",
     );
     expect(words(createElement(PageError, { error: null, retry }))).not.toContain("Error reference");
+  });
+
+  it("has the site's header at the home page's address, where the root layout leaves its own out", () => {
+    const failed = () => words(createElement(PageError, { error: null, retry }));
+    at.path = "/";
+    expect(failed()).toMatch(/^Offboard Season All-time Recaps This page didn't load /);
+    at.path = "/profiles/ana";
+    expect(failed()).toMatch(/^This page didn't load /);
+    at.path = null;
   });
 
   it("says the same when the whole site fails, with the site's name, as it has no header", () => {

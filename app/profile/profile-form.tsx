@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, type KeyboardEvent } from "react";
 import { saveProfile, type ProfileFormState } from "../actions";
 import ui from "../ui.module.css";
 import styles from "./profile.module.css";
@@ -44,9 +44,17 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
         {state?.problem}
       </p>
     );
+  // Enter in the open-to box saves the form, as it did when the box was one line, rather than start a line that would
+  // be saved as a space. Not while a save is under way, as a disabled button stops Enter in a field, and not while a
+  // keyboard is still composing a word, whose Enter chooses it.
+  const saveOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (!pending) event.currentTarget.form?.requestSubmit();
+  };
 
   return (
-    <form action={action} className={`${styles.form} ${ui.arrive}`}>
+    <form action={action} className={styles.form}>
       {welcome && <input type="hidden" name="next" value="home" />}
 
       <div className={styles.field}>
@@ -95,7 +103,14 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
           are only allowed if this line invites them.
         </p>
         {error("openTo")}
-        <input {...describe("openTo", "openTo-hint")} placeholder="e.g. A coffee, mentoring, hearing about jobs" />
+        {/* Four lines, so all of it can be read back on a phone. A phone's return key is labelled for what it does. */}
+        <textarea
+          {...describe("openTo", "openTo-hint")}
+          rows={4}
+          enterKeyHint="go"
+          onKeyDown={saveOnEnter}
+          placeholder="e.g. A coffee, mentoring, hearing about jobs"
+        />
       </div>
 
       <div className={`${ui.actions} ${styles.formActions}`}>

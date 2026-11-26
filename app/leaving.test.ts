@@ -209,6 +209,8 @@ describe("deleting your own account", () => {
     // Keeping the account comes first, then deleting it, both inside the form that deletes.
     expect(confirm).toMatch(/<form[^>]*>.*<a[^>]* href="\/profile">Keep my account<\/a><button[^>]*>Delete my account<\/button><\/div><\/form>/);
     expect(confirm).not.toMatch(/aria-disabled|disabled=""/);
+    // What goes is a list to a screen reader too, though it is drawn without bullets.
+    expect(confirm).toMatch(/<ul [^>]*role="list"[^>]*><li>Your name, photo, email address and Profile are deleted\.<\/li>/);
     expect(text(confirm)).toContain("You disappear from every Leaderboard and Recap, including past ones.");
     expect(text(confirm)).toContain("Other Members keep their Games against you, with you shown as “a former member”.");
     expect(text(confirm)).toContain("Your Lichess account is disconnected, and the site asks Lichess to remove it from the Club's team.");
@@ -252,7 +254,7 @@ describe("deleting your own account", () => {
     expect(await countSignUps()).toBe(3);
     const left = renderToStaticMarkup(LeftPage());
     // The page reads nothing, so it says only what is true for anyone who opens it.
-    expect(left).toContain("<h1>After you leave the Club</h1>");
+    expect(text(left.match(/<h1.*<\/h1>/)![0]).trim()).toBe("After you leave the Club");
     expect(text(left)).toContain("If you've just deleted your account, it's gone and you're signed out.");
   });
 

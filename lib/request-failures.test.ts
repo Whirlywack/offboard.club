@@ -269,8 +269,9 @@ describe("a database that can't be used", () => {
 
   it("is told to nobody while alerts are off, which says nothing more, and logged when Telegram doesn't take it", async () => {
     const logged = unreachable();
-    for (const [name, value] of [["TELEGRAM_ORGANISER_CHAT_ID", ""], ["TELEGRAM_BOT_TOKEN", ""]]) {
-      vi.stubEnv(name, value);
+    for (const [token, chat] of [[TOKEN, ""], ["", CHAT]]) {
+      vi.stubEnv("TELEGRAM_BOT_TOKEN", token);
+      vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", chat);
       logged.mockClear();
       await vercelRuns(SUNDAY);
       expect(logged.mock.calls).toEqual([["Alerting the Organiser failed:", `getaddrinfo ENOTFOUND ${DATABASE}`]]);

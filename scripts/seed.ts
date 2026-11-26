@@ -620,7 +620,7 @@ async function check(name: string) {
         alerting?.detail === alertsProblem() && alertsSent.length === 0]);
     else if (name === "season-over")
       promises.push(["Alerting you sent the Organiser privately the failure of Creating Matchdays and the failed request, each once though it ran twice, and nothing to the group",
-        alertsSent.length === 2 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && alertsSent[1] === failedRequestText(failedRequest!) &&
+        alertsSent.length === 2 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && !!failedRequest && alertsSent[1] === failedRequestText(failedRequest) &&
           alerting?.detail === "Nothing to tell you." && !telegramPosts.some((text) => text.startsWith("Creating Matchdays") || text.startsWith("A page"))]);
     else promises.push(["Alerting you ran twice, and had nothing to tell the Organiser", alertsSent.length === 0 && alerting?.detail === "Nothing to tell you."]);
   }

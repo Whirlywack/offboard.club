@@ -1,21 +1,33 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Image from "next/image";
+import styles from "./fallback.module.css";
+import pawnOutline from "./photos/pawn-outline.webp";
+import { RuledLinks } from "./ruled-links";
 import ui from "./ui.module.css";
 
 export const metadata: Metadata = { title: "Page not found" };
 
-// For any address the site does not have, including Recap addresses that cannot be a Matchday's date (proxy.ts).
+// For any address the site does not have, including Recap addresses that cannot be a Matchday's date (proxy.ts). Its
+// picture is the outline of a pawn: a place nobody holds.
 export default function NotFound() {
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
-        <h1>Nothing at this address</h1>
-        <p className={ui.lede}>The address may have a typo in it.</p>
+    <main id="main" className={`${styles.plate} ${ui.grain}`}>
+      <div className={styles.text}>
+        <h1 className={`${styles.title} ${ui.display}`}>
+          <em>Nothing</em> at this address
+        </h1>
+        <p className={styles.lede}>The address may have a typo in it.</p>
+        <nav aria-label="More">
+          <RuledLinks
+            className={styles.links}
+            links={[
+              ["/", "Home"],
+              ["/recaps", "Recaps"],
+            ]}
+          />
+        </nav>
       </div>
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/">Home</Link>
-        <Link href="/recaps">Recaps</Link>
-      </nav>
+      <Image className={styles.empty} src={pawnOutline} alt="" sizes="(min-width: 900px) 208px, 104px" />
     </main>
   );
 }

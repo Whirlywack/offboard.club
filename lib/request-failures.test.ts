@@ -180,6 +180,9 @@ describe("a request that fails on the server", () => {
     ];
     for (const [i, [error]] of cases.entries()) await fail(error, `/case-${i}`);
     expect(rows().map((row) => row.reason)).toEqual(cases.map(([, reason]) => reason));
+    // The site's pool says a connection it could not open is that, as the EINVAL case relies on: the codes only that
+    // catches are a machine's own, and differ from one system to another, so no test here can make the pool meet one.
+    expect(Object.getOwnPropertyDescriptor(refused, Symbol.for("offboard.from-database"))?.value).toBe("connect");
     expect(JSON.stringify([...requestFailures.values()])).not.toContain("ana");
   });
 

@@ -30,7 +30,6 @@
 // LinkedIn (underscores and "linkedin" in the handle), Lichess names (a double hyphen), Games and tournaments (ids of the
 // wrong length, but for the next Matchday's, which is random, and the one waiting to be collected, PreTend1); and
 // "Replay the Game" loads lichess.org's board.
-import { createHmac } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { madeByDbStart, notLocal } from "./local-db.mjs";
 import { alertOrganiser, alertsProblem, JOB as ALERTS } from "@/lib/alerts";
@@ -53,6 +52,7 @@ import { finishOrganiserConnection, organiserPermission, startOrganiserConnectio
 import { JOB as POST, postToTelegram, REMINDER_HOURS } from "@/lib/post-to-telegram";
 import { getRecap, recapDates } from "@/lib/recaps";
 import { skipMatchday, tournamentCancellations } from "@/lib/reschedule";
+import { SESSION_COOKIE, signedSession } from "@/lib/session-cookie";
 import { addDays, firstSeasonStart, latestSunday, matchdayStart, MEMBERS_TO_START, signUpsNeeded, START_HOUR } from "@/lib/schedule";
 import { readSchedule, seasonDates, upcomingMatchday, type Schedule } from "@/lib/seasons";
 import { countSignUps, signUpTimes } from "@/lib/signups";
@@ -153,12 +153,7 @@ const lichessId = (p: Person) => `pretend--${p.id}`;
 const lichessName = (p: Person) => `Pretend--${p.id[0].toUpperCase()}${p.id.slice(1)}`;
 const token = (p: Person) => `seed-session-${p.id}`;
 
-// Better Auth's session cookie: `<token>.<HMAC-SHA256 of it>`, signed with the site's secret and URI-encoded
-// (better-call's signCookieValue). Plain http, so without the __Secure- prefix.
-const cookie = (p: Person) => {
-  const signature = createHmac("sha256", process.env.BETTER_AUTH_SECRET!).update(token(p)).digest("base64");
-  return { name: "better-auth.session_token", value: encodeURIComponent(`${token(p)}.${signature}`) };
-};
+const cookie = (p: Person) => ({ name: SESSION_COOKIE, value: signedSession(token(p)) });
 
 // The same history on every run, only dated afresh: a fixed pseudo-random sequence (mulberry32).
 let state = 20261125;

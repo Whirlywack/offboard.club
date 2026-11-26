@@ -123,6 +123,8 @@ Monochrome: a warm grey and a warm near-black, each sampled from a photograph's 
 
 **The No-Accent Rule.** There is no accent colour. Emphasis is size, italic, weight, or a black plate.
 
+**The Greyscale Rule.** A person's photograph (a Member's LinkedIn photo) is shown in greyscale, `filter: grayscale(1)`, so that nothing on a page is in colour.
+
 ## Typography
 
 **Display Font:** Bodoni Moda (with Bodoni 72, Didot, serif), its optical-size axis kept, so the hairlines thin as the type grows.
@@ -186,6 +188,7 @@ The pieces several pages share, and where they live:
 ### Strip
 - **Style:** a black line across the top, 44px, at the gutter: the square mark, a label in capitals, a line of text in 14px, an arrow. The whole strip is one link.
 - **Use:** it repeats, in its own words, what a part further down the page says, and leads there (`Strip href="#season"` on the home page). A page with nothing to repeat has no strip.
+- **Two lines:** a text too long to share a phone's line with its label takes `stacked`: under 480px wide the label and the mark go on the first line, the text under the label, the arrow beside both.
 
 ### Footer
 - **Style:** black, 14px; the two sentences in paper muted, the two links in paper, underlined, each a 44px target. Three columns on a desktop, stacked on a phone.
@@ -206,17 +209,33 @@ The pieces several pages share, and where they live:
 ### Photographs
 How a photograph meets the page is most of this look.
 
-- **Choosing one.** One per plate, for what the plate says. The six photographs are the queen, the white king on black, a lone pawn, two knights facing each other, a queen over a fallen king, and a row of six pieces tallest to shortest.
+- **Choosing one.** One per plate, for what the plate says. The six photographs are the queen, the white king on black, a lone pawn, two knights facing each other, a queen over a fallen king, and a row of six pieces tallest to shortest. What the home page and the two pages with nothing to show use them for:
+  - the queen: the Club, at the top of the home page;
+  - the lone pawn and its long shadow: "busy gets lonely";
+  - sixteen pawns, standing or in outline: the Members Season 1 has and waits for;
+  - the row of six pieces: a Season's six Matchdays, once Season 1 has begun;
+  - the white king on black: the chess;
+  - the two knights: meeting people;
+  - the queen over the fallen king: Leaderboards and their champion, and a page that failed;
+  - the outline of a pawn alone: a place nobody holds, the page that is not there.
 - **In the code.** Always the framework's image component with a static import, which gives it its width and height and a hashed address: `import king from "./photos/king.webp"`, then `<Image src={king} alt="" sizes="(min-width: 900px) 72vw, 512px" className={styles.king} />`. `sizes` says how wide it is shown at each width, in `px` or `vw`, and is left out only for a file smaller than any screen asks for (the pawns). Only the first screen's photograph takes `preload`. The browser is sent WebP at the width it needs, at quality 75; a photograph on a black backdrop takes `quality={90}`, as at 75 its grain breaks into blocks (`next.config.ts` allows those two).
 - **Never larger than it can hold.** A photograph's CSS width never passes its file's width: the 730px pawn is shown at 292px on a phone and at most 730px on a desktop; the 1800px queen at most about 1480px. On a phone, keep it within half its pixels where the composition allows, so it stays sharp on a 2x screen. Give a photograph `max-width: none` when it is positioned wider than its box, as the base `img` rule caps it at its box.
 - **A full photograph** (the queen, the king) sits in its plate with its edges feathered by a mask: two linear gradients on the queen, a radial one on the king. Its backdrop is the plate's own colour, so no edge shows.
 - **A cut-out** (the long-shadowed pawn, the knights, the fallen king) is the piece and its shadow with the backdrop divided out to white, and takes `mix-blend-mode: multiply`, so the white vanishes and the shadow lands on the grey, grain and all. Nothing between it and the grain may make a stacking context (`z-index`, `isolation`, `transform`, `opacity`), or it multiplies onto nothing.
 - **An alpha cut-out** (`pawn.webp`, and the outline `pawn-empty.webp` for a place not yet taken) sits as it is.
+- **A black cut-out** (`row.webp`) is the piece in black with the photograph's darkness as its alpha. On the grey it lands exactly as a multiplied cut-out would, and it needs no blend mode, so it can sit inside a stacking context, as the home page's Season block is. It was made from `design/photographs/row.jpeg`: the backdrop estimated by closing and blurring a small copy and divided out, the edges faded to white, then `-colorspace Gray -negate -background black -alpha shape`.
+- **People's photographs** are in greyscale (the Greyscale Rule).
 - **Alt text.** A photograph has `alt=""`: the words beside it say what it means. A photograph that showed something the words did not would need its own alt text.
 - **A new one** is made from `design/photographs/` with ImageMagick, cropped to what it shows, at the largest size it will be shown, and saved as WebP into `app/photos/`. A cut-out for multiplying must come out opaque with a pure white backdrop; check it on the grey before using it.
 
 ### Grain
 - `ui.grain` on a positioned element lays the grain over it. What inside it is positioned paints over the grain; the cut-outs multiply onto it.
+
+### A page with nothing to show
+- The not-found page and the error page (`app/fallback.module.css`): one grey plate with the grain, the heading in the display serif with its first word in italic, a line in muted text, the way on (a ruled link list, or the button to try again beside a quiet one), and the photograph that says what happened, beside the words on a desktop and under them on a phone.
+
+### Icons
+- The browser's icons (`app/icon.png`, `app/apple-icon.png`) are the black pawn cut-out on the ground colour.
 
 ### Motion
 - Only in answer to the pointer: a colour change on a button, an arrow that leans forward, an underline. 200 to 250ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`. Nothing moves by itself, and reduced motion drops the movement.

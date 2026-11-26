@@ -29,12 +29,13 @@ const PENDING_SECONDS = 600;
 
 // The callback may run for 300 s (its maxDuration), including what it does after the person has been sent on. Rate
 // limits can stretch each Lichess call to two minutes, so the connection gives up after 240 s, and revoking the token
-// may use what is left up to 295 s. Removing the account a switch replaced from the Club's team, once the person has
-// been sent on, gives up on Lichess at 297 s from the callback's first line, reckoned just before Lichess is asked,
-// leaving 3 s for the one statement that keeps the account for the Organiser if Lichess did not remove it.
+// may use what is left up to 270 s from the callback's first line. Removing the account a switch replaced from the
+// Club's team, once the person has been sent on, gives up on Lichess at 275 s, reckoned just before Lichess is asked,
+// leaving 25 s to record what the Organiser must do about it, if anything, a connection to the database of up to 20 s
+// (lib/db.ts) included. The Organiser's callback revokes by the same time, though nothing follows (lib/organiser-lichess.ts).
 export const CONNECTION_DEADLINE_MS = 240_000;
-export const REVOKED_BY_MS = 295_000;
-export const REMOVED_BY_MS = 297_000;
+export const REVOKED_BY_MS = 270_000;
+export const REMOVED_BY_MS = 275_000;
 
 // Until the Organiser supplies the team's id and password, the connect step says so instead of failing.
 export const lichessConfigured = () => Boolean(process.env.LICHESS_TEAM_ID && process.env.LICHESS_TEAM_PASSWORD);

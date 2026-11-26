@@ -557,6 +557,14 @@ describe("skipping a Sunday", () => {
     expect(lichess.tournaments.has(made)).toBe(true);
   });
 
+  it("leaves alone a Matchday with no tournament whose Sunday it makes the week off", async () => {
+    // Season 2's first, 17 January, recorded with no tournament; skipping 6 December makes it the week off.
+    matchdays.set("2027-01-17", { date: "2027-01-17", lichessTournamentId: null, ingestedAt: null });
+    await skip(SECOND);
+    expect(matchdays.get("2027-01-17")).toEqual({ date: "2027-01-17", lichessTournamentId: null, ingestedAt: null });
+    expect(tournamentCancellations.size).toBe(0);
+  });
+
   it("leaves alone a tournament whose Sunday has passed, even one that is not a Matchday", async () => {
     // Recorded for a Sunday before Season 1, its results never collected (the Organiser page lists it as not in).
     matchdays.set("2026-11-22", { date: "2026-11-22", lichessTournamentId: "PastOne1", ingestedAt: null });

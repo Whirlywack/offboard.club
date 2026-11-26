@@ -16,7 +16,7 @@ import { JOB as COLLECT, lastTryAt, uncollected, type Uncollected } from "@/lib/
 import { dueFrom, JOB as CREATE } from "@/lib/create-matchdays";
 import { cronSecretProblem } from "@/lib/cron";
 import { lastFailure, lastRun, OVERDUE_MS, type Failure, type LastRun, type Outcome } from "@/lib/jobs";
-import { membersToRemove, teamRemovals, type Removable } from "@/lib/leaving";
+import { membersToRemove, NOT_YOURSELF, teamRemovals, type Removable } from "@/lib/leaving";
 import { lichessProfileUrl, lichessSwissEditUrl, lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
@@ -109,10 +109,6 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
       <div className={ui.intro}>
         <p className={ui.eyebrow}>Only you can see this page</p>
         <h1>Organiser</h1>
-        <p className={ui.lede}>
-          This page shows whether the site is creating Matchdays on Lichess, collecting their results and posting to
-          the Telegram group. Here you can also skip a Sunday, set when a Season starts and remove a Member.
-        </p>
       </div>
 
       {removal && (
@@ -133,8 +129,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <Permission permission={permission} now={now} />
         <p className={`${ui.small} ${ui.muted}`}>
           Before you connect, sign in to Lichess as a leader of the Club&apos;s team with its &ldquo;Tournaments&rdquo;
-          and &ldquo;Remove&rdquo; permissions. Lichess then asks you to let Offboard create tournaments and manage the
-          teams you lead. Managing the team is how the site removes people from it when they leave the Club.
+          and &ldquo;Remove&rdquo; permissions.
         </p>
         <form action={connectOrganiserLichess} className={ui.actions}>
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
@@ -154,10 +149,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         {telegram ? (
           <Alert>{telegram}</Alert>
         ) : (
-          <p>
-            The bot posts reminders, Recaps and notices to the group, and Members see the group&apos;s invite link on the
-            home page.
-          </p>
+          <p>The bot posts reminders, Recaps and notices to the group.</p>
         )}
         <TestMessages />
       </section>
@@ -229,26 +221,23 @@ function NextMatchday({ next, ...creation }: Creation & { next: Matchday | null 
 function OnLichess({ start, tournament, blockers, now }: Creation & { start: Date }) {
   if (tournament)
     return (
-      <>
-        <p className={styles.note}>It&apos;s on Lichess, and Members can join it from the home page.</p>
-        <p className={styles.link}>
-          <ExternalLink href={lichessSwissUrl(tournament)}>Open it on Lichess</ExternalLink>
-        </p>
-      </>
+      <p className={styles.link}>
+        <ExternalLink href={lichessSwissUrl(tournament)}>Open it on Lichess</ExternalLink>
+      </p>
     );
   const due = dueFrom(start);
   // Promise no creation the page knows cannot happen.
   if (blockers > 0) {
-    const fixed = blockers > 1 ? "the problems below are fixed" : "the problem below is fixed";
+    const fixed = blockers > 1 ? "the problems below" : "the problem below";
     return (
       <Alert>
         {now < due ? (
           <>
-            The site should create it on Lichess on <Time at={due} as={WEEKDAY} />, but can&apos;t until {fixed}.
+            It&apos;s due on Lichess on <Time at={due} as={WEEKDAY} />, but can&apos;t be created until you fix {fixed}.
           </>
         ) : (
           <>
-            It&apos;s due on Lichess now, but the site can&apos;t create it until {fixed}.
+            It&apos;s due on Lichess now, but can&apos;t be created until you fix {fixed}.
           </>
         )}
       </Alert>
@@ -257,18 +246,18 @@ function OnLichess({ start, tournament, blockers, now }: Creation & { start: Dat
   if (now < due)
     return (
       <p className={styles.note}>
-        The site creates it on Lichess on <Time at={due} as={WEEKDAY} />, six days ahead.
+        It&apos;s due on Lichess on <Time at={due} as={WEEKDAY} />.
       </p>
     );
   // A run every hour: give the first two a chance before calling it late.
   if (now.getTime() - due.getTime() <= OVERDUE_MS)
     return <p className={styles.note}>It&apos;s due on Lichess now. The next hourly run should create it.</p>;
-  return <Alert>It should be on Lichess by now, but isn&apos;t. Check the scheduled jobs below.</Alert>;
+  return <Alert>It should be on Lichess by now. See Creating Matchdays below.</Alert>;
 }
 
 // An expired permission is dead on Lichess too, so there is nothing left to revoke, even if it cannot be read.
 function Permission({ permission, now }: { permission: OrganiserPermission | null; now: Date }) {
-  if (permission === null) return <p>Lichess isn&apos;t connected, so Matchdays aren&apos;t being created on Lichess.</p>;
+  if (permission === null) return <p>Not connected, so Matchdays aren&apos;t being created.</p>;
   const expired = permission.expiresAt <= now;
   return (
     <>
@@ -284,13 +273,9 @@ function Permission({ permission, now }: { permission: OrganiserPermission | nul
         </Fact>
       </dl>
       {expired ? (
-        <Alert>It has expired, so Matchdays aren&apos;t being created until you connect again.</Alert>
-      ) : permission.readable ? (
-        <p className={`${ui.small} ${ui.muted}`}>
-          Connect again before it expires: a Lichess permission lasts a year and can&apos;t be extended.
-        </p>
+        <Alert>Matchdays aren&apos;t being created until you connect again.</Alert>
       ) : (
-        <Unreadable lichessId={permission.lichessId} />
+        !permission.readable && <Unreadable lichessId={permission.lichessId} />
       )}
     </>
   );
@@ -301,8 +286,8 @@ function Unreadable({ lichessId }: { lichessId: string }) {
   return (
     <div role="alert" className={`${ui.alert} ${styles.steps}`}>
       <p>
-        This permission can&apos;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&apos;t being created. It
-        stays valid on Lichess until it expires, and the site can no longer revoke it. To end it and connect again:
+        This permission can&apos;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&apos;t being created. To
+        end it and connect again:
       </p>
       <ol>
         <li>Sign in to Lichess as {lichessId}.</li>
@@ -312,7 +297,7 @@ function Unreadable({ lichessId }: { lichessId: string }) {
         </li>
         <li>Connect Lichess again below.</li>
       </ol>
-      <p>Keep to that order: revoking after you connect would revoke the new permission too.</p>
+      <p>Keep to that order: revoking afterwards would end the new permission too.</p>
     </div>
   );
 }
@@ -377,7 +362,7 @@ function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date 
             <Time at={matchdayStart(date)} as={WEEKDAY} className={styles.when} />{" "}
             {date === latest ? (
               <>
-                Collecting results checks it until <Time at={lastTryAt(date)} as={MATCHDAY} />.
+                Checked until <Time at={lastTryAt(date)} as={MATCHDAY} />.
               </>
             ) : (
               <>No longer checked. If Lichess still has its tournament, run pnpm ingest {lichessTournamentId}.</>
@@ -458,8 +443,8 @@ function TournamentCancellations({ cancellations }: { cancellations: Cancellatio
     <section aria-labelledby="cancellations" className={styles.section}>
       <h2 id="cancellations">Cancel on Lichess</h2>
       <p>
-        These Sundays are no longer Matchdays, but the site couldn&apos;t cancel their tournaments on Lichess. Cancel each
-        one there, signed in as the account that created it, then press Done.
+        The site couldn&apos;t cancel these Sundays&apos; tournaments on Lichess. Cancel each there, signed in as the
+        account that created it, then press Done.
       </p>
       <ul role="list">
         {cancellations.map(({ lichessTournamentId, date, problem }) => (
@@ -513,7 +498,7 @@ function ScheduleChanges({ schedule, next, now }: { schedule: Schedule; next: Ma
       {sundays.some((s) => s.matchday || s.skipped) ? (
         <Sundays sundays={sundays} />
       ) : (
-        <p className={styles.detail}>No Matchday in the next {SUNDAYS_LISTED} weeks, so there&apos;s nothing to skip.</p>
+        <p className={styles.detail}>No Matchday in the next {SUNDAYS_LISTED} weeks.</p>
       )}
       <SeasonStart seasons={seasons} first={first} />
     </section>
@@ -522,9 +507,9 @@ function ScheduleChanges({ schedule, next, now }: { schedule: Schedule; next: Ma
 
 // How the last removal went, by the code app/organiser/actions.ts sends back in the address.
 const REMOVALS: Record<string, { text: string; problem: boolean }> = {
-  removed: { text: "Removed. They're gone from every Leaderboard and Recap.", problem: false },
+  removed: { text: "Member removed.", problem: false },
   gone: { text: "That Member has already left the Club.", problem: true },
-  self: { text: "You can't remove yourself here. To leave the Club, delete your account from your Profile.", problem: true },
+  self: { text: NOT_YOURSELF, problem: true },
 };
 
 // Choosing a Member by name. Continue opens the step that confirms it (app/organiser/remove), which says what removing

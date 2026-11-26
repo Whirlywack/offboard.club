@@ -27,12 +27,11 @@ function feat({ kind, value }: RecapAward): ReactNode {
 // it: not its board, its link or its id. Nothing at all is shown when no Game won anything.
 export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames: boolean }) {
   if (awards.length === 0) return null;
-  const replayable = awards.filter((award) => !award.opponentLeft).length;
   return (
     <section aria-labelledby="awards" className={styles.awards}>
       <div className={styles.heading}>
         <h2 id="awards">Awards</h2>
-        <p className={`${ui.small} ${ui.muted}`}>Any Member can win one of these, whatever their rating.</p>
+        <p className={`${ui.small} ${ui.muted}`}>Any Member can win one, whatever their rating.</p>
       </div>
       <ul className={styles.list} role="list">
         {awards.map((award) => (
@@ -45,7 +44,6 @@ export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames:
             {showGames && !award.opponentLeft && (
               <Replay label={`of the ${inText(award)}`} board={<GameBoard award={award} />}>
                 <p className={styles.source}>
-                  This is Lichess&apos;s own board, loaded from lichess.org.{" "}
                   <ExternalLink href={awardGameUrl(award)}>Open the Game on Lichess</ExternalLink>
                 </p>
               </Replay>
@@ -57,13 +55,6 @@ export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames:
           </li>
         ))}
       </ul>
-      {!showGames && replayable > 0 && (
-        <p className={`${ui.small} ${ui.muted}`}>
-          {replayable === awards.length
-            ? "Signed-in Members can replay each Game."
-            : "Signed-in Members can replay some of these Games."}
-        </p>
-      )}
     </section>
   );
 }

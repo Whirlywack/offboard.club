@@ -539,7 +539,7 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
       const calls = blob.calls.length;
       expect(await backUp(new Date(NOW.getTime() + 3 * 86_400_000))).toEqual({
         outcome: "skipped",
-        detail: "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.",
+        detail: "Backups are off: BLOB_READ_WRITE_TOKEN isn't set.",
         matchdayDate: null,
       });
       expect(blob.calls.length).toBe(calls);

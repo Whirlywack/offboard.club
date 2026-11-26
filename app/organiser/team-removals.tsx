@@ -26,8 +26,8 @@ export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
                   {lichessId}: {problem}
                 </p>
                 <p>
-                  Ask {heldBy} to press Switch Lichess account on their Profile and choose {lichessId} again on
-                  Lichess.
+                  Ask {heldBy} to press Switch Lichess account on Edit your Profile, and choose {lichessId} again on
+                  Lichess. Then press Done.
                 </p>
                 <form action={teamRemovalDone} className={ui.actions}>
                   <input type="hidden" name="lichessId" value={lichessId} />
@@ -44,8 +44,8 @@ export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
         <section aria-labelledby="removals" className={styles.section}>
           <h2 id="removals">Remove from the Lichess team</h2>
           <p>
-            No Member uses these Lichess accounts any more, but the site couldn&apos;t remove them from the Club&apos;s
-            Lichess team. Remove each one on Lichess, then press Done.
+            The site couldn&apos;t remove these accounts from the Club&apos;s Lichess team. Remove each on Lichess, then
+            press Done.
           </p>
           {teamId && (
             <p>

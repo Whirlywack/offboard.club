@@ -16,10 +16,7 @@ export default function WelcomeProfile() {
       <div className={ui.intro}>
         <SignUpSteps current={3} />
         <h1>You&apos;re a Member</h1>
-        <p className={ui.lede}>
-          If you like, tell other Members a little about yourself. Every field is optional, only signed-in Members see
-          your Profile, and you can change any of it later from the home page.
-        </p>
+        <p className={ui.lede}>If you like, tell other Members a little about yourself.</p>
       </div>
       <Suspense>
         <Step />
@@ -37,7 +34,7 @@ export async function Step() {
       {invite && (
         <p className={ui.prose}>
           {postingSetUp()
-            ? "Members talk in the Club's Telegram group, where the bot also posts the Matchday reminders and Recaps."
+            ? "Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps."
             : "Members talk in the Club's Telegram group."}{" "}
           <ExternalLink href={invite}>Join the Telegram group</ExternalLink>
         </p>

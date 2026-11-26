@@ -160,7 +160,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     vi.stubEnv("LICHESS_TEAM_ID", TEAM);
     const failures = await select(`select "job", to_char("matchdayDate", 'YYYY-MM-DD') as "matchdayDate", "problem" from "jobFailure" where "matchdayDate" = $1 order by "id"`, [second]);
     expect(failures).toEqual([
-      { job: JOB, matchdayDate: second, problem: expect.stringContaining("has not connected their Lichess account") },
+      { job: JOB, matchdayDate: second, problem: expect.stringContaining("Lichess isn't connected") },
       { job: JOB, matchdayDate: second, problem: expect.stringContaining("LICHESS_TEAM_ID is not set") },
     ]);
     expect(await lastFailure()).toEqual({ job: JOB, at: expect.any(Date), matchdayDate: second, problem: failures[1].problem });

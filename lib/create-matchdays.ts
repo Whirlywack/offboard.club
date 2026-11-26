@@ -17,6 +17,7 @@ import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun }
 import { organiserToken, refusedPermission } from "./organiser-lichess";
 import { sweepTournaments } from "./reschedule";
 import { upcomingMatchday, type Matchday } from "./seasons";
+import { postDay } from "./telegram";
 
 export const JOB = "create-matchdays";
 export const LEAD_DAYS = 6;
@@ -63,14 +64,14 @@ export const createUpcomingMatchday = (now: Date) => {
 
 async function createIfDue(now: Date, by: number): Promise<JobRun> {
   const next = await upcomingMatchday(now);
-  if (!next) return skipped("No Matchday is scheduled, so there is nothing to create.");
+  if (!next) return skipped("No Matchday is scheduled.");
   const { date, start } = next;
-  if (now < dueFrom(start))
-    return skipped(`The next Matchday, ${date}, is more than ${LEAD_DAYS} days away; its tournament is created once it is ${LEAD_DAYS} days away.`, date);
+  const sunday = postDay(date);
+  if (now < dueFrom(start)) return skipped(`The next Matchday, ${sunday}, is more than ${LEAD_DAYS} days away.`, date);
   const known = (await matchdayOn(date))?.lichessTournamentId;
-  if (known) return skipped(`The Matchday of ${date} already has its tournament, ${known}.`, date);
+  if (known) return skipped(`The Matchday of ${sunday} already has its tournament, ${known}.`, date);
 
-  const cannot = (why: string) => failed(`The Matchday of ${date} could not be created: ${sentence(why)}.`, date);
+  const cannot = (why: string) => failed(`Couldn't create the tournament for ${sunday}: ${sentence(why)}.`, date);
   const teamId = process.env.LICHESS_TEAM_ID;
   if (!teamId) return cannot("LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.");
   const permission = await organiserToken(now);
@@ -90,18 +91,18 @@ async function createIfDue(now: Date, by: number): Promise<JobRun> {
     const swiss = found ?? (made = await createSwiss(permission.token, teamId, matchdayTournament(next), signal));
     if (!(await registerTournament(date, swiss.id)))
       return failed(
-        `Tournament ${swiss.id} is on Lichess for the Matchday of ${date}, but was not recorded: that Matchday already has another tournament, or this one is another Matchday's.`,
+        `Tournament ${swiss.id} is on Lichess for the Matchday of ${sunday}, but was not recorded: that Matchday already has another tournament, or this one is another Matchday's.`,
         date,
       );
     return done(
       found
-        ? `Recorded tournament ${swiss.id}, which an earlier run created on Lichess without recording it, as the Matchday of ${date}.`
-        : `Created tournament ${swiss.id} on Lichess for the Matchday of ${date}.`,
+        ? `Recorded tournament ${swiss.id}, which an earlier run created on Lichess without recording it, as the Matchday of ${sunday}.`
+        : `Created tournament ${swiss.id} on Lichess for the Matchday of ${sunday}.`,
       date,
     );
   } catch (error) {
     const why = sentence(refusedPermission(error, permission.lichessId) ?? (error instanceof Error ? error.message : "unknown error"));
-    if (made) return failed(`Tournament ${made.id} was created on Lichess for the Matchday of ${date} but could not be recorded (${why}); the next run records it.`, date);
+    if (made) return failed(`Tournament ${made.id} was created on Lichess for the Matchday of ${sunday} but could not be recorded (${why}); the next run records it.`, date);
     return cannot(why);
   } finally {
     deadline.clear();

@@ -153,10 +153,10 @@ describe("skipping a Sunday", () => {
   it("is made once by two requests at once, and the other is told it already is", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
     const both = await Promise.all([skipSunday("2026-12-27", beforeSeasonOne, store), skipSunday("2026-12-27", beforeSeasonOne, store)]);
-    expect(both.sort()).toEqual(["2026-12-27 is already skipped.", null].sort());
+    expect(both.sort()).toEqual(["Sunday 27 December is already skipped.", null].sort());
     expect(db.skipped).toEqual(new Set(["2026-12-27"]));
     const undone = await Promise.all([unskipSunday("2026-12-27", beforeSeasonOne, store), unskipSunday("2026-12-27", beforeSeasonOne, store)]);
-    expect(undone.sort()).toEqual(["2026-12-27 is not skipped.", null].sort());
+    expect(undone.sort()).toEqual(["Sunday 27 December isn't skipped.", null].sort());
     expect(db.skipped.size).toBe(0);
   });
 
@@ -169,16 +169,16 @@ describe("skipping a Sunday", () => {
 
   it("is refused for a day that is not a Sunday", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
-    expect(await skipSunday("2026-12-16", beforeSeasonOne, store)).toBe("2026-12-16 is not a Sunday.");
-    expect(await skipSunday("2026-02-29", beforeSeasonOne, store)).toMatch(/not a Sunday/); // 1 March 2026 is a Sunday
-    expect(await skipSunday("13 December", beforeSeasonOne, store)).toMatch(/not a Sunday/);
+    expect(await skipSunday("2026-12-16", beforeSeasonOne, store)).toBe("2026-12-16 isn't a Sunday.");
+    expect(await skipSunday("2026-02-29", beforeSeasonOne, store)).toBe("2026-02-29 isn't a Sunday."); // 1 March 2026 is a Sunday
+    expect(await skipSunday("13 December", beforeSeasonOne, store)).toBe("13 December isn't a Sunday.");
     expect(db.skipped.size).toBe(0);
   });
 
   it("is refused for a Sunday whose Matchday time has passed", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
-    expect(await skipSunday("2026-12-13", at("2026-12-13T18:00:00Z"), store)).toBe("It is too late to change 2026-12-13.");
-    expect(await skipSunday("2026-12-06", beforeSeasonOne, store)).toBe("It is too late to change 2026-12-06.");
+    expect(await skipSunday("2026-12-13", at("2026-12-13T18:00:00Z"), store)).toBe("It's too late to change Sunday 13 December.");
+    expect(await skipSunday("2026-12-06", beforeSeasonOne, store)).toBe("It's too late to change Sunday 6 December.");
     expect(db.skipped.size).toBe(0);
     // Earlier the same evening is still in time.
     expect(await skipSunday("2026-12-13", at("2026-12-13T17:59:00Z"), store)).toBeNull();
@@ -200,7 +200,7 @@ describe("skipping a Sunday", () => {
 
   it("is refused for a Sunday more than two years ahead", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
-    expect(await skipSunday("2028-12-10", beforeSeasonOne, store)).toBe("2028-12-10 is more than two years ahead.");
+    expect(await skipSunday("2028-12-10", beforeSeasonOne, store)).toBe("That's more than two years ahead.");
     expect(await unskipSunday("2028-12-10", beforeSeasonOne, store)).toMatch(/two years/);
     expect(db.skipped.size).toBe(0);
     expect(await skipSunday("2028-12-03", beforeSeasonOne, store)).toBeNull();
@@ -243,7 +243,7 @@ describe("setting a Season's start by hand", () => {
 
   it("is refused for a day that is not a Sunday", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
-    expect(await setSeasonStart(1, "2026-12-14", beforeSeasonOne, store)).toBe("2026-12-14 is not a Sunday.");
+    expect(await setSeasonStart(1, "2026-12-14", beforeSeasonOne, store)).toBe("2026-12-14 isn't a Sunday.");
     expect(db.seasons).toEqual(seasonOne());
   });
 
@@ -256,7 +256,7 @@ describe("setting a Season's start by hand", () => {
 
   it("is refused for a Sunday that has passed", async () => {
     const { store, db } = fake({ signUps: fifteen });
-    expect(await setSeasonStart(1, "2026-11-22", beforeSeasonOne, store)).toBe("It is too late to change 2026-11-22.");
+    expect(await setSeasonStart(1, "2026-11-22", beforeSeasonOne, store)).toBe("It's too late to change Sunday 22 November.");
     expect(db.seasons).toEqual([]);
   });
 
@@ -281,7 +281,7 @@ describe("setting a Season's start by hand", () => {
 
   it("is refused for a Sunday more than two years ahead", async () => {
     const { store, db } = fake({ seasons: seasonOne() });
-    expect(await setSeasonStart(1, "9999-12-26", beforeSeasonOne, store)).toBe("9999-12-26 is more than two years ahead.");
+    expect(await setSeasonStart(1, "9999-12-26", beforeSeasonOne, store)).toBe("That's more than two years ahead.");
     expect(await setSeasonStart(1, "2028-12-10", beforeSeasonOne, store)).toMatch(/two years/);
     expect(db.seasons).toEqual(seasonOne());
   });
@@ -295,14 +295,14 @@ describe("a change to the schedule, once a Matchday is ingested", () => {
   it("is refused if it would take that day's Matchday out of its Season", async () => {
     const { store, db } = fake({ seasons: seasonOne(), ingested: ["2026-12-13", "2026-12-20"] });
     expect(await skipSunday("2026-12-20", noon("2026-12-20"), store)).toBe(
-      "That would change which Season the Matchday of 2026-12-20, already played, belongs to.",
+      "That would change which Season the Matchday of Sunday 20 December, already played, belongs to.",
     );
     expect(db.skipped.size).toBe(0);
   });
 
   it("is refused if it would pull a Matchday played in the week off into the next Season", async () => {
     const { store, db } = fake({ seasons: seasonOne(), ingested: ["2027-01-17", "2027-01-24"] });
-    expect(await setSeasonStart(2, "2027-01-24", noon("2027-01-24"), store)).toMatch(/Matchday of 2027-01-24, already played/);
+    expect(await setSeasonStart(2, "2027-01-24", noon("2027-01-24"), store)).toMatch(/Matchday of Sunday 24 January, already played/);
     expect(db.seasons).toEqual(seasonOne());
     // Without that Matchday the same change is allowed.
     const without = fake({ seasons: seasonOne(), ingested: ["2027-01-17"] });

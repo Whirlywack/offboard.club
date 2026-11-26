@@ -8,11 +8,11 @@
 // cannot be refreshed, so the Organiser approves again by hand about once a year (docs/adr/0001).
 
 import { db } from "./db";
-import { CLIENT_ID, CONNECTION_DEADLINE_MS, redirectUri, returnedFrom, revoke, REVOKED_BY_MS, startConnection, type Flow } from "./connect-lichess";
+import { CLIENT_ID, CONNECTION_DEADLINE_MS, PROBLEMS, redirectUri, returnedFrom, revoke, REVOKED_BY_MS, startConnection, type Flow } from "./connect-lichess";
 import { exchangeCode, getAccount, LichessError, teamLeaders, timeLimit } from "./lichess";
 import { organiserId } from "./organiser";
 import { noticeLater } from "./request-failures";
-import { vilniusDate } from "./schedule";
+import { vilniusDay } from "./schedule";
 import { openToken, sealToken, tokenKey } from "./token-box";
 
 // tournament:write creates each Matchday's tournament, and cancels one (lib/reschedule.ts); team:lead removes someone who leaves the
@@ -37,15 +37,15 @@ export const startOrganiserConnection = (userId: string) => startConnection(user
 
 // How each attempt ended, as the plain message the Organiser sees. Only these codes travel in a URL.
 export const ORGANISER_MESSAGES = {
-  connected: "Lichess is connected. Each Matchday will be created on Lichess with this account.",
+  connected: "Lichess is connected.",
   stranded:
-    "Lichess is connected, but the permission given before couldn't be read with the current LICHESS_TOKEN_KEY, so it wasn't revoked. It stays valid on Lichess until it expires. To end it, revoke Offboard under Security in the Lichess settings of the account that gave it. If that's the account you just connected, revoking ends the new permission too, so connect again afterwards.",
+    "Lichess is connected, but the old permission couldn't be read with the current LICHESS_TOKEN_KEY, so it wasn't revoked. To end it, sign in to Lichess as the account that gave it and revoke Offboard under Security in its settings. If that's the account you just connected, revoking ends the new permission too, so connect again afterwards.",
   denied: "You didn't approve Offboard on Lichess, so nothing has changed.",
-  expired: "That attempt timed out, or was started in another browser. Please start again from this page.",
+  expired: PROBLEMS.expired,
   leader:
-    "That Lichess account isn't shown as a leader of the Club's Lichess team, so it can't create Matchdays and hasn't been connected. Sign in to Lichess as a leader of the team and try again.",
-  unset: "Connecting Lichess isn't set up yet: LICHESS_TEAM_ID and LICHESS_TOKEN_KEY must be set.",
-  failed: "Something went wrong while talking to Lichess, so nothing has changed. Please try again in a few minutes.",
+    "That Lichess account isn't a leader of the Club's Lichess team, so it wasn't connected. Sign in to Lichess as a leader of the team and try again.",
+  unset: "Lichess can't be connected until LICHESS_TEAM_ID and LICHESS_TOKEN_KEY are set.",
+  failed: PROBLEMS.failed,
 } as const;
 type Code = keyof typeof ORGANISER_MESSAGES;
 
@@ -143,20 +143,20 @@ export async function organiserPermission(): Promise<OrganiserPermission | null>
 // "Revoke" button beside each third-party app, which revokes every token the account gave that site).
 export const LICHESS_SECURITY_URL = "https://lichess.org/account/security";
 
-const RECONNECT = "the Organiser must connect Lichess again on the Organiser page";
+const RECONNECT = "Connect Lichess again on the Organiser page.";
 
-// The token, for scheduled work at `now`, with the account it belongs to; or why there is none to use, as a sentence.
+// The token, for scheduled work at `now`, with the account it belongs to; or why there is none to use, as a sentence
+// that is also an alert to the Organiser.
 export async function organiserToken(now: Date): Promise<{ token: string; lichessId: string } | { problem: string }> {
   const key = tokenKey();
-  if (!key) return { problem: "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read." };
+  if (!key) return { problem: "LICHESS_TOKEN_KEY isn't set, so your Lichess permission can't be read." };
   const row = await storedRow();
-  if (!row || row.userId !== organiserId())
-    return { problem: "The Organiser has not connected their Lichess account on the Organiser page." };
-  if (row.expiresAt <= now) return { problem: `The Organiser's Lichess permission expired on ${vilniusDate(row.expiresAt)}; ${RECONNECT}.` };
+  if (!row || row.userId !== organiserId()) return { problem: "Lichess isn't connected. Connect it on the Organiser page." };
+  if (row.expiresAt <= now) return { problem: `Your Lichess permission expired on ${vilniusDay(row.expiresAt)}. ${RECONNECT}` };
   const token = open(row, key);
   if (!token)
     return {
-      problem: `The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); ${RECONNECT}, after revoking the old permission by hand on Lichess (${LICHESS_SECURITY_URL}, signed in as ${row.lichessId}).`,
+      problem: `Your Lichess permission can't be read: LICHESS_TOKEN_KEY has changed, or what is stored was altered. Sign in to Lichess as ${row.lichessId}, revoke Offboard at ${LICHESS_SECURITY_URL}, then connect Lichess again on the Organiser page.`,
     };
   return { token, lichessId: row.lichessId };
 }
@@ -177,10 +177,10 @@ export function refusedPermission(error: unknown, lichessId: string): string | n
   if (!(error instanceof LichessError)) return null;
   // Not the token refused, but the tournament: only the account that created a Swiss tournament may cancel it.
   if (error.request === "POST /api/swiss/{id}/terminate" && error.detail === "This user cannot edit this swiss")
-    return `${error.message}. The likely cause: it was created with another Lichess account than ${lichessId}, and only the account that created a tournament can cancel it`;
-  if (error.status === 401) return `Lichess refused the Organiser's permission, which may have been revoked on Lichess; ${RECONNECT}.`;
+    return `${error.message}. Probably a Lichess account other than ${lichessId} created it, and only that account can cancel it`;
+  if (error.status === 401) return `Lichess refused your permission, which may have been revoked there. ${RECONNECT}`;
   const lacking = (permission: string) =>
-    `${error.message}. The likely cause: ${lichessId} leads the Club's team but without the team's permission to ${permission}, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it`;
+    `${error.message}. Probably ${lichessId} leads the Club's team without the team's permission to ${permission}. A team admin can grant it in the team's leader settings on Lichess, or you can connect a leader who has it`;
   if (error.request.startsWith("POST /api/swiss/new/") && (error.status === 403 || error.status === 404))
     return lacking("manage tournaments");
   if (error.request.startsWith("POST /api/team/{teamId}/kick/") && error.status === 400) return lacking("remove members");

@@ -67,6 +67,9 @@ export async function removeMember(memberId: string, started = Date.now()): Prom
 // Better Auth's ids are 32 characters; anything much longer, sent to the Organiser page, names nobody.
 export const MEMBER_ID_MAX = 64;
 
+// What the Organiser is told on the Organiser page and on Remove a Member on choosing themselves.
+export const NOT_YOURSELF = "You can't remove yourself here. To leave the Club, delete your account on Edit your Profile.";
+
 // Whether the person `id` is a Member, the only people the Organiser removes.
 export async function isMember(id: string): Promise<boolean> {
   const { rows } = await db.query(`select 1 from "user" where id = $1 and ${MEMBER_SQL}`, [id]);

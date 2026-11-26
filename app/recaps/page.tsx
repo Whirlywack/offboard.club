@@ -14,9 +14,7 @@ export default function RecapsPage() {
   return (
     <main id="main" className={ui.page}>
       <h1>Recaps</h1>
-      <p className={`${ui.lede} ${styles.underTitle}`}>
-        Every Matchday gets a Recap with that night&apos;s Leaderboard and Awards. Newest first.
-      </p>
+      <p className={`${ui.lede} ${styles.underTitle}`}>Each Matchday&apos;s Leaderboard and Awards.</p>
       <Suspense>
         <RecapList />
       </Suspense>
@@ -37,11 +35,7 @@ async function RecapList() {
   });
   if (dates === null) return <p className={ui.alert}>The Recaps can&apos;t be shown right now. Please try again in a minute.</p>;
   if (dates.length === 0)
-    return (
-      <p className={`${styles.empty} ${ui.arrive}`}>
-        No Recaps yet. The first one appears here after the first Matchday.
-      </p>
-    );
+    return <p className={`${styles.empty} ${ui.arrive}`}>No Recaps yet.</p>;
   return (
     <ul className={`${styles.list} ${ui.arrive}`} role="list">
       {dates.map((date) => (

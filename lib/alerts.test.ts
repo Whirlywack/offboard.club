@@ -27,7 +27,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const SUNDAY = new Date("2026-11-29T18:00:00Z"); // 20:00 in Vilnius, a Matchday's start
 
-const COULD_NOT = "Couldn't collect the results of Sunday 29 November: Lichess took more than 4 minutes. If it hasn't worked by Sunday 6 December at 20:00, run pnpm ingest PreTend1.";
+const COULD_NOT = "Couldn't collect the results of Sunday 29 November: Lichess took more than 4 minutes. The site keeps trying until Sunday 6 December at 20:00. If it hasn't worked by then, run pnpm ingest PreTend1.";
 
 let telegram: ReturnType<typeof createFakeTelegram>;
 
@@ -79,7 +79,7 @@ describe("a scheduled job's failure", () => {
     expect(run.outcome).toBe("failed");
     expect(await alertAt(new Date("2026-12-01T10:07:30Z"))).toEqual({ outcome: "done", detail: "Sent you an alert.", matchdayDate: null });
     expect(dms()).toEqual([`Creating Matchdays: ${run.detail}`]);
-    expect(run.detail).toBe("The Matchday of 2026-12-06 could not be created: The Organiser has not connected their Lichess account on the Organiser page.");
+    expect(run.detail).toBe("Couldn't create the tournament for Sunday 6 December: Lichess isn't connected. Connect it on the Organiser page.");
     expect(toGroup()).toEqual([]);
   });
 
@@ -277,7 +277,7 @@ describe("the backup", () => {
   it("is switched off by its endpoint without the store's token: skipped, not failed", async () => {
     const response = await backupRequest(new Request("https://offboard.test/api/jobs/backup", { headers: { authorization: `Bearer ${SECRET}` } }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ outcome: "skipped", detail: "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up." });
+    expect(await response.json()).toMatchObject({ outcome: "skipped", detail: "Backups are off: BLOB_READ_WRITE_TOKEN isn't set." });
     expect(scheduledJobs.get(BACKUP)?.lastOutcome).toBe("skipped");
   });
 });
@@ -288,12 +288,12 @@ describe("the Organiser's Lichess permission", () => {
 
   it("is warned of 30 days before it ends and 7 days before, then said to have ended on the day, each once", async () => {
     organiserLichess.set("singleton", { userId: "organiser", lichessId: "boss", scopes: "tournament:write team:lead", token: "sealed", expiresAt: ENDS, connectedAt: new Date() });
-    const warning = "Your Lichess permission ends on 25 November 2027. Connect Lichess again on the Organiser page before then.";
+    const warning = "Your Lichess permission expires on 25 November 2027. Connect Lichess again on the Organiser page before then.";
     for (const days of [-31, -30.5, -30, -29, -8, -7, -6, -1, 0, 0.5, 1, 2]) await alertAt(after(days));
     expect(dms()).toEqual([
       warning,
       warning,
-      "Your Lichess permission ended on 25 November 2027, so Matchdays aren't being created. Connect Lichess again on the Organiser page.",
+      "Your Lichess permission expired on 25 November 2027, so Matchdays aren't being created. Connect Lichess again on the Organiser page.",
     ]);
     // From the day after, nothing is queued about it at all.
     expect([...telegramPosts.values()].filter((post) => post.sentAt === null)).toEqual([]);

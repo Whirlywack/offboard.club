@@ -302,7 +302,7 @@ describe("removing a Member", () => {
     expect([...people.keys()]).toEqual(["organiser", "zita", "ben", "sandra", "half"]);
     // Said at the top of the Organiser page, where it opens.
     const html = await openPage({ member: "removed" });
-    expect(html).toMatch(/^<main[^>]*><div[^>]*>.*?<\/div><p role="status"[^>]*>Removed\. They&#x27;re gone from every Leaderboard and Recap\.<\/p>/);
+    expect(html).toMatch(/^<main[^>]*><div[^>]*>.*?<\/div><p role="status"[^>]*>Member removed\.<\/p>/);
     expect(section(html, "remove")).not.toContain('value="ana"');
     // Nothing is said for any other code in the address.
     for (const member of ["toString", "constructor", "ana"]) expect(await openPage({ member })).toMatch(/^<main[^>]*><div[^>]*>.*?<\/div><section/);
@@ -335,7 +335,7 @@ describe("removing a Member", () => {
     expect(organiserLichess.size).toBe(1);
     expect(lichess.calls).toEqual([]);
     for (const html of [await openPage({ member: "self" }), await confirmPage({ member: "organiser" })]) {
-      expect(html).toMatch(/<p role="alert"[^>]*>You can&#x27;t remove yourself here\. To leave the Club, delete your account from your Profile\.<\/p>/);
+      expect(html).toMatch(/<p role="alert"[^>]*>You can&#x27;t remove yourself here\. To leave the Club, delete your account on Edit your Profile\.<\/p>/);
       expect(html).not.toContain("memberId");
     }
   });
@@ -371,13 +371,15 @@ describe("the schedule on the Organiser page", () => {
       ["2", "Season 2, now from Sunday 17 January"],
     ]);
     expect(part).toContain('<input id="start" type="date" required="" min="2026-11-29" step="7" name="start"/>');
+    expect(text(part)).toContain("Season start Later Seasons whose start isn't set move with it.");
+    expect(part).toMatch(/<h3>Upcoming Sundays<\/h3><ul/);
   });
 
   it("offers Season 1 alone, and nothing to skip, while it is not scheduled", async () => {
     seasons.clear();
     matchdays.clear();
     const part = section(await openPage(), "schedule")!;
-    expect(text(part)).toContain("No Matchday in the next 8 weeks, so there's nothing to skip.");
+    expect(text(part)).toContain("No Matchday in the next 8 weeks.");
     expect([...part.matchAll(/<option value="(\d+)">(.*?)<\/option>/g)].map(([, n, label]) => [n, label])).toEqual([
       ["1", "Season 1, not scheduled yet"],
     ]);
@@ -463,12 +465,12 @@ describe("skipping a Sunday", () => {
     [
       "the Organiser's permission has expired",
       () => void (organiserLichess.get("singleton")!.expiresAt = new Date("2026-11-24T12:00:00Z")),
-      "The Organiser's Lichess permission expired on 2026-11-24; the Organiser must connect Lichess again on the Organiser page.",
+      "Your Lichess permission expired on 24 November 2026. Connect Lichess again on the Organiser page.",
     ],
     [
       "the permission was revoked on Lichess",
       () => void (lichess.tokens.get(organiserToken())!.revoked = true),
-      "Lichess refused the Organiser's permission, which may have been revoked on Lichess; the Organiser must connect Lichess again on the Organiser page.",
+      "Lichess refused your permission, which may have been revoked there. Connect Lichess again on the Organiser page.",
     ],
     [
       "the permission lacks tournament:write",
@@ -478,16 +480,16 @@ describe("skipping a Sunday", () => {
     [
       "the Organiser has since connected another account, which did not create it",
       () => connectOrganiser("deputy"),
-      "Lichess answered POST /api/swiss/{id}/terminate with 401: This user cannot edit this swiss. The likely cause: it was created with another Lichess account than deputy, and only the account that created a tournament can cancel it.",
+      "Lichess answered POST /api/swiss/{id}/terminate with 401: This user cannot edit this swiss. Probably a Lichess account other than deputy created it, and only that account can cancel it.",
     ],
-    ["LICHESS_TOKEN_KEY is unset", () => void vi.stubEnv("LICHESS_TOKEN_KEY", ""), "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read."],
+    ["LICHESS_TOKEN_KEY is unset", () => void vi.stubEnv("LICHESS_TOKEN_KEY", ""), "LICHESS_TOKEN_KEY isn't set, so your Lichess permission can't be read."],
   ];
 
   it.each(failures)("is kept when %s, and the tournament is listed to cancel by hand, with why", async (_, problem, why) => {
     await problem();
     const said = await skip(FIRST);
     expect(said).toEqual({
-      text: "Sunday 29 November is skipped, so Season 1 now ends on Sunday 10 January. The site couldn't cancel the tournament for Sunday 29 November on Lichess: cancel it there by hand, as listed above.",
+      text: "Sunday 29 November is skipped, so Season 1 now ends on Sunday 10 January. The site couldn't cancel the tournament for Sunday 29 November: cancel it on Lichess yourself, as listed under Cancel on Lichess.",
       problem: true,
     });
     expect([...skippedSundays.keys()]).toEqual([FIRST]);
@@ -499,6 +501,9 @@ describe("skipping a Sunday", () => {
     // Above the schedule, where the sentence says it is.
     expect(html.indexOf('aria-labelledby="cancellations"')).toBeLessThan(html.indexOf('aria-labelledby="schedule"'));
     expect(part).toContain("<h2 id=\"cancellations\">Cancel on Lichess</h2>");
+    expect(text(part)).toContain(
+      "The site couldn't cancel these Sundays' tournaments on Lichess. Cancel each there, signed in as the account that created it, then press Done.",
+    );
     expect(part).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November</time>');
     expect(text(part)).toContain(why);
     expect(part).toContain(`href="https://lichess.org/swiss/${tournament}/edit"`);
@@ -616,7 +621,7 @@ describe("skipping a Sunday", () => {
 
   it("is refused once the Matchday has started, and its tournament is left alone", async () => {
     vi.setSystemTime(new Date("2026-11-29T18:00:00Z"));
-    expect(await skip(FIRST)).toEqual({ text: "It is too late to change 2026-11-29.", problem: true });
+    expect(await skip(FIRST)).toEqual({ text: "It's too late to change Sunday 29 November.", problem: true });
     expect(skippedSundays.size).toBe(0);
     expect(matchdays.get(FIRST)?.lichessTournamentId).toBe(tournament);
     expect(lichess.calls).toEqual([]);
@@ -661,7 +666,7 @@ describe("undoing a skip", () => {
 
   it("is refused once the Sunday has come, which stays skipped", async () => {
     skippedSundays.set("2026-11-22", { date: "2026-11-22" });
-    expect(await unskip("2026-11-22")).toEqual({ text: "It is too late to change 2026-11-22.", problem: true });
+    expect(await unskip("2026-11-22")).toEqual({ text: "It's too late to change Sunday 22 November.", problem: true });
     expect([...skippedSundays.keys()]).toEqual(["2026-11-22"]);
   });
 });
@@ -717,8 +722,8 @@ describe("setting a Season's start", () => {
 
   it.each([
     ["the Season already starts then", "1", FIRST, "Season 1 already starts on Sunday 29 November."],
-    ["a day that is not a Sunday", "1", "2026-12-02", "2026-12-02 is not a Sunday."],
-    ["a Sunday that has passed", "1", "2026-11-22", "It is too late to change 2026-11-22."],
+    ["a day that is not a Sunday", "1", "2026-12-02", "2026-12-02 isn't a Sunday."],
+    ["a Sunday that has passed", "1", "2026-11-22", "It's too late to change Sunday 22 November."],
     ["a Season that runs into the next one's set start", "2", "2026-12-27", "Season 2 would start before Season 1 has finished."],
     ["no Season", "0", "2026-12-13", "Choose a Season."],
     ["a Season that cannot be", "1x", "2026-12-13", "Choose a Season."],
@@ -744,7 +749,7 @@ describe("Creating Matchdays, after each run", () => {
     const made = [...lichess.calls].find((c) => c.path.startsWith("/api/swiss/new/"));
     expect(made).toBeDefined();
     expect(run.outcome).toBe("done");
-    expect(run.detail).toMatch(/^Created tournament \w{8} on Lichess for the Matchday of 2026-11-29\. The tournament for Sunday 29 November is cancelled on Lichess\.$/);
+    expect(run.detail).toMatch(/^Created tournament \w{8} on Lichess for the Matchday of Sunday 29 November\. The tournament for Sunday 29 November is cancelled on Lichess\.$/);
     expect(matchdays.has(FIRST)).toBe(false);
     expect(lichess.tournaments.size).toBe(0);
     expect(tournamentCancellations.size).toBe(0);
@@ -770,7 +775,7 @@ describe("Creating Matchdays, after each run", () => {
     const run = await createUpcomingMatchday(NOW);
     expect(terminated()).toEqual([tournament]);
     expect(run.detail).not.toContain("Sunday 29 November");
-    expect(tournamentCancellations.get(tournament)?.problem).toMatch(/^Lichess refused the Organiser's permission/);
+    expect(tournamentCancellations.get(tournament)?.problem).toMatch(/^Lichess refused your permission/);
   });
 
   it("leaves alone one kept for a Sunday that has passed", async () => {

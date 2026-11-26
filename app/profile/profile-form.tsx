@@ -52,9 +52,8 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
       <div className={styles.field}>
         <label htmlFor="companyWebsite">Company website</label>
         <p id="companyWebsite-hint" className={styles.hint}>
-          The website of the company you work for. Everyone who gives the same website shares one Company, whose name
-          comes from that site, and it shows next to your name on Leaderboards. Freelance or between jobs? Leave it
-          empty.
+          The website of the company you work for. Its name, taken from the site, shows with your name on Leaderboards
+          and in Recaps. Freelance or between jobs? Leave it empty.
         </p>
         {error("companyWebsite")}
         <input
@@ -70,7 +69,7 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
       <div className={styles.field}>
         <label htmlFor="position">Position</label>
         <p id="position-hint" className={styles.hint}>
-          What you do, in up to {POSITION_MAX} characters.
+          Up to {POSITION_MAX} characters.
         </p>
         {error("position")}
         <input {...describe("position", "position-hint")} autoComplete="organization-title" placeholder="e.g. Backend engineer" />
@@ -78,12 +77,9 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
 
       <div className={styles.field}>
         <label htmlFor="linkedInUrl">LinkedIn profile link</label>
-        <p id="linkedInUrl-hint" className={styles.hint}>
-          So Members can find you on LinkedIn after a Game.
-        </p>
         {error("linkedInUrl")}
         <input
-          {...describe("linkedInUrl", "linkedInUrl-hint")}
+          {...describe("linkedInUrl")}
           inputMode="url"
           autoCapitalize="none"
           autoCorrect="off"

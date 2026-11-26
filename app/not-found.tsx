@@ -9,9 +9,8 @@ export default function NotFound() {
   return (
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
-        <p className={ui.eyebrow}>Page not found</p>
         <h1>Nothing at this address</h1>
-        <p className={ui.lede}>The link may have a typo in it, or the page may have moved.</p>
+        <p className={ui.lede}>The address may have a typo in it.</p>
       </div>
       <nav aria-label="More" className={ui.backLinks}>
         <Link href="/">Home</Link>

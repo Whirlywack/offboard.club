@@ -190,7 +190,7 @@ function changeProblem(before: Schedule, after: Schedule, now: Date, ingested: s
   if (started(before, now).join() !== started(after, now).join()) return "That would move Matchdays already played.";
   const [was, would] = [placesIn(before, ingested), placesIn(after, ingested)];
   const moved = ingested.find((date) => JSON.stringify(was.get(date)) !== JSON.stringify(would.get(date)));
-  if (moved) return `That would change which Season the Matchday of ${moved}, already played, belongs to.`;
+  if (moved) return `That would change which Season the Matchday of ${postDay(moved)}, already played, belongs to.`;
   const last = Math.max(...after.seasons.map((s) => s.number));
   let previous: Season | undefined;
   for (const s of seasons(after)) {
@@ -203,9 +203,10 @@ function changeProblem(before: Schedule, after: Schedule, now: Date, ingested: s
 }
 
 function sundayProblem(date: string, now: Date): string | null {
-  if (!isSunday(date)) return `${date} is not a Sunday.`;
-  if (matchdayStart(date) <= now) return `It is too late to change ${date}.`;
-  if (date > addDays(vilniusDate(now), DAYS_AHEAD)) return `${date} is more than two years ahead.`;
+  // As given: a day that does not exist, such as 2026-02-29, has no weekday to write.
+  if (!isSunday(date)) return `${date} isn't a Sunday.`;
+  if (matchdayStart(date) <= now) return `It's too late to change ${postDay(date)}.`;
+  if (date > addDays(vilniusDate(now), DAYS_AHEAD)) return "That's more than two years ahead.";
   return null;
 }
 
@@ -227,7 +228,8 @@ async function setSkipped(date: string, skipped: boolean, now: Date, store: Stor
     ? isMatchday(before, date) && notice(`No Matchday on ${postDay(date)}.${next ? ` The next one is on ${postDay(next.date)} at 20:00.` : ""}`, date)
     : isMatchday(after, date) && notice(`${postDay(date)} has a Matchday after all, at 20:00.`, date);
   // Of two requests at once, only the first changes it, and queues its notice; the other is told so.
-  if (!(await store.setSkipped(date, skipped, told || null))) return skipped ? `${date} is already skipped.` : `${date} is not skipped.`;
+  if (!(await store.setSkipped(date, skipped, told || null)))
+    return skipped ? `${postDay(date)} is already skipped.` : `${postDay(date)} isn't skipped.`;
   return null;
 }
 

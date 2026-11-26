@@ -135,10 +135,13 @@ describe("a Season's Leaderboard", () => {
   it("names the Season champion once the sixth Matchday is in, and links each name to the Member's Profile", async () => {
     seasonOne();
     const html = await season("1");
-    expect(text(html)).toContain("Season champion Ana Petraitė 14.5 points from their best four Matchdays.");
-    expect(text(html)).toContain("All six Matchdays are done, so this Season is over.");
+    expect(text(html)).toContain("Season champion Ana Petraitė 14.5 points.");
+    expect(text(html)).toContain("This Season is over.");
+    expect(text(html)).toContain(
+      "Your score adds up your best four Matchdays. A tie goes to whoever played more Matchdays; if that's level too, they share the rank.",
+    );
     expect([...html.matchAll(/href="(\/profiles\/[^"]+)"/g)].map(([, href]) => href)).toEqual(["/profiles/ana", "/profiles/ana", "/profiles/ben"]);
-    expect(html).toContain("Names open Profiles, which only signed-in Members can see.");
+    expect(html).toContain("Only signed-in Members can open Profiles.");
   });
 
   it("names nobody before the sixth Matchday, and says how far the Season has gone", async () => {
@@ -164,7 +167,7 @@ describe("a Season's Leaderboard", () => {
   it("shares the title between Members still level at the top", async () => {
     SEASON_1.forEach((date) => ingested(date, [["cid", 4], ["ana", 4]]));
     const html = await season("1");
-    expect(text(html)).toContain("Season champions Ana Petraitė and Cidas Jonaitis They finished level on 16 points");
+    expect(text(html)).toContain("Season champions Ana Petraitė and Cidas Jonaitis They finished level on 16 points and on Matchdays played. Leaderboard");
     expect(rows(html).map((r) => r[0])).toEqual(["1", "1"]);
   });
 
@@ -187,7 +190,7 @@ describe("a Season's Leaderboard", () => {
     seasonOne();
     const html = await season("2");
     expect(text(html)).toContain("Season 2 starts on Sunday, 31 January 2027.");
-    expect(text(html)).toContain("The Leaderboard fills in after the Season's first Matchday.");
+    expect(text(html)).toContain("It fills in after the first Matchday.");
     expect(html).not.toContain("<table");
   });
 
@@ -207,8 +210,8 @@ describe("a Season's Leaderboard", () => {
 
   it("before Season 1 is scheduled, shows Season 1 waiting for its sixteenth Member and no other Season", async () => {
     seasons.clear();
-    expect(text(await season("1"))).toContain("Season 1 starts once sixteen Members have joined");
-    expect(text(await currentSeason())).toContain("Season 1 starts once sixteen Members have joined");
+    expect(text(await season("1"))).toContain("Its dates are set once there are sixteen of us.");
+    expect(text(await currentSeason())).toContain("Its dates are set once there are sixteen of us.");
     await expect(season("2")).rejects.toThrow("not found");
   });
 
@@ -243,6 +246,7 @@ describe("the all-time Leaderboard", () => {
       ["2", "Benas Kazlauskas", "4"],
       ["3", "Cidas Jonaitis", "1"],
     ]);
+    expect(renderToStaticMarkup(AllTimePage())).toMatch(/>Members ranked by how many Matchdays they&#x27;ve played\.<\/p>/);
   });
 
   it("leaves out a closed account while it stays closed", async () => {
@@ -252,7 +256,7 @@ describe("the all-time Leaderboard", () => {
   });
 
   it("says so when nobody is on it yet, and when the database cannot be read, whose failure it hands on", async () => {
-    expect(await allTime()).toContain("Nobody is on it yet.");
+    expect(await allTime()).toMatch(/>Nobody is on it yet\.<\/p>/);
     const failures = unreachable();
     expect(await allTime()).toContain("This Leaderboard can&#x27;t be shown right now.");
     expect(await failures()).toEqual([unrecorded("/all-time")]);

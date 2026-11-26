@@ -213,7 +213,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     const by = Date.now() + 25_000;
     for (const account of [`${MEMBER}-on-lichess`, "switch-test-new", "switch-test-third", `${OTHER}-on-lichess`])
       await removeSwitchedFrom(account, by);
-    const why = "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read.";
+    const why = "LICHESS_TOKEN_KEY isn't set, so your Lichess permission can't be read.";
     expect((await teamRemovals()).sort((a, b) => (a.lichessId < b.lichessId ? -1 : 1))).toEqual([
       { lichessId: `${MEMBER}-on-lichess`, problem: why, heldBy: null },
       { lichessId: "switch-test-new", problem: why, heldBy: null },

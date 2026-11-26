@@ -32,8 +32,9 @@ export default function Home({ searchParams }: PageProps<"/">) {
             Sunday chess for people in tech
           </h1>
           <p className={styles.lede}>
-            Five quick Games on Lichess every Sunday at 20:00, against other people who work in tech in and around
-            Vilnius. Chess is the weekly excuse to show up; meeting people is the point.
+            Working in tech keeps you busy, and busy gets lonely. We think that&apos;s worth fixing. So every Sunday
+            evening we play chess online, five Games against other people in tech. With luck some of us become friends,
+            and end up across a real board.
           </p>
         </div>
         <div className={styles.heroSide}>
@@ -46,100 +47,39 @@ export default function Home({ searchParams }: PageProps<"/">) {
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="who">
-        <h2 id="who">Who it&apos;s for</h2>
+      <section className={styles.section} aria-labelledby="chess">
+        <h2 id="chess">The chess</h2>
         <div className={styles.sectionText}>
           <p>
-            Engineers, designers, founders and operators in and around Vilnius who&apos;d like to meet more people in
-            tech. It&apos;s meant for people who play casually: a rating of 900 is as welcome as one of 1900. You join on
-            your own and it&apos;s free, so you don&apos;t need colleagues to join with or a company budget.
+            Matchdays start at 20:00 Vilnius time, on Lichess. Games are 5 minutes a side plus 3 seconds a move.
+            Knowing how the pieces move is enough. A Season is six Matchdays and your best four count, so you can miss
+            two.
           </p>
         </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="how">
-        <h2 id="how">How it works</h2>
-        <ol className={styles.steps} role="list">
-          <li>
-            <h3>Join</h3>
-            <p>
-              Sign in with LinkedIn, agree to the house rules and to your name appearing on public Leaderboards, then
-              connect your Lichess account. That makes you a Member.
-            </p>
-          </li>
-          <li>
-            <h3>Play on Sunday</h3>
-            <p>
-              Every Sunday at 20:00 Vilnius time there&apos;s a Matchday on Lichess: five Games against other Members,
-              each with 5 minutes a side plus 3 seconds a move.
-            </p>
-          </li>
-          <li>
-            <h3>Read the Recap</h3>
-            <p>
-              Afterwards the Matchday gets a Recap that anyone can read. It has that night&apos;s Leaderboard and Awards
-              for things any Member can pull off at any rating, such as the biggest upset.
-            </p>
-          </li>
-          <li>
-            <h3>Keep your best four</h3>
-            <p>
-              Six Matchdays make a Season, and your Season score adds up your best four, so missing two Sundays costs
-              you nothing.
-            </p>
-          </li>
-        </ol>
       </section>
 
       <section className={styles.section} aria-labelledby="people">
         <h2 id="people">Meeting people</h2>
         <div className={styles.sectionText}>
           <p>
-            Profiles are there so the chess leads to conversations. Each has a Member&apos;s name and photo, plus
-            whatever they choose to add: where they work, their position, and what they&apos;re open to, like a coffee
-            or hearing about jobs. Only signed-in Members can see Profiles; Leaderboards and Recaps are public and show
-            names and Companies.
-          </p>
-          {inviteLink() ? (
-            <p>Members also talk in a Telegram group. Its invite link is shown to Members once they&apos;ve signed up.</p>
-          ) : (
-            <p className={styles.plans}>Still to come: a Telegram group for Members.</p>
-          )}
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="rules">
-        <h2 id="rules">House rules</h2>
-        <div className={styles.sectionText}>
-          <p>
-            There are two: no outside help during Games, and no sales or recruiting pitches unless the other
-            person&apos;s &ldquo;open to&rdquo; line invites it.
+            Profiles can say where Members work and what they&apos;re open to, like a coffee or hearing about jobs.{" "}
+            {inviteLink() ? "There's a Telegram group to talk in." : "A Telegram group to talk in is still to come."}{" "}
+            Nobody may sell to you or recruit you unless your Profile invites it.
           </p>
         </div>
       </section>
 
       <section className={styles.section} aria-labelledby="leaderboards">
-        <h2 id="leaderboards">Leaderboards</h2>
+        <h2 id="leaderboards">Leaderboards and Recaps</h2>
         <div className={styles.sectionText}>
+          <p>Both are public and show your name.</p>
           <Suspense>
             <SeasonChampions />
           </Suspense>
-          <p>
-            The Season Leaderboard adds up each Member&apos;s best four Matchdays. The all-time one counts only how many
-            Sundays you&apos;ve played, so anyone can top it by showing up.
-          </p>
           <p className={leaderboards.links}>
             <Link href="/seasons">This Season&apos;s Leaderboard</Link>
             <Link href="/all-time">All-time Leaderboard</Link>
-          </p>
-        </div>
-      </section>
-
-      <section className={styles.section} aria-labelledby="recaps">
-        <h2 id="recaps">Recaps</h2>
-        <div className={styles.sectionText}>
-          <p>
-            <Link href="/recaps">Read the Recaps of past Matchdays</Link>
+            <Link href="/recaps">Recaps</Link>
           </p>
         </div>
       </section>
@@ -186,11 +126,7 @@ export async function NextMatchday() {
         <p className={styles.statusValue}>
           <time dateTime={shown.start.toISOString()}>{when}</time>
         </p>
-        <p className={styles.statusNote}>
-          {underWay
-            ? "Lichess lets you join until round 3 starts."
-            : "Vilnius time, on Lichess. Five Games, 5 minutes a side plus 3 seconds a move."}
-        </p>
+        {underWay ? <p className={styles.statusNote}>Lichess lets you join until round 3 starts.</p> : null}
         {tournament && (
           <p className={styles.statusLink}>
             <ExternalLink href={lichessSwissUrl(tournament)}>Join this Matchday on Lichess</ExternalLink>
@@ -210,9 +146,7 @@ export async function NextMatchday() {
       <p className={styles.statusValue}>
         <span className={styles.count}>{needed}</span> more {needed === 1 ? "Member" : "Members"} to go
       </p>
-      <p className={styles.statusNote}>
-        Season 1 starts once sixteen Members have joined, on the first Sunday at least a week later.
-      </p>
+      <p className={styles.statusNote}>It starts once there are sixteen of us, on the first Sunday at least a week later.</p>
     </div>
   );
 }
@@ -299,7 +233,7 @@ export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">
       </div>
       {invite && (
         <p className={ui.small}>
-          <ExternalLink href={invite}>Join the Club&apos;s Telegram group</ExternalLink>
+          <ExternalLink href={invite}>Telegram group</ExternalLink>
         </p>
       )}
     </section>

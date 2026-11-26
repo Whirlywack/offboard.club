@@ -17,10 +17,7 @@ export default function EditProfile({ searchParams }: PageProps<"/profile">) {
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
         <h1>Edit your Profile</h1>
-        <p className={ui.lede}>
-          Other Members see your name and photo from LinkedIn, plus anything you fill in here. Every field is optional;
-          empty one and save to clear it.
-        </p>
+        <p className={ui.lede}>Other Members see your name and photo from LinkedIn, plus anything you add here.</p>
       </div>
       <Suspense>
         <Edit searchParams={searchParams} />
@@ -49,9 +46,8 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
           </p>
         )}
         <p className={ui.muted}>
-          To play with a different account, sign in to Lichess with it first, then switch here. Your Matchdays, Games and
-          Profile stay with you. Your old account leaves the Club&apos;s Lichess team, unless it is one of the team&apos;s
-          leaders.
+          To play with a different account, sign in to Lichess with it first, then switch here. Your results and Games
+          stay with you.
         </p>
         {problem && (
           <p role="alert" className={ui.alert}>
@@ -63,7 +59,6 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
 
       <section aria-labelledby="leave" className={`${styles.section} ${ui.arrive}`}>
         <h2 id="leave">Leave the Club</h2>
-        <p className={ui.muted}>Deleting your account removes your Profile and results.</p>
         <div className={ui.actions}>
           <Link className={ui.quiet} href="/profile/leave">
             Delete your account

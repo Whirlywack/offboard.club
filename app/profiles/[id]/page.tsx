@@ -94,7 +94,7 @@ async function Profile({ params, searchParams }: { params: Promise<{ id: string 
       {nothingAdded && (
         <p className={ui.muted}>
           {own
-            ? "You haven't added where you work, your position or what you're open to yet."
+            ? "You haven't added anything else yet."
             : `${firstName} hasn't added anything else yet.`}
         </p>
       )}
@@ -106,7 +106,6 @@ async function Profile({ params, searchParams }: { params: Promise<{ id: string 
         </p>
       )}
       <Games memberId={profile.id} firstName={firstName} own={own} history={history} showingAll={showingAll} />
-      <p className={`${ui.small} ${ui.muted}`}>Only signed-in Members can see this Profile.</p>
     </article>
   );
 }

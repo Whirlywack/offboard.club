@@ -623,7 +623,7 @@ describe("a change to the schedule from the Organiser page", () => {
 
   it("queues one notice for two skips of a Sunday at the same moment, the second told it is already skipped", async () => {
     const said = await Promise.all([skipSunday("2026-12-06", WEDNESDAY), skipSunday("2026-12-06", WEDNESDAY)]);
-    expect(said).toEqual([null, "2026-12-06 is already skipped."]);
+    expect(said).toEqual([null, "Sunday 6 December is already skipped."]);
     const twice = await Promise.all([skipMatchday("2026-12-13", WEDNESDAY), skipMatchday("2026-12-13", WEDNESDAY)]);
     expect(twice.map((s) => s.problem)).toEqual([false, true]);
     expect(twice[1].text).toBe("Sunday 13 December is already skipped.");
@@ -690,8 +690,8 @@ describe("the notices of the schedule", () => {
     // Season 1's six Matchdays end on 3 January; the week off is 10 January.
     expect(await skipSunday("2027-01-10", WEDNESDAY)).toBeNull();
     expect(await unskipSunday("2027-01-10", WEDNESDAY)).toBeNull();
-    expect(await skipSunday("2026-12-08", WEDNESDAY)).toBe("2026-12-08 is not a Sunday.");
-    expect(await skipSunday("2026-11-29", START)).toBe("It is too late to change 2026-11-29.");
+    expect(await skipSunday("2026-12-08", WEDNESDAY)).toBe("2026-12-08 isn't a Sunday.");
+    expect(await skipSunday("2026-11-29", START)).toBe("It's too late to change Sunday 29 November.");
     expect(telegramPosts.size).toBe(0);
     expect(posted()).toEqual([]);
   });

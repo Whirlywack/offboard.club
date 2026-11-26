@@ -383,6 +383,14 @@ describe("the Company on the Profile page", () => {
     expect(await render("ana")).not.toContain("Company");
   });
 
+  it("says that someone has added nothing else, to them and to other Members", async () => {
+    addPerson("ana");
+    signedInAs("ben");
+    expect(await render("ana")).toContain(">Person hasn&#x27;t added anything else yet.</p>");
+    signedInAs("ana");
+    expect(await render("ana")).toContain(">You haven&#x27;t added anything else yet.</p>");
+  });
+
   it.each([
     ["over plain http", "http://vinted.com/logo.png"],
     ["on another domain", "https://cdn.example.net/vinted.png"],

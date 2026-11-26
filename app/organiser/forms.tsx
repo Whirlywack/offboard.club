@@ -31,10 +31,6 @@ export function Sundays({ sundays }: { sundays: SundayRow[] }) {
   return (
     <form action={action} className={styles.part}>
       <h3>Upcoming Sundays</h3>
-      <p className={styles.detail}>
-        A skipped Sunday doesn&apos;t count, so its Season runs a week longer. If its tournament is already on Lichess,
-        the site cancels it there.
-      </p>
       <Outcome said={said} pending={pending} />
       <ul className={styles.list}>
         {sundays.map(({ date, day, matchday, skipped }) => (
@@ -71,7 +67,7 @@ export function SeasonStart({ seasons, first }: { seasons: SeasonChoice[]; first
   return (
     <form action={action} className={styles.part}>
       <h3>Season start</h3>
-      <p className={styles.detail}>Its Matchdays move with it, and so do later Seasons whose start isn&apos;t set.</p>
+      <p className={styles.detail}>Later Seasons whose start isn&apos;t set move with it.</p>
       <Outcome said={said} pending={pending} />
       <div className={profile.field}>
         <label htmlFor="season">Season</label>
@@ -99,7 +95,7 @@ export function TestMessages() {
   const [said, action, pending] = useActionState(testTelegram, null);
   return (
     <form action={action} className={styles.part}>
-      <p className={styles.detail}>A test message checks the settings. Everyone in the group sees the one sent to the group.</p>
+      <p className={styles.detail}>Everyone in the group sees the test message sent to it.</p>
       {pending ? <p className={styles.notice}>Sending…</p> : <Outcome said={said} pending={false} />}
       <div className={ui.actions}>
         <button className={ui.quiet} name="to" value="me" disabled={pending}>

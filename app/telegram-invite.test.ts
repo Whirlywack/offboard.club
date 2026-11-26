@@ -47,7 +47,7 @@ describe("the Telegram group's invite link", () => {
   it("is on a Member's home page and on the step after signing up", async () => {
     signedIn = "member";
     const link = `<a href="${INVITE}" target="_blank" rel="noopener noreferrer">`;
-    expect(await render(you)).toContain(`${link}Join the Club&#x27;s Telegram group`);
+    expect(await render(you)).toContain(`${link}Telegram group`);
     expect(await render(AfterSignUp)).toContain(`${link}Join the Telegram group`);
   });
 
@@ -59,7 +59,7 @@ describe("the Telegram group's invite link", () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
     vi.stubEnv("TELEGRAM_GROUP_ID", "@pretend_group");
     html = await render(AfterSignUp);
-    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts the Matchday reminders and Recaps. <a");
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts Matchday reminders and Recaps. <a");
   });
 
   it("is given to nobody else: not a visitor, nor anyone part-way through signing up", async () => {
@@ -73,7 +73,7 @@ describe("the Telegram group's invite link", () => {
   it("is not in the home page as it is built ahead of any request", async () => {
     signedIn = "member";
     const shell = renderToStaticMarkup(Home(withNoQuery));
-    expect(shell).toContain("Members also talk in a Telegram group.");
+    expect(shell).toContain("There&#x27;s a Telegram group to talk in.");
     expect(shell).not.toContain("t.me");
   });
 
@@ -85,6 +85,6 @@ describe("the Telegram group's invite link", () => {
     signedIn = "member";
     expect(await render(you)).not.toContain("Telegram");
     expect(await render(AfterSignUp)).not.toContain("Telegram");
-    expect(renderToStaticMarkup(Home(withNoQuery))).toContain("Still to come: a Telegram group for Members.");
+    expect(renderToStaticMarkup(Home(withNoQuery))).toContain("A Telegram group to talk in is still to come.");
   });
 });

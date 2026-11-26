@@ -6,7 +6,7 @@ import ui from "../../ui.module.css";
 import { removeFromClub } from "../actions";
 import { RemoveActions } from "../forms";
 import { getProfile, getSession, requireOrganiser } from "@/lib/auth";
-import { MEMBER_ID_MAX } from "@/lib/leaving";
+import { MEMBER_ID_MAX, NOT_YOURSELF } from "@/lib/leaving";
 import { isOrganiser } from "@/lib/organiser";
 import { noticeLater } from "@/lib/request-failures";
 
@@ -62,7 +62,7 @@ async function Confirm({ searchParams }: Pick<PageProps<"/organiser/remove">, "s
       ) : (
         <>
           <p role="alert" className={ui.alert}>
-            {chosen === id ? "You can't remove yourself here. To leave the Club, delete your account from your Profile." : "That Member isn't in the Club."}
+            {chosen === id ? NOT_YOURSELF : "That Member isn't in the Club."}
           </p>
           <nav aria-label="More" className={ui.backLinks}>
             <Link href="/organiser">Back to the Organiser page</Link>

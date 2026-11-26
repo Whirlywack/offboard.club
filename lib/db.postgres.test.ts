@@ -16,6 +16,7 @@ const WAKE_MS = 11_300;
 describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("the database pool", () => {
   let postgres: URL; // the real database, behind the stand-in
   const open = new Set<net.Socket>();
+  const pairs = new Set<[net.Socket, net.Socket]>(); // each connection, the pool's end and the database's
   let waking: Promise<void> | null = null; // while suspended: settles once awake
   let asleep = false;
   const neon = net.createServer((client) => {
@@ -25,6 +26,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       const server = net.connect(Number(postgres.port), postgres.hostname);
       server.on("error", () => {});
       for (const socket of [client, server]) open.add(socket);
+      pairs.add([client, server]);
       client.on("close", () => server.destroy());
       server.on("close", () => client.destroy());
       client.pipe(server).pipe(client);
@@ -38,6 +40,17 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     open.clear();
     asleep = true;
     waking = null;
+  };
+  // The connections open now pass nothing more either way, and are not closed: a statement sent on one is never
+  // answered, as on a connection frozen under the pool. New ones pass as before.
+  const freeze = () => {
+    for (const [client, server] of pairs) {
+      client.unpipe(server);
+      server.unpipe(client);
+    }
+    const frozen = [...pairs];
+    pairs.clear();
+    return () => frozen.flat().forEach((socket) => socket.destroy());
   };
   let db: Pool;
   let logged: ReturnType<typeof vi.spyOn>;
@@ -110,6 +123,35 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(reasonOf(await bare.query(`select from "noSuchTable"`).catch((error: unknown) => error))).toBe("the code threw an error");
     await bare.end();
   }, 20_000);
+
+  // A failed request is recorded once at a time a kind (lib/request-failures.ts): a recording left unanswered must end at
+  // its own limit, 10 s, or the kind would go unrecorded for as long, the database working again or not. The limit's
+  // timer is pg's, run here on a fake clock.
+  it("records a kind again once a recording of it got no answer within its limit, on a connection frozen under the pool", async () => {
+    const { noticeFailedRequest } = await import("./request-failures");
+    const route = "/frozen-connection";
+    const page = () => noticeFailedRequest(new TypeError("Oops"), { routePath: route, routeType: "render" });
+    await db.query("select 1"); // the connection the recording will be sent on, idle in the pool
+    const cut = freeze();
+    logged.mockClear();
+    try {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const first = page();
+      await page(); // the same kind while the first waits for its answer: not recorded twice
+      await vi.advanceTimersByTimeAsync(10_000);
+      vi.useRealTimers();
+      expect(await Promise.race([first.then(() => "ended"), new Promise((wait) => setTimeout(wait, 2_000, "still waiting"))])).toBe("ended");
+      expect(logged.mock.calls).toEqual([
+        ["A page failed at /frozen-connection: the code threw TypeError. It couldn't be recorded: the database couldn't be reached."],
+      ]);
+      await page(); // on a new connection, as the pool let the frozen one go
+      expect((await db.query(`select "route", "kind" from "requestFailure" where "route" = $1`, [route])).rows).toEqual([{ route, kind: "page" }]);
+    } finally {
+      vi.useRealTimers();
+      cut();
+      await db.query(`delete from "requestFailure" where "route" = $1`, [route]);
+    }
+  }, 30_000);
 
   it("answers the first query after the database has scaled to zero, though waking it takes 11.3 s", async () => {
     expect((await db.query("select 1 as one")).rows).toEqual([{ one: 1 }]);

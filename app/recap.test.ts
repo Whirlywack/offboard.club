@@ -156,7 +156,7 @@ describe("a Recap", () => {
     expect(await open(DATE)).toContain("Season 1");
     const real = db.query.getMockImplementation()!;
     db.query.mockImplementation((sql: string, params?: unknown[]) =>
-      sql.includes(`from "season"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
+      String(sql).includes(`from "season"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
     );
     const html = await open(DATE);
     db.query.mockImplementation(real);

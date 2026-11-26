@@ -239,7 +239,7 @@ describe("a request that fails on the server", () => {
     const real = db.query.getMockImplementation()!;
     const held: ((error: unknown) => void)[] = [];
     db.query.mockImplementation((sql: string, params?: unknown[]) =>
-      sql.includes(`"requestFailure"`) ? new Promise((_, fail) => held.push(fail)) : real(sql, params),
+      String(Object(sql).text).includes(`"requestFailure"`) ? new Promise((_, fail) => held.push(fail)) : real(sql, params),
     );
     // 200 home page views at once, each handing over its four failures, and one of another kind.
     const request = { path: "/", method: "GET", headers: {} };

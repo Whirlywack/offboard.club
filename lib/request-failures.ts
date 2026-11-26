@@ -31,9 +31,11 @@ function shape(routePath: string) {
 // connect or a statement failed: an error is the database's only when it has it, as a code such as ECONNRESET is any
 // socket's, a visitor's who drops an upload included (#60 review).
 const FROM_DATABASE = Symbol.for("offboard.from-database");
-// Node's codes for a connection that was never made or was cut, and pg's words when it gave up on one or lost it.
+// Node's codes for a connection that was never made or was cut, and pg's words when it gave up on one, lost it, or had
+// no answer to a statement within its limit.
 const UNREACHABLE_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
-const UNREACHABLE = /^(Connection terminated due to connection timeout|Connection terminated unexpectedly|timeout exceeded when trying to connect)$/;
+const UNREACHABLE =
+  /^(Connection terminated due to connection timeout|Connection terminated unexpectedly|timeout exceeded when trying to connect|Query read timeout)$/;
 const DATABASE = "the database";
 
 // Why it failed, in words from a fixed list, looking through the error and what caused it, five deep, as the sign-in
@@ -84,6 +86,8 @@ export const failedRequestText = ({ route, kind, reason }: Omit<FailedRequest, "
 // than one of each a failure, all to land on one row once the database is back (#60 review).
 const RECORDING = Symbol.for("offboard.recording-failures");
 const recording: Set<string> = ((globalThis as Record<symbol, Set<string> | undefined>)[RECORDING] ??= new Set());
+// How long recording one may wait for the database's answer.
+const RECORDING_MS = 10_000;
 
 // Records a request that failed with `error`, as Next.js describes it in `context`, sent with `method`. Not failures:
 // - Next.js's own signals, which send a visitor elsewhere or to the not-found page. Next.js keeps them from the hook on
@@ -110,11 +114,16 @@ export async function noticeFailedRequest(error: unknown, { routePath, routeType
   if (recording.has(kind)) return;
   recording.add(kind);
   try {
-    await db.query(
-      `insert into "requestFailure" ("route", "kind", "reason") values ($1, $2, $3)
+    // Within a limit of its own, which pg reads per statement (pg/lib/client.js, query_timeout), though its types have it
+    // only for a connection: the pool sets none, and one left unanswered, as on a connection frozen under it, would keep
+    // its kind from being recorded for as long.
+    const statement = {
+      text: `insert into "requestFailure" ("route", "kind", "reason") values ($1, $2, $3)
        on conflict ("route", "kind", "reason") do update set "lastAt" = now()`,
-      [failure.route, failure.kind, failure.reason],
-    );
+      values: [failure.route, failure.kind, failure.reason],
+      query_timeout: RECORDING_MS,
+    };
+    await db.query(statement);
   } catch (cause) {
     console.error(`${failedRequestText(failure)} It couldn't be recorded: ${reasonOf(cause)}.`);
   } finally {

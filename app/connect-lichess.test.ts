@@ -116,8 +116,10 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
 
 const statements = () => query.mock.calls.map(([sql]) => (sql as string).split(" ").slice(0, 2).join(" "));
 // The failed requests the callback tried to record (lib/request-failures.ts), which fakeQuery does not keep.
-const failuresRecorded = () => query.mock.calls.filter(([sql]) => (sql as string).includes(`"requestFailure"`)).map(([, params]) => params);
-const updates = () => query.mock.calls.filter(([sql]) => (sql as string).includes(`update "user"`));
+// Sent as pg's config object ({ text, values, query_timeout }).
+const failuresRecorded = () =>
+  query.mock.calls.map(([sql]) => sql as { text?: string; values?: unknown[] }).filter((sql) => sql.text?.includes(`"requestFailure"`)).map((sql) => sql.values);
+const updates = () => query.mock.calls.filter(([sql]) => String(sql).includes(`update "user"`));
 
 // --- Lichess ---
 
@@ -469,7 +471,7 @@ describe("coming back from Lichess", () => {
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
     query.mockImplementation(async (sql: string, params?: unknown[]) =>
-      sql.includes("with saved as") ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : fakeQuery(sql, params),
+      String(sql).includes("with saved as") ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : fakeQuery(sql, params),
     );
     expect(await connectAs("bobby")).toBe("/welcome/lichess?lichess=failed");
     expect(revoked()).toBe(true);

@@ -1039,12 +1039,16 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     },
 };
 
+// A statement as text and parameters, or as pg's config object ({ text, values, query_timeout }), as lib/request-failures.ts
+// sends its own, whose limit the fake never reaches, as each statement answers at once.
 async function run(sql: string, params: unknown[] = []) {
   await null;
-  const statement = sql.replace(/\s+/g, " ").trim();
+  const config = sql as string | { text: string; values?: unknown[] };
+  const [text, values] = typeof config === "string" ? [config, params] : [config.text, config.values ?? []];
+  const statement = text.replace(/\s+/g, " ").trim();
   const handler = statements[statement];
   if (!handler) throw new Error(`The fake database does not know this statement: ${statement}`);
-  return handler(...(params as Params));
+  return handler(...(values as Params));
 }
 
 // --- Transactions ---

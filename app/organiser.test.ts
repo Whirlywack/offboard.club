@@ -384,7 +384,7 @@ describe("connecting the Organiser's Lichess account", () => {
     const settled = keepWaitUntil();
     const real = db.query.getMockImplementation()!;
     db.query.mockImplementation((sql: string, params?: unknown[]) =>
-      sql.includes(`insert into "organiserLichess"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
+      String(sql).includes(`insert into "organiserLichess"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
     );
     try {
       expect(await connectAs("boss")).toBe("/organiser?lichess=failed");

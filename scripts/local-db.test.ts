@@ -68,8 +68,16 @@ describe("a checkout's .env.local", () => {
   });
 });
 
+// What a child of these tests is given of this process's environment, with `extra`: nothing the caller exported that
+// could point it at a real database or at another checkout's processes, such as the repository's own registry.
+function childEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+  const env = { ...process.env, ...extra };
+  for (const name of Object.keys(env))
+    if (!Object.hasOwn(extra, name) && (/^PG/.test(name) || ["DATABASE_URL", "ALLOW_DB_TESTS", "OFFBOARD_LOCAL_REGISTRY"].includes(name))) delete env[name];
+  return env;
+}
 const run = (command: string, args: string[], env: Record<string, string | undefined> = {}, cwd?: string) =>
-  spawnSync(command, args, { cwd, env: { ...process.env, DATABASE_URL: undefined, ...env }, encoding: "utf8" });
+  spawnSync(command, args, { cwd, env: childEnv(env), encoding: "utf8" });
 const tsx = "node_modules/.bin/tsx";
 
 // A temporary checkout holding only scripts/local-db.mjs, which refuses before it needs anything else.
@@ -331,7 +339,7 @@ afterAll(() => {
 });
 
 const tool = (root: string, ...args: string[]) => run(process.execPath, [join(root, "scripts/local-db.mjs"), ...args]);
-const gitEnv = { ...process.env };
+const gitEnv = childEnv();
 for (const name of Object.keys(gitEnv)) if (name.startsWith("GIT_")) delete gitEnv[name];
 const git = (dir: string, ...args: string[]) =>
   execFileSync("git", ["-C", dir, "-c", "user.name=Pretend", "-c", "user.email=pretend@example.invalid", ...args], { env: gitEnv, stdio: "ignore" });
@@ -390,7 +398,7 @@ async function fakeTelegram(root: string, { port = 0, env = {} }: { port?: numbe
   const at = port || (await freePort());
   const child = spawn(join(root, "node_modules/.bin/tsx"), ["scripts/fake-telegram.ts"], {
     cwd: root,
-    env: { ...process.env, TELEGRAM_URL: `http://127.0.0.1:${at}`, ...env },
+    env: childEnv({ TELEGRAM_URL: `http://127.0.0.1:${at}`, ...env }),
   });
   children.push(child);
   await new Promise<void>((listening, failed) => {
@@ -431,7 +439,9 @@ describe("what these tools start is recorded", () => {
     expect(tool(root, "stop").status).toBe(0);
     expect(tool(root, "list").stdout).toBe("Nothing these tools started is running.\n");
     expect(tool(root, "start").status).toBe(0);
-    expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([postgres]);
+    // On the ports it has now, which another checkout's db:start may have taken from it while it was stopped.
+    const again = { ...postgres, port: portIn(blockIn(join(root, ".local-db")), "DATABASE_URL") };
+    expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([again]);
   }, 60_000);
 
   it("from a copy that is no git checkout, where OFFBOARD_LOCAL_REGISTRY names the repository's, with the repository's", () => {
@@ -445,6 +455,26 @@ describe("what these tools start is recorded", () => {
     expect(rows(tool(repo, "stop-all", "--all").stdout)).toEqual([postgres]);
     refuses(process.execPath, [script, "start"], /^OFFBOARD_LOCAL_REGISTRY is "offboard-local", not an absolute path, so nothing was started\.$/, { OFFBOARD_LOCAL_REGISTRY: "offboard-local" });
   }, 60_000);
+
+  it("by these tests in their own repositories' registries, whatever OFFBOARD_LOCAL_REGISTRY their caller exported", () => {
+    const repo = repository();
+    const exported = scratch("registry");
+    const running = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: childEnv() });
+    children.push(running);
+    const [, start, command] = /^(\w{3} \w{3} +\d+ [\d:]{8} \d{4}) +(.*)$/.exec(
+      execFileSync("ps", ["-ww", "-o", "lstart=,command=", "-p", String(running.pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }).trim(),
+    )!;
+    // A true record there of a running process, as the repository's own registry holds every worktree's.
+    writeFileSync(join(exported, `${running.pid}.json`), JSON.stringify({ kind: "site", port: 3000, folder: exported, worktree: exported, pid: running.pid, start, command }));
+    process.env.OFFBOARD_LOCAL_REGISTRY = exported;
+    try {
+      expect(tool(repo, "list").stdout).toBe("Nothing these tools started is running.\n");
+      expect(tool(repo, "stop-all", "--all").stdout).toBe("Nothing these tools started is running.\n");
+      expect(alive(running.pid!)).toBe(true);
+    } finally {
+      delete process.env.OFFBOARD_LOCAL_REGISTRY;
+    }
+  });
 
   it("only while its process runs", () => {
     const root = repository();
@@ -469,11 +499,16 @@ async function query(url: string, sql: string) {
     await client.end();
   }
 }
-// Holds `port` on 127.0.0.1 until released, as another worktree's Postgres or site would.
+// Holds `port` on 127.0.0.1 until released, as another worktree's Postgres or site would. It tries for 3 s, past another
+// db:start's passing test of the port; a port another checkout's process holds that long is left to that one to hold.
 async function squat(port: number) {
   const server = net.createServer();
-  await new Promise<void>((listening, failed) => server.once("error", failed).listen(port, "127.0.0.1", listening));
-  return () => new Promise<void>((closed) => server.close(() => closed()));
+  for (let tries = 0; ; tries++) {
+    const listening = await new Promise<boolean>((done) => server.once("error", () => done(false)).listen(port, "127.0.0.1", () => done(true)));
+    if (listening) return () => new Promise<void>((closed) => server.close(() => closed()));
+    if (tries === 60) return async () => {};
+    await new Promise((done) => setTimeout(done, 50));
+  }
 }
 
 describe("db:start in a folder it has used before", () => {
@@ -489,28 +524,39 @@ describe("db:start in a folder it has used before", () => {
     expect(readFileSync(envLocal, "utf8")).toBe(first);
     expect((await query(databaseUrl(first), "show server_version")).rows[0].server_version).toMatch(new RegExp(`^${version.replaceAll(".", "\\.")}\\b`));
     await query(databaseUrl(first), "create table kept ()");
-    await fakeTelegram(root, { port: portIn(first, "TELEGRAM_URL") });
-    expect(tool(root, "stop").status).toBe(0);
-
-    const again = tool(root, "start");
-    expect(again.status, again.stderr).toBe(0);
-    expect(again.stdout).not.toContain("taken now");
-    expect([blockIn(dir), readFileSync(envLocal, "utf8")]).toEqual([first, first]);
-    expect((await query(databaseUrl(first), "select to_regclass('kept')::text as kept")).rows).toEqual([{ kept: "kept" }]);
-    const postgres = portIn(first, "DATABASE_URL");
-    const another = postgres === 55531 ? 55530 : postgres + 1;
-    const refused = new RegExp(`^${dir.replaceAll(".", "\\.")} uses port ${postgres}: leave out --port, or give another --dir\\.$`);
-    refuses(process.execPath, [join(root, "scripts/local-db.mjs"), "start", "--port", String(another)], refused);
-    expect(rows(tool(root, "stop-all", "--dir", root).stdout).map(({ kind }) => kind).sort()).toEqual(["Postgres", "fake Telegram"]);
+    // Its own fake, on a port of its set; when another process holds that port already, the set is held all the same.
+    const ours = await fakeTelegram(root, { port: portIn(first, "TELEGRAM_URL") }).then(() => true, () => false);
+    try {
+      expect(tool(root, "stop").status).toBe(0);
+      const again = tool(root, "start");
+      expect(again.status, again.stderr).toBe(0);
+      // It moves only off a port another process holds, and names it, never off its own fake's. Another checkout's
+      // db:start can take a stopped folder's ports, and then it moves, as it must, keeping its data and .env.local in step.
+      const takenNow = /had are taken now \(([\d, ]*)\)/.exec(again.stdout)?.[1];
+      if (takenNow !== undefined) expect(takenNow).toMatch(/^\d+(, \d+)*$/);
+      if (ours) expect(takenNow?.split(", ").map(Number) ?? []).not.toContain(portIn(first, "TELEGRAM_URL"));
+      if (!/taken now|taken a moment ago/.test(again.stdout)) expect(blockIn(dir)).toBe(first);
+      expect(readFileSync(envLocal, "utf8")).toBe(blockIn(dir));
+      expect((await query(databaseUrl(blockIn(dir)), "select to_regclass('kept')::text as kept")).rows).toEqual([{ kept: "kept" }]);
+      const postgres = portIn(blockIn(dir), "DATABASE_URL");
+      const another = postgres === 55531 ? 55530 : postgres + 1;
+      const refused = new RegExp(`^${dir.replaceAll(".", "\\.")} uses port ${postgres}: leave out --port, or give another --dir\\.$`);
+      refuses(process.execPath, [join(root, "scripts/local-db.mjs"), "start", "--port", String(another)], refused);
+    } finally {
+      // What it started, stopped even when it fails, so that the tests after it find the folder as they expect.
+      expect(rows(tool(root, "stop-all", "--dir", root).stdout).map(({ kind }) => kind).sort()).toEqual(ours ? ["Postgres", "fake Telegram"] : ["Postgres"]);
+    }
   }, 60_000);
 
   it("starts on the first free ports when its own have been taken since, and rewrites its block and the .env.local that was it", async () => {
+    // One of its ports held, as another worktree's fake would hold it: so the set is taken, by this test, whatever else runs.
     const first = blockIn(dir);
-    const release = await squat(portIn(first, "DATABASE_URL"));
+    const release = await squat(portIn(first, "LICHESS_URL"));
     try {
       const again = tool(root, "start");
       expect(again.status, again.stderr).toBe(0);
-      expect(again.stdout).toMatch(new RegExp(`^The ports ${dir} had are taken now, so it has the first free set: \\d+, \\d+, \\d+, \\d+\\.$`, "m"));
+      const lichess = portIn(first, "LICHESS_URL");
+      expect(again.stdout).toMatch(new RegExp(`^The ports ${dir} had are taken now \\([\\d, ]*\\b${lichess}\\b[\\d, ]*\\), so it has the first free set: \\d+, \\d+, \\d+, \\d+\\.$`, "m"));
       expect(again.stdout).toContain(".env.local, which was its block, has the new ports.");
       const moved = blockIn(dir);
       expect(portIn(moved, "DATABASE_URL")).not.toBe(portIn(first, "DATABASE_URL"));
@@ -527,7 +573,7 @@ describe("db:start in a folder it has used before", () => {
     const before = blockIn(dir);
     const theirs = `${before}# a line of the agent's own\n`;
     writeFileSync(envLocal, theirs);
-    const release = await squat(portIn(before, "DATABASE_URL"));
+    const release = await squat(portIn(before, "LICHESS_URL"));
     try {
       const again = tool(root, "start");
       expect(again.status, again.stderr).toBe(0);
@@ -574,7 +620,7 @@ describe("db:start in a folder it has used before", () => {
 
   it("dev:local runs the site, which is listed and stopped with the server it started", async () => {
     writeFileSync(envLocal, blockIn(dir));
-    const dev = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "dev"], { cwd: root, env: { ...process.env, DATABASE_URL: undefined } });
+    const dev = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "dev"], { cwd: root, env: childEnv() });
     children.push(dev);
     const exited = new Promise((done) => dev.once("exit", done));
     await new Promise<void>((ready, failed) => {
@@ -582,11 +628,15 @@ describe("db:start in a folder it has used before", () => {
       dev.once("exit", (code) => failed(new Error(`dev:local exited with ${code}.`)));
     });
     const site = { kind: "site", port: portIn(blockIn(dir), "BETTER_AUTH_URL"), folder: root, gone: false };
-    expect(rows(tool(root, "list").stdout)).toEqual([expect.objectContaining({ kind: "Postgres" }), site]);
+    // In either order: the two may have started within the same second, which is as finely as ps gives a start.
+    const both = [expect.objectContaining({ kind: "Postgres" }), site];
+    const listed = rows(tool(root, "list").stdout);
+    expect([listed.length, listed]).toEqual([2, expect.arrayContaining(both)]);
     const record = readdirSync(join(root, ".git/offboard-local")).map((name) => JSON.parse(readFileSync(join(root, ".git/offboard-local", name), "utf8")));
     const servers = descendants(record.find(({ kind }) => kind === "site").pid);
     expect(servers.length).toBeGreaterThan(1); // next dev, and the server it starts
-    expect(rows(tool(root, "stop-all", "--dir", root).stdout)).toEqual([expect.objectContaining({ kind: "Postgres" }), site]);
+    const stopped = rows(tool(root, "stop-all", "--dir", root).stdout);
+    expect([stopped.length, stopped]).toEqual([2, expect.arrayContaining(both)]);
     await exited;
     for (let waited = 0; servers.some(alive) && waited < 5_000; waited += 100) await new Promise((done) => setTimeout(done, 100));
     expect(servers.filter(alive)).toEqual([]);
@@ -601,7 +651,7 @@ describe("db:start beside others starting at the same time", () => {
     const starts = roots.map(
       (root) =>
         new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
-          const child = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { env: { ...process.env, DATABASE_URL: undefined } });
+          const child = spawn(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { env: childEnv() });
           let [stdout, stderr] = ["", ""];
           child.stdout!.on("data", (chunk) => (stdout += chunk));
           child.stderr!.on("data", (chunk) => (stderr += chunk));
@@ -609,24 +659,39 @@ describe("db:start beside others starting at the same time", () => {
         }),
     );
     const results = await Promise.all(starts);
+    // First, as each says which Postgres it runs even when it fails, so that a failure here is no failure of the next tests.
+    bin = results.map(({ stdout }) => / from (\/\S+?)[.,](?:\s|$)/m.exec(stdout)?.[1]).find(Boolean) ?? "";
     expect(results.map(({ status }) => status), results.map(({ stderr }) => stderr).join("\n")).toEqual([0, 0, 0, 0]);
-    bin = / from (\/\S+?)[.,](?:\s|$)/m.exec(results[0].stdout)![1];
     const ports = roots.flatMap((root) => ["DATABASE_URL", "BETTER_AUTH_URL", "LICHESS_URL", "TELEGRAM_URL"].map((name) => portIn(blockIn(join(root, ".local-db")), name)));
     expect(new Set(ports).size).toBe(16);
     for (const root of roots) expect(await query(databaseUrl(blockIn(join(root, ".local-db"))), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
     for (const root of roots) expect(tool(root, "stop").status).toBe(0);
   }, 120_000);
 
-  it("moves to the next free set when its Postgres port is taken between its choice and its start", async () => {
+  // A folder whose Postgres has run and is stopped, while its own fake Telegram holds a port of its set: so no other
+  // checkout's db:start takes the set meanwhile, and what happens to it is what the test does.
+  async function stoppedButHeld() {
     const root = repository();
+    const started = tool(root, "start");
+    expect(started.status, started.stderr).toBe(0);
+    await fakeTelegram(root, { port: portIn(blockIn(join(root, ".local-db")), "TELEGRAM_URL") }).catch(() => {}); // or another holds that port
+    expect(tool(root, "stop").status).toBe(0);
+    return { root, block: blockIn(join(root, ".local-db")) };
+  }
+
+  it("moves to another free set when its Postgres port is taken between its choice and its start", async () => {
+    const { root } = await stoppedButHeld();
     // A pg_ctl that, asked to start, first has the port taken, as another db:start would a moment before, then is pg_ctl.
     const racing = join(root, "racing");
     const taken = join(racing, "taken");
     mkdirSync(racing);
-    // It writes its pid once listening, or "failed" when it cannot, so that the pg_ctl waiting on it never waits long.
+    // It writes its pid once listening, or "held" when it cannot for 3 s, as when another checkout's server took the port
+    // first, so that the pg_ctl waiting on it never waits long; either way the port is taken when pg_ctl tries it.
     const squatter = [
       `const write = (what) => require("node:fs").writeFileSync(process.argv[2], what);`,
-      `require("node:net").createServer().once("error", () => write("failed")).listen(Number(process.argv[1]), "127.0.0.1", () => write(String(process.pid)));`,
+      `const listen = (tries) => require("node:net").createServer().once("error", () => (tries ? setTimeout(() => listen(tries - 1), 50) : write("held")))`,
+      `  .listen(Number(process.argv[1]), "127.0.0.1", () => write(String(process.pid)));`,
+      `listen(60);`,
     ].join(" ");
     const lines = [
       "#!/bin/sh",
@@ -642,16 +707,16 @@ describe("db:start beside others starting at the same time", () => {
     writeFileSync(join(racing, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
     try {
       const raced = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${racing}:${process.env.PATH}` });
-      expect(readFileSync(taken, "utf8"), "the squatter could not take the port").toMatch(/^\d+$/);
       expect(raced.status, `${raced.stdout}\n${raced.stderr}`).toBe(0);
-      const squatted = Number(/^Port (\d+) was taken a moment ago, so .* has the next free set: [\d, ]+\.$/m.exec(raced.stdout)?.[1]);
+      const squatted = Number(/^Port (\d+) was taken a moment ago, so .* has another free set: [\d, ]+\.$/m.exec(raced.stdout)?.[1]);
       const block = blockIn(join(root, ".local-db"));
-      expect([squatted > 0, portIn(block, "DATABASE_URL") === squatted]).toEqual([true, false]);
+      expect(squatted, raced.stdout).toBeGreaterThan(0); // the port it had, or had just moved to off one taken since
+      expect(portIn(block, "DATABASE_URL")).not.toBe(squatted);
       expect(readFileSync(join(root, ".env.local"), "utf8")).toBe(block);
       expect(await query(databaseUrl(block), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
-      expect(tool(root, "stop").status).toBe(0);
+      expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
     } finally {
-      const squatting = existsSync(taken) && Number(readFileSync(taken, "utf8"));
+      const squatting = existsSync(taken) && Number(readFileSync(taken, "utf8")); // NaN, so nothing, when it held none
       if (squatting) process.kill(squatting);
     }
   }, 60_000);
@@ -666,22 +731,40 @@ describe("db:start beside others starting at the same time", () => {
     writeFileSync(join(slow, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
     const started = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${slow}:${process.env.PATH}` });
     expect(started.status, started.stderr).toBe(0);
-    expect(started.stdout).not.toContain("taken a moment ago");
-    const block = blockIn(join(root, ".local-db"));
+    const block = blockIn(join(root, ".local-db")); // whichever set it ended on, here and in its record alike
     expect(readFileSync(join(root, ".env.local"), "utf8")).toBe(block);
     expect(rows(tool(root, "list").stdout)).toEqual([{ kind: "Postgres", port: portIn(block, "DATABASE_URL"), folder: join(root, ".local-db"), gone: false }]);
     expect(await query(databaseUrl(block), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
     expect(tool(root, "stop").status).toBe(0);
   }, 60_000);
 
-  it("does not move when its start fails for another reason", () => {
-    const root = repository();
+  it("does not try again when its start fails for another reason", async () => {
+    const { root } = await stoppedButHeld();
     const failing = join(root, "failing");
     mkdirSync(failing);
     writeFileSync(join(failing, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) echo 'pretend failure' >&2; exit 1 ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
-    writeFileSync(join(failing, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(failing, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 }); // so that db:start takes the folder for a Postgres
     const failed = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${failing}:${process.env.PATH}` });
     expect([failed.status, failed.stdout, failed.stderr.match(/pretend failure/g)]).toEqual([1, expect.not.stringContaining("taken a moment ago"), ["pretend failure"]]);
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 60_000);
+
+  it("tries the same port again, and stays on it, when it lost it for an instant only, to another db:start trying it", async () => {
+    const { root } = await stoppedButHeld();
+    const tried = join(root, "tried");
+    mkdirSync(tried);
+    // A pg_ctl whose first start fails as Postgres's does when the port is held at that instant, then is pg_ctl. It
+    // writes down the port it was given, in "once".
+    const log = join(root, ".local-db/postgres.log");
+    const lose = `[ -e "${tried}/once" ] || { echo "$*" | sed -n 's/.* -p \\([0-9]*\\) .*/\\1/p' > "${tried}/once"; echo 'LOG:  could not bind IPv4 address "127.0.0.1": Address already in use' >> "${log}"; exit 1; }`;
+    writeFileSync(join(tried, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) ${lose} ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(tried, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
+    const started = run(process.execPath, [join(root, "scripts/local-db.mjs"), "start"], { PATH: `${tried}:${process.env.PATH}` });
+    expect([started.status, started.stdout], started.stderr).toEqual([0, expect.not.stringContaining("taken a moment ago")]);
+    const block = blockIn(join(root, ".local-db"));
+    expect(portIn(block, "DATABASE_URL"), started.stdout).toBe(Number(readFileSync(join(tried, "once"), "utf8")));
+    expect(await query(databaseUrl(block), "select 1 as one")).toEqual({ rows: [{ one: 1 }], marked: true });
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
   }, 60_000);
 });
 
@@ -713,10 +796,10 @@ describe("pnpm local:list and pnpm local:stop", () => {
     };
     // A Postgres in the same worktree that db:start did not start, and a server standing in for the owner's site.
     let theirs = join(worktree, ".theirs");
-    execFileSync(`${bin}/initdb`, ["-D", theirs, "-U", "theirs", "--auth=trust", "--no-locale", "-E", "UTF8"], { stdio: "ignore" });
+    execFileSync(`${bin}/initdb`, ["-D", theirs, "-U", "theirs", "--auth=trust", "--no-locale", "-E", "UTF8"], { stdio: "ignore", env: childEnv() });
     const options = `-c listen_addresses=127.0.0.1 -p ${await freePort()} -c unix_socket_directories=''`;
-    execFileSync(`${bin}/pg_ctl`, ["-D", theirs, "-l", join(theirs, "log"), "-o", options, "-w", "start"], { stdio: "ignore" });
-    const site = spawn(process.execPath, ["-e", "require('node:http').createServer().listen(0, '127.0.0.1')"], { cwd: worktree });
+    execFileSync(`${bin}/pg_ctl`, ["-D", theirs, "-l", join(theirs, "log"), "-o", options, "-w", "start"], { stdio: "ignore", env: childEnv() });
+    const site = spawn(process.execPath, ["-e", "require('node:http').createServer().listen(0, '127.0.0.1')"], { cwd: worktree, env: childEnv() });
     children.push(site);
     try {
       // Recorded in one time zone and listed in another, as ps gives each caller its own.

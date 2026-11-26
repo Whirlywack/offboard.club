@@ -6,9 +6,9 @@
 //     database named for <dir> alone, marked and migrated, and the env block in <dir>/offboard.env, from which a missing
 //     .env.local is created. The ports come as a set, Postgres 55432 + n, the site 3100 + n, the fake Lichess 8089 + n
 //     and the fake Telegram 8189 + n, for the first n whose four are free (or the n of --port). When <dir>'s ports have
-//     been taken since, or another db:start takes them between this one's choice and its start, it moves to the first
-//     free set, and its block, and .env.local when that is <dir>'s block, are rewritten to match; any other .env.local
-//     is never changed. The Postgres is of CI's major version (the image in .github/workflows/ci.yml) when one is
+//     been taken since, it moves to the first free set, or to another free one when another db:start takes them between
+//     this one's choice and its start; its block, and .env.local when that is <dir>'s block, are rewritten to match;
+//     any other .env.local is never changed. The Postgres is of CI's major version (the image in ci.yml) when one is
 //     installed, on PATH, in Homebrew's folders or in /usr/lib/postgresql, else the newest there, which it says. Its
 //     database sorts text by code point and keeps time in UTC, as the live database does (initdb() below). A <dir> made
 //     by another major version, which cannot be opened, or made to sort or keep time otherwise, is made again.
@@ -24,8 +24,8 @@
 // A second, empty database while the first runs, such as for the opt-in Postgres suites once the first is seeded:
 // `pnpm db:start --dir .local-db-tests`, which prints its address.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes, randomInt } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,16 +109,26 @@ const takenAt = (port, host) =>
     server.listen({ port, host, exclusive: true }, () => server.close(() => done(false)));
   });
 const taken = async (port) => (await takenAt(port, "127.0.0.1")) || (await takenAt(port, "::1")) || (await takenAt(port));
+// Taken, and still taken a moment later: another db:start, trying whether a port is free, holds it for an instant only.
+async function held(port) {
+  for (let i = 0; i < 3; i++) {
+    if (!(await taken(port))) return false;
+    if (i < 2) await new Promise((done) => setTimeout(done, 100));
+  }
+  return true;
+}
 
 const BASE = { postgres: 55432, site: 3100, lichess: 8089, telegram: 8189 };
 const SETS = 100;
 
-// The first set of ports from `port` (Postgres's) or from the first, whose four are all free.
-async function freeSet(port) {
+// The set of ports `port` (Postgres's) gives, if its four are free; or else the first set whose four are, from the set
+// `from` on, round to the first.
+async function freeSet(port, from = 0) {
   const first = port === undefined ? 0 : Number(port) - BASE.postgres;
   if (!Number.isInteger(first) || first < 0 || first >= SETS)
     throw new Error(`--port must be from ${BASE.postgres} to ${BASE.postgres + SETS - 1}: the site and the fakes take the ports that go with it.`);
-  for (let n = first; n < (port === undefined ? SETS : first + 1); n++) {
+  for (let i = 0; i < (port === undefined ? SETS : 1); i++) {
+    const n = port === undefined ? (from + i) % SETS : first;
     const set = { postgres: BASE.postgres + n, site: BASE.site + n, lichess: BASE.lichess + n, telegram: BASE.telegram + n };
     if (!(await taken(set.postgres)) && !(await taken(set.site)) && !(await taken(set.lichess)) && !(await taken(set.telegram))) return set;
   }
@@ -354,9 +364,10 @@ async function start(dir, port) {
     );
     // A port this worktree's own site or fakes hold is not taken by anyone else.
     const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
-    if (saved && (await Promise.all(portsOf(saved).map((each) => !own.has(each) && taken(each)))).some(Boolean)) {
+    const takenNow = saved ? (await Promise.all(portsOf(saved).map(async (each) => !own.has(each) && (await held(each)) && each))).filter(Boolean) : [];
+    if (takenNow.length) {
       text = moved(saved, await freeSet(port));
-      say(`The ports ${dir} had are taken now, so it has the first free set: ${portsOf(text).join(", ")}.`);
+      say(`The ports ${dir} had are taken now (${takenNow.join(", ")}), so it has the first free set: ${portsOf(text).join(", ")}.`);
     }
     const made = saved && madeBy(dir);
     const fresh = made !== pg.major || madeAs(dir) !== madeAsNow(pg.major);
@@ -375,21 +386,30 @@ async function start(dir, port) {
       say(".env.local, which was its block, has the new ports.");
     }
     // Scratch paths are too long for a Unix socket, so TCP on 127.0.0.1 only. Another db:start may have found the same
-    // ports free a moment before this one, and taken them since: then this one moves to the next free set and tries again.
+    // ports free a moment before this one and taken them since; then this one moves to another free set, looking from a
+    // set picked at random, so that the starts that lost a port do not all pick the same one next, and tries again a
+    // moment later. A port lost for an instant only, to another db:start trying whether it is free, is tried again.
+    const log = `${dir}/postgres.log`;
     for (let tries = 1; ; tries++) {
       const postgres = portOf(variables(text).DATABASE_URL);
       const options = `-c listen_addresses=127.0.0.1 -p ${postgres} -c unix_socket_directories=''`;
+      const logged = existsSync(log) ? statSync(log).size : 0;
       try {
-        run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", `${dir}/postgres.log`, "-o", options, "-w", "start"]);
+        run(`${pg.dir}/pg_ctl`, ["-D", dir, "-l", log, "-o", options, "-w", "start"]);
         break;
       } catch (error) {
         if (running(pg, dir)) break; // pg_ctl stopped waiting, but the server came up all the same: it is this folder's
-        if (tries === 5 || !(await taken(postgres))) throw error;
-        const before = text;
-        text = moved(text, await freeSet(port));
-        writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 });
-        if (envLocal() === before) writeFileSync(ENV_LOCAL, text, { mode: 0o600 });
-        say(`Port ${postgres} was taken a moment ago, so ${dir} has the next free set: ${portsOf(text).join(", ")}.`);
+        const holder = await held(postgres);
+        const lost = existsSync(log) && readFileSync(log).subarray(logged).toString().includes("Address already in use");
+        if (tries === 10 || !(holder || lost)) throw error;
+        if (holder) {
+          const before = text;
+          text = moved(text, await freeSet(port, randomInt(SETS)));
+          writeFileSync(`${dir}/offboard.env`, text, { mode: 0o600 });
+          if (envLocal() === before) writeFileSync(ENV_LOCAL, text, { mode: 0o600 });
+          say(`Port ${postgres} was taken a moment ago, so ${dir} has another free set: ${portsOf(text).join(", ")}.`);
+        }
+        await new Promise((done) => setTimeout(done, randomInt(50, 300)));
       }
     }
   }
@@ -423,7 +443,7 @@ async function dev(dir) {
   const text = blockOf(dir);
   if (!text || envLocal() !== text) throw new Error(`.env.local is not ${dir}/offboard.env, so the site was not started: run pnpm db:start first.`);
   const site = portOf(variables(text).BETTER_AUTH_URL);
-  if (await taken(site)) throw new Error(`Port ${site}, the site's, is taken.`);
+  if (await held(site)) throw new Error(`Port ${site}, the site's, is taken.`);
   const record = recorder();
   const next = `${root}/node_modules/next/dist/bin/next`;
   const child = spawn(process.execPath, [next, "dev", "--hostname", "127.0.0.1", "--port", String(site)], { cwd: root, stdio: "inherit" });

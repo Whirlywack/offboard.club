@@ -4,6 +4,7 @@
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeLichess, type FakeAccount } from "@/lib/fixtures/fake-lichess";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { codeChallenge, REVOKED_BY_MS } from "@/lib/connect-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/callback/route";
@@ -113,6 +114,8 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
 }
 
 const statements = () => query.mock.calls.map(([sql]) => (sql as string).split(" ").slice(0, 2).join(" "));
+// The failed requests the callback tried to record (lib/request-failures.ts), which fakeQuery does not keep.
+const failuresRecorded = () => query.mock.calls.filter(([sql]) => (sql as string).includes(`"requestFailure"`)).map(([, params]) => params);
 const updates = () => query.mock.calls.filter(([sql]) => (sql as string).includes(`update "user"`));
 
 // --- Lichess ---
@@ -328,12 +331,15 @@ describe("coming back from Lichess", () => {
 
   it("sends the person back to the connect step, told it didn't work, when the session cannot be read", async () => {
     const back = await approveOnLichess(await pressConnect(), "bobby");
+    const settled = keepWaitUntil();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
     expect(await arrive(back)).toBe("/welcome/lichess?lichess=failed");
     expect(lichess.calls).toEqual([]);
     expect(jar.values.size).toBe(0);
     expect(logged).toHaveBeenCalledWith("Coming back from Lichess, the session could not be read:", "Connection terminated due to connection timeout");
+    await settled();
+    expect(failuresRecorded()).toEqual([["/api/lichess/callback", "route", "the database couldn't be reached"]]);
   });
 
   describe("refuses an attempt it did not start in this browser, without asking Lichess anything", () => {
@@ -447,12 +453,27 @@ describe("coming back from Lichess", () => {
     expect(revoked()).toBe(true);
   });
 
-  it("leaves the person unconnected when Lichess fails during the join", async () => {
+  it("leaves the person unconnected when Lichess fails during the join, Lichess's answer, which is not recorded", async () => {
+    const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
     lichess.override = (c) => (c.path.endsWith("/join") ? new Response("Bad gateway", { status: 502 }) : undefined);
     expect(await connectAs("bobby")).toBe("/welcome/lichess?lichess=failed");
     expect(updates()).toEqual([]);
     expect(revoked()).toBe(true);
+    await settled();
+    expect(failuresRecorded()).toEqual([]);
+  });
+
+  it("leaves the person unconnected when the connection cannot be saved, and records the callback's failure", async () => {
+    const settled = keepWaitUntil();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    query.mockImplementation(async (sql: string, params?: unknown[]) =>
+      sql.includes("with saved as") ? Promise.reject(new Error("Connection terminated unexpectedly")) : fakeQuery(sql, params),
+    );
+    expect(await connectAs("bobby")).toBe("/welcome/lichess?lichess=failed");
+    expect(revoked()).toBe(true);
+    await settled();
+    expect(failuresRecorded()).toEqual([["/api/lichess/callback", "route", "the database couldn't be reached"]]);
   });
 
   it("revokes the token when reading the account fails", async () => {

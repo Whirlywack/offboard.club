@@ -3,6 +3,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { requireOrganiser } from "@/lib/auth";
 import { clearedPendingCookie } from "@/lib/connect-lichess";
 import { finishOrganiserConnection, ORGANISER_FLOW } from "@/lib/organiser-lichess";
+import { noticeLater } from "@/lib/request-failures";
 
 // Up to five Lichess requests, each of which may wait a minute after a rate-limit response; the connection gives up
 // well before this so that there is still time to revoke a token it does not keep.
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
   const organiser = await requireOrganiser().catch((error: unknown) => {
     unstable_rethrow(error);
     console.error("Coming back from Lichess, the session could not be read:", error instanceof Error ? error.message : error);
+    noticeLater(error, ORGANISER_FLOW.callbackPath, "route");
     redirect("/organiser?lichess=failed");
   });
   redirect(await finishOrganiserConnection(organiser, new URL(request.url).searchParams, pending, started));

@@ -4,8 +4,11 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, matchdays, people, resetDb, seasons } from "@/lib/fake-db";
-import { NextMatchday, You } from "./page";
+import { alertOrganiser } from "@/lib/alerts";
+import { addPerson, db, matchdays, people, requestFailures, resetDb, seasons } from "@/lib/fake-db";
+import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
+import { NextMatchday, SeasonChampions, You } from "./page";
 
 const { getSession, request } = vi.hoisted(() => ({ getSession: vi.fn(), request: { headers: new Headers() } }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
@@ -169,5 +172,75 @@ describe("the signed-in panel on the home page", () => {
     const html = await you({ signin: "failed" });
     expect(html).toContain("LinkedIn sign-in isn&#x27;t working right now. Please try again in a few minutes.");
     expect(html).toContain("Sign in with LinkedIn");
+  });
+});
+
+// What the home page catches itself to show something in its place is a failed request all the same (#60 review),
+// recorded as the page's, and the Organiser is told of it: what showed nothing on 25 November 2026 (#55).
+describe("the home page's failures, which it shows plainly", () => {
+  const CHAT = "123456789";
+  // As the sign-in library threw it when the pool gave up connecting (lib/db.ts, #55).
+  const timedOut = () =>
+    Object.assign(
+      new Error("Failed to get session", {
+        cause: new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }),
+      }),
+      { name: "APIError" },
+    );
+  const recorded = () => [...requestFailures.values()].map(({ route, kind, reason }) => ({ route, kind, reason }));
+  const ONE = [{ route: "/", kind: "page", reason: "the database couldn't be reached" }];
+  let settled: () => Promise<unknown>;
+
+  beforeEach(() => {
+    settled = keepWaitUntil();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    db.query.mockReset();
+  });
+
+  it("is GET / with a session cookie whose session read timed out: shown plainly, recorded, and alerted", async () => {
+    request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
+    getSession.mockRejectedValue(timedOut());
+    const html = renderToStaticMarkup((await You({ searchParams: Promise.resolve({}) })) as ReactElement);
+    expect(html).toContain("Your sign-in can&#x27;t be checked right now. Please try again in a minute.");
+    await settled();
+    expect(recorded()).toEqual(ONE);
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
+    vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", CHAT);
+    vi.stubEnv("TELEGRAM_URL", "");
+    const telegram = createFakeTelegram({ token: "a-pretend-telegram-token", chats: [CHAT] });
+    vi.stubGlobal("fetch", telegram.fetch);
+    await alertOrganiser(new Date(Date.now() + 60 * 60_000));
+    expect(telegram.posts.map((post) => `${post.chatId} ${post.text}`)).toEqual([`${CHAT} A page failed at /: the database couldn't be reached.`]);
+  });
+
+  it("is the next Matchday's schedule that could not be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.query.mockRejectedValueOnce(timedOut().cause);
+    expect(await nextMatchday()).toBe("");
+    await settled();
+    expect(recorded()).toEqual(ONE);
+  });
+
+  it("is a session that could not be read to tell whether a Member gets the tournament", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    getSession.mockRejectedValue(timedOut());
+    const html = await nextMatchday();
+    expect(html).toContain("Sunday 29 November at 20:00");
+    expect(html).not.toContain("lichess.org/swiss");
+    await settled();
+    expect(recorded()).toEqual(ONE);
+  });
+
+  it("is the Season champion who could not be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.query.mockRejectedValueOnce(timedOut().cause);
+    expect(await SeasonChampions()).toBeNull();
+    await settled();
+    expect(recorded()).toEqual(ONE);
   });
 });

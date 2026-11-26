@@ -4,6 +4,7 @@
 // in for fetch), Vercel's request context, which holds waitUntil, and the clock. The errors are real ones: pg's own,
 // against a port nothing listens on and one that never answers, and Next.js's own redirect() and notFound().
 import net from "node:net";
+import { parseAndValidateFlightRouterState } from "next/dist/server/app-render/parse-and-validate-flight-router-state";
 import { notFound, redirect } from "next/navigation";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,8 +37,8 @@ const sessionFailed = () => Object.assign(new Error("Failed to get session", { c
 
 // A request that failed with `error`, as Next.js hands it to the hook: `path` is the address asked for and `routePath`
 // the route's shape. Then whatever the hook gave waitUntil.
-async function fail(error: unknown, routePath = "/profile", routeType: Route = "render", path = routePath) {
-  await onRequestError(error, { path, method: "GET", headers: { cookie: "better-auth.session_token=pretend" } }, context(routePath, routeType));
+async function fail(error: unknown, routePath = "/profile", routeType: Route = "render", path = routePath, method = "GET") {
+  await onRequestError(error, { path, method, headers: { cookie: "better-auth.session_token=pretend" } }, context(routePath, routeType));
   await Promise.all(kept.splice(0));
 }
 type Route = "render" | "route" | "action" | "proxy";
@@ -105,13 +106,13 @@ describe("a request that fails on the server", () => {
     await fail(error, "/recaps/[date]/page", "render", "/recaps/2026-11-22");
     await fail(error, "/page", "render", "/");
     await fail(error, "/api/auth/[...all]", "route", "/api/auth/callback/linkedin?code=pretend-code&state=pretend");
-    await fail(error, "/profile", "action");
+    await fail(sessionFailed(), "/profile", "action", "/profile", "POST");
     expect(rows()).toEqual([
       { route: "/profiles/[id]", kind: "page", reason: "the code threw TypeError" },
       { route: "/recaps/[date]", kind: "page", reason: "the code threw TypeError" },
       { route: "/", kind: "page", reason: "the code threw TypeError" },
       { route: "/api/auth/[...all]", kind: "route", reason: "the code threw TypeError" },
-      { route: "/profile", kind: "server action", reason: "the code threw TypeError" },
+      { route: "/profile", kind: "server action", reason: "the database couldn't be reached" },
     ]);
     const stored = JSON.stringify([...requestFailures.values()]);
     for (const said of ["ana", "PretendId", "mail", "2026-11-22", "pretend-code", "session_token", "name"]) expect(stored).not.toContain(said);
@@ -128,6 +129,8 @@ describe("a request that fails on the server", () => {
       [quoting, "the database refused it (error 22P02)"],
       // Node's, five letters long like Postgres's codes.
       [Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" }), "the code threw Error"],
+      // With a severity, but a code not in SQLSTATE's form.
+      [Object.assign(new pg.DatabaseError("A message", 0, "error"), { severity: "ERROR", code: "ana@pretend.invalid" }), "the code threw an error"],
       [Object.assign(new Error("Lichess said no"), { cause: fetchFailed }), "another site couldn't be reached"],
       [Object.assign(new Error("A name no reason should carry"), { name: "Error for ana@pretend.invalid" }), "the code threw an error"],
       ["a thrown string about ana@pretend.invalid", "the code threw an error"],
@@ -158,6 +161,20 @@ describe("a request that fails on the server", () => {
     expect(requestFailures.size).toBe(0);
   });
 
+  it("is recorded though it is its own cause, or two errors cause each other, on which Next.js's own test overflows", async () => {
+    const looped = new RangeError("Oops");
+    looped.cause = looped;
+    const [one, other] = [new TypeError("One"), new SyntaxError("Other")];
+    one.cause = other;
+    other.cause = one;
+    await fail(looped, "/looped");
+    await fail(one, "/each-other");
+    expect(rows()).toEqual([
+      { route: "/looped", kind: "page", reason: "the code threw RangeError" },
+      { route: "/each-other", kind: "page", reason: "the code threw TypeError" },
+    ]);
+  });
+
   it("is left alone on the Edge runtime, which has no database", async () => {
     vi.stubEnv("NEXT_RUNTIME", "edge");
     await fail(new Error("Oops"));
@@ -181,16 +198,53 @@ describe("a request that fails on the server", () => {
   });
 });
 
+// Requests no page of the site sends, which a visitor can send at will (#60 review): each failed on a production build
+// of the site as below, and the hook was handed what it threw.
+describe("what a visitor can make fail at will", () => {
+  const thrownBy = (send: () => unknown) => {
+    try {
+      send();
+    } catch (error) {
+      return error;
+    }
+    throw new Error("nothing was thrown");
+  };
+
+  it("is not a router state header Next.js cannot read, nor two of them, nor one too large", async () => {
+    for (const header of ["not-json", ["[]", "[]"], "a".repeat(40_001)])
+      await fail(thrownBy(() => parseAndValidateFlightRouterState(header as string)), "/recaps", "render", "/recaps?_rsc=pretend");
+    expect(rows()).toEqual([]);
+  });
+
+  it("is not a server action, nor a page sent a POST, that fails but for the database, while a page asked for fails", async () => {
+    // From bodies no form of the site sends: JSON that does not parse, arguments that are not a list, and React's own.
+    const bodies = [thrownBy(() => JSON.parse("{{")), thrownBy(() => Reflect.apply(() => {}, null, null as unknown as [])), new Error("Connection closed.")];
+    for (const error of bodies) {
+      await fail(error, "/", "action", "/", "POST");
+      await fail(error, "/recaps", "render", "/recaps", "POST");
+    }
+    expect(rows()).toEqual([]);
+    await fail(sessionFailed(), "/", "action", "/", "POST");
+    await fail(sessionFailed(), "/recaps", "render", "/recaps", "POST");
+    await fail(bodies[1], "/recaps", "render", "/recaps", "GET");
+    expect(rows()).toEqual([
+      { route: "/", kind: "server action", reason: "the database couldn't be reached" },
+      { route: "/recaps", kind: "page", reason: "the database couldn't be reached" },
+      { route: "/recaps", kind: "page", reason: "the code threw TypeError" },
+    ]);
+  });
+});
+
 describe("the Organiser's alerts of failed requests", () => {
   const A = "A page failed at /profile: the database couldn't be reached.";
-  const B = "A server action failed at /welcome: the code threw TypeError.";
+  const B = "A page failed at /welcome: the code threw TypeError.";
 
   it("are one a kind, not one a request, and come again a day later only while it fails", async () => {
     for (let i = 0; i < 500; i++) {
       vi.setSystemTime(new Date(SUNDAY.getTime() + i * 7_000));
       await fail(sessionFailed());
     }
-    await fail(new TypeError("Oops"), "/welcome", "action");
+    await fail(new TypeError("Oops"), "/welcome");
     expect(telegram.calls).toEqual([]);
     await alertAt(new Date(SUNDAY.getTime() + HOUR));
     expect(dms().sort()).toEqual([A, B]);

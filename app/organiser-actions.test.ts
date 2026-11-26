@@ -8,8 +8,23 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, addCompany, db, matchdays, organiserLichess, people, resetDb, results, seasons, skippedSundays, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
+import {
+  addPerson,
+  addCompany,
+  db,
+  matchdays,
+  organiserLichess,
+  people,
+  requestFailures,
+  resetDb,
+  results,
+  seasons,
+  skippedSundays,
+  teamRemovals,
+  tournamentCancellations,
+} from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { collectResults } from "@/lib/collect-results";
 import { createUpcomingMatchday } from "@/lib/create-matchdays";
 import { LICHESS_DEADLINE_MS } from "@/lib/leaving";
@@ -238,6 +253,16 @@ describe("removing a Member", () => {
     expect(html).toMatch(/<input type="hidden" name="memberId" value="ana"\/>.*<a[^>]* href="\/organiser">Keep them<\/a><button[^>]*>Remove Ana Petraitė<\/button>/);
     expect(people.has("ana")).toBe(true);
     expect(lichess.calls).toEqual([]);
+  });
+
+  it("is titled as the not-found page when the session cannot be read, and records the step's failure", async () => {
+    const settled = keepWaitUntil();
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    expect(await confirmTitle()).toEqual({ title: "Page not found" });
+    await settled();
+    expect([...requestFailures.values()].map(({ route, kind, reason }) => ({ route, kind, reason }))).toEqual([
+      { route: "/organiser/remove", kind: "page", reason: "the database couldn't be reached" },
+    ]);
   });
 
   it("is a step nobody but the Organiser can open, and whose tab says so", async () => {

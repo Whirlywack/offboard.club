@@ -143,12 +143,13 @@ async function alert(now: Date): Promise<JobRun> {
 // at Telegram of 10 s, after the run's 20 s at most of trying to connect (lib/db.ts), within its route's 300 s. Once a
 // run, so once an hour while it lasts (vercel.json), and twice in an hour only when Vercel delivers a run twice, which
 // it may (vercel.com/docs/cron-jobs/manage-cron-jobs, "Cron job delivery and idempotency"); a failed request sends
-// nothing itself. Nothing is sent while alerts are off. Never throws.
+// nothing itself. Nothing is sent while alerts are off. Its words are fixed but for a reason from reasonOf's fixed
+// list, so hold nothing to hide. Never throws.
 export async function alertWithoutDatabase(error: unknown) {
   const chat = organiserChat();
   if (!botSetUp() || !chat) return;
   const text = `The site can't use its database: ${reasonOf(error)}. Pages that need it fail, and no alert can be read from it. You'll hear this every hour until it works again.`;
-  const sent = await sendMessage(chat, privately(text));
+  const sent = await sendMessage(chat, text);
   if (sent.posted !== true) console.error(`Telling the Organiser that the database can't be used failed: ${sentence(sent.problem)}.`);
 }
 

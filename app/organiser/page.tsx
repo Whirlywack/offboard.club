@@ -22,7 +22,7 @@ import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
 import { LICHESS_SECURITY_URL, organiserMessage, organiserPermission, type OrganiserPermission } from "@/lib/organiser-lichess";
 import { JOB as POST } from "@/lib/post-to-telegram";
-import { lastFailedRequest, type FailedRequest } from "@/lib/request-failures";
+import { lastFailedRequest, noticeLater, type FailedRequest } from "@/lib/request-failures";
 import { tournamentCancellations, type Cancellation } from "@/lib/reschedule";
 import { addDays, latestSunday, matchdayStart, ZONE } from "@/lib/schedule";
 import { MAX_SEASONS, nextMatchdayIn, placesIn, readSchedule, seasonDates, type Matchday, type Schedule } from "@/lib/seasons";
@@ -30,7 +30,7 @@ import { telegramProblem } from "@/lib/telegram";
 
 // To anyone but the Organiser the page does not exist, so their tab says so, as app/not-found.tsx does.
 export async function generateMetadata(): Promise<Metadata> {
-  const session = await getSession().catch(() => null);
+  const session = await getSession().catch((error: unknown) => void noticeLater(error, "/organiser"));
   return { title: isOrganiser(session?.user) ? "Organiser" : "Page not found" };
 }
 
@@ -443,7 +443,7 @@ function LastFailedRequest({ failure }: { failure: FailedRequest | null }) {
           <p className={styles.detail}>{upper(failure.reason)}.</p>
         </>
       ) : (
-        <p className={styles.detail}>No request has failed.</p>
+        <p className={styles.detail}>No failed request has been recorded.</p>
       )}
     </div>
   );

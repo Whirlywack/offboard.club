@@ -16,6 +16,7 @@ import { newChampions } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
+import { noticeLater } from "@/lib/request-failures";
 import { signUpsNeeded, ZONE } from "@/lib/schedule";
 import { nextMatchdayIn, readSchedule, type Schedule } from "@/lib/seasons";
 import { countSignUps } from "@/lib/signups";
@@ -156,12 +157,15 @@ const LATE_JOIN_MS = 90 * 60_000;
 // next Matchday's time alone. Left out, and logged, if the database cannot be read. Exported for app/home.test.ts.
 export async function NextMatchday() {
   await connection();
-  const unreadable = (error: Error) => void console.error("Home page could not read the schedule:", error.message);
+  const unreadable = (error: Error) => {
+    console.error("Home page could not read the schedule:", error.message);
+    noticeLater(error, "/");
+  };
   const now = new Date();
   const schedule = await readSchedule(now).catch(unreadable);
   const next = schedule && nextMatchdayIn(schedule, now);
   if (next) {
-    const member = await viewerIsMember();
+    const member = await viewerIsMember("/");
     const underWay = member ? await lateToJoin(schedule!, now).catch(unreadable) : null;
     const shown = underWay ?? next;
     const tournament =
@@ -224,12 +228,13 @@ async function lateToJoin(schedule: Schedule, now: Date) {
 }
 
 // The champion of the Season that has just ended, from its sixth Matchday until the next Season's first. Left out, and
-// logged, if the database cannot be read.
-async function SeasonChampions() {
+// logged, if the database cannot be read. Exported for app/home.test.ts.
+export async function SeasonChampions() {
   await connection();
-  const named = await newChampions(new Date()).catch(
-    (error: Error) => void console.error("Home page could not read the Season champion:", error.message),
-  );
+  const named = await newChampions(new Date()).catch((error: Error) => {
+    console.error("Home page could not read the Season champion:", error.message);
+    noticeLater(error, "/");
+  });
   if (!named) return null;
   const names = new Intl.ListFormat("en-GB", { type: "conjunction" }).format(named.champions.map((c) => c.name));
   const season = <Link href={`/seasons/${named.season}`}>Season {named.season}</Link>;
@@ -257,7 +262,7 @@ async function SeasonChampions() {
 // tables there once. Someone sent here because signing in failed coming back from LinkedIn (?signin=failed, from
 // app/api/auth/[...all]/route.ts) is told so beside the button. Exported for app/home.test.ts.
 export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
-  const session = await getSession().catch(() => undefined);
+  const session = await getSession().catch((error: unknown) => noticeLater(error, "/"));
   if (session === undefined && getSessionCookie(await headers()))
     return <p className={ui.alert}>Your sign-in can&apos;t be checked right now. Please try again in a minute.</p>;
   if (!session) return <SignIn problem={(await searchParams).signin === "failed" ? SIGN_IN_FAILED : ""} />;

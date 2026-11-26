@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { removeMember } from "@/lib/leaving";
 import { mustConnectLichess } from "@/lib/members";
 import { readProfileForm } from "@/lib/profile";
+import { noticeLater } from "@/lib/request-failures";
 
 // Returns a message to show when sign-in cannot start; otherwise goes to LinkedIn.
 export async function signIn(): Promise<string> {
@@ -22,6 +23,7 @@ export async function signIn(): Promise<string> {
     }));
   } catch (error) {
     console.error("LinkedIn sign-in could not start", error);
+    noticeLater(error, "/", "action");
   }
   if (!url) return SIGN_IN_FAILED;
   redirect(url);

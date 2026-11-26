@@ -14,7 +14,11 @@ import { companyLabel } from "@/lib/companies";
 import { seasonOfMatchday } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
+import { noticeLater } from "@/lib/request-failures";
 import { isRecapDate } from "@/lib/schedule";
+
+// This page's route as Next.js names it, by which a failure it catches is recorded.
+const ROUTE = "/recaps/[date]";
 
 export async function generateMetadata({ params }: PageProps<"/recaps/[date]">): Promise<Metadata> {
   const { date } = await params;
@@ -58,10 +62,14 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
   const [recap, member, season] = await Promise.all([
     getRecap(date).catch((error: Error) => {
       console.error("A Recap could not be read:", error.message);
+      noticeLater(error, ROUTE);
       return undefined;
     }),
-    viewerIsMember(),
-    seasonOfMatchday(date, new Date()).catch(() => null),
+    viewerIsMember(ROUTE),
+    seasonOfMatchday(date, new Date()).catch((error: unknown) => {
+      noticeLater(error, ROUTE);
+      return null;
+    }),
   ]);
   if (recap === undefined)
     return <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>;

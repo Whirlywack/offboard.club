@@ -33,8 +33,17 @@ class Pool extends pg.Pool {
 // which is what it does now: pg-connection-string turns each of the four into the same `ssl: {}` and nothing else
 // (node_modules/pg-connection-string/index.js, parse), and pg copies `ssl` from it, never `sslmode`
 // (pg/lib/connection-parameters.js), so the server's certificate is checked as before, against the system's CAs and
-// the host's name. (With uselibpqcompat=true, which no address here has, the modes would mean libpq's instead.)
-const verifyFull = (address?: string) => address?.replace(/([?&]sslmode=)(?:prefer|require|verify-ca)(?=&|$)/g, "$1verify-full");
+// the host's name. Only the query's own sslmode pairs are changed, split at "&" as URLSearchParams splits them, so not
+// one inside another's value; and an address with uselibpqcompat, under which the modes mean libpq's and differ, is
+// left as it is.
+function verifyFull(address?: string) {
+  const query = address?.indexOf("?") ?? -1;
+  if (!address || query < 0) return address; // none, as on a preview, or one with no query to read a mode from
+  const pairs = address.slice(query + 1).split("&");
+  if (pairs.some((pair) => pair.startsWith("uselibpqcompat="))) return address;
+  const verified = pairs.map((pair) => (/^sslmode=(prefer|require|verify-ca)$/.test(pair) ? "sslmode=verify-full" : pair));
+  return `${address.slice(0, query + 1)}${verified.join("&")}`;
+}
 
 // One pool per server instance; Neon's pooled connection string handles the rest.
 export const db = new Pool({ connectionString: verifyFull(process.env.DATABASE_URL), max: 5, connectionTimeoutMillis: 10_000 });

@@ -10,6 +10,7 @@ import styles from "./seasons.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { getSeason, readLeaderboards, seasonsSoFar, type Member, type Season } from "@/lib/leaderboards";
 import { SEASON_LENGTH } from "@/lib/leaderboard";
+import { noticeLater } from "@/lib/request-failures";
 import { matchdayStart } from "@/lib/schedule";
 
 // "6 Dec": a Matchday's date in the list of a Season's six, which all fall within a couple of months, so without the
@@ -23,6 +24,7 @@ const shortDate = (date: string) =>
 export async function seasonLeaderboard(which: number | "current"): Promise<ReactNode> {
   await connection();
   const now = new Date();
+  const route = which === "current" ? "/seasons" : "/seasons/[number]";
   const [read, member] = await Promise.all([
     readLeaderboards(now)
       .then(async (reading) => {
@@ -31,9 +33,10 @@ export async function seasonLeaderboard(which: number | "current"): Promise<Reac
       })
       .catch((error: Error) => {
         console.error("A Season Leaderboard could not be read:", error.message);
+        noticeLater(error, route);
         return undefined;
       }),
-    viewerIsMember(),
+    viewerIsMember(route),
   ]);
   if (read === undefined)
     return <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>;

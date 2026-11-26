@@ -2,8 +2,9 @@ import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { requireWelcomed } from "@/lib/auth";
-import { clearedPendingCookie, finishConnection, PENDING_COOKIE, REMOVED_BY_MS } from "@/lib/connect-lichess";
+import { CALLBACK_PATH, clearedPendingCookie, finishConnection, PENDING_COOKIE, REMOVED_BY_MS } from "@/lib/connect-lichess";
 import { removeSwitchedFrom } from "@/lib/leaving";
+import { noticeLater } from "@/lib/request-failures";
 
 // Up to five Lichess requests, each of which may wait a minute after a rate-limit response. The connection gives up
 // well before this (CONNECTION_DEADLINE_MS) so that there is still time to revoke the token, and then to remove the
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
   const person = await requireWelcomed().catch((error: unknown) => {
     unstable_rethrow(error);
     console.error("Coming back from Lichess, the session could not be read:", error instanceof Error ? error.message : error);
+    noticeLater(error, CALLBACK_PATH, "route");
     redirect("/welcome/lichess?lichess=failed");
   });
   const { to, replaced } = await finishConnection(person, new URL(request.url).searchParams, pending, started);

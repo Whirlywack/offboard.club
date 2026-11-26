@@ -22,6 +22,7 @@ import {
 } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { REVOKED_BY_MS } from "@/lib/connect-lichess";
 import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
@@ -69,6 +70,7 @@ let signedIn: string | null;
 let logged: string[];
 
 const apiCalls = () => lichess.calls.map((c) => `${c.method} ${c.path}`);
+const failedRequests = () => [...requestFailures.values()].map(({ route, kind, reason }) => ({ route, kind, reason }));
 const liveTokens = () => [...lichess.tokens].filter(([, t]) => !t.revoked).map(([token]) => token);
 const allTokens = () => [...lichess.tokens.keys()];
 
@@ -180,6 +182,14 @@ describe("who the Organiser is", () => {
     }
   });
 
+  it("titles the tab as the not-found page when the session cannot be read, and records the page's failure", async () => {
+    const settled = keepWaitUntil();
+    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    expect(await generateMetadata()).toEqual({ title: "Page not found" });
+    await settled();
+    expect(failedRequests()).toEqual([{ route: "/organiser", kind: "page", reason: "the database couldn't be reached" }]);
+  });
+
   it("is nobody while ORGANISER_USER_ID is unset", async () => {
     vi.stubEnv("ORGANISER_USER_ID", "");
     await expect(openPage()).rejects.toThrow("not found");
@@ -203,11 +213,14 @@ describe("who the Organiser is", () => {
 
   it("is sent back to the Organiser page, told it didn't work, when the session cannot be read at the callback", async () => {
     const back = await approveOnLichess(await pressConnect(), "boss");
+    const settled = keepWaitUntil();
     getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
     expect(await arrive(back)).toBe("/organiser?lichess=failed");
     expect(lichess.calls).toEqual([]);
     expect(jar.values.size).toBe(0);
     expect(logged).toContain("Coming back from Lichess, the session could not be read: Connection terminated due to connection timeout");
+    await settled();
+    expect(failedRequests()).toEqual([{ route: "/api/lichess/organiser-callback", kind: "route", reason: "the database couldn't be reached" }]);
   });
 
   it("is not found at the callback by anyone else, who cannot finish an attempt there", async () => {
@@ -351,6 +364,32 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(await connectAs("boss")).toBe("/organiser?lichess=failed");
     expect(liveTokens()).toEqual([]);
     expect(organiserLichess.size).toBe(0);
+  });
+
+  it("records nothing when Lichess refuses what was brought back, which anyone could send at will", async () => {
+    const settled = keepWaitUntil();
+    const back = await approveOnLichess(await pressConnect(), "boss");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(input instanceof Request ? input.url : String(input)).pathname === "/api/token"
+        ? Response.json({ error: "invalid_grant" }, { status: 400 })
+        : lichess.fetch(input, init),
+    );
+    expect(await arrive(back)).toBe("/organiser?lichess=failed");
+    await settled();
+    expect(failedRequests()).toEqual([]);
+  });
+
+  it("keeps nothing when the permission cannot be saved, and records the callback's failure", async () => {
+    const settled = keepWaitUntil();
+    const real = db.query.getMockImplementation()!;
+    db.query.mockImplementation((sql: string, params?: unknown[]) =>
+      sql.includes(`insert into "organiserLichess"`) ? Promise.reject(new Error("Connection terminated unexpectedly")) : real(sql, params),
+    );
+    expect(await connectAs("boss")).toBe("/organiser?lichess=failed");
+    expect(liveTokens()).toEqual([]);
+    await settled();
+    expect(failedRequests()).toEqual([{ route: "/api/lichess/organiser-callback", kind: "route", reason: "the database couldn't be reached" }]);
+    db.query.mockImplementation(real);
   });
 
   it("changes nothing when the Organiser declines on Lichess", async () => {
@@ -580,7 +619,7 @@ describe("the scheduled jobs on the Organiser page", () => {
       const html = await openPage();
       return html.slice(html.indexOf("<h3>Last failed request</h3>"), html.indexOf("</section>", html.indexOf("<h3>Last failed request</h3>")));
     };
-    expect(await lastFailedRequest()).toMatch(/>No request has failed\.<\/p><\/div>$/);
+    expect(await lastFailedRequest()).toMatch(/>No failed request has been recorded\.<\/p><\/div>$/);
     requestFailures.set("a", { route: "/profile", kind: "page", reason: "the database couldn't be reached", lastAt: new Date("2026-11-25T17:44:34Z") });
     requestFailures.set("b", { route: "/recaps/[date]", kind: "server action", reason: "the code threw TypeError", lastAt: new Date("2026-11-25T17:50:15Z") });
     const html = await lastFailedRequest();
@@ -588,7 +627,7 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).toContain("<dt>Kind</dt><dd>Server action</dd>");
     expect(html).toContain('<dt>Last failed</dt><dd><time dateTime="2026-11-25T17:50:15.000Z">25 November 2026 at 19:50</time></dd>');
     expect(html).toMatch(/>The code threw TypeError\.<\/p>/);
-    expect(html).not.toMatch(/role="alert"|\/profile|No request has failed/);
+    expect(html).not.toMatch(/role="alert"|\/profile|No failed request/);
   });
 
   it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {

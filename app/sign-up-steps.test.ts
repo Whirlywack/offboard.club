@@ -14,12 +14,14 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const none = { params: Promise.resolve({}), searchParams: Promise.resolve({}) };
 
-// Each step as the page lists it: its words as read aloud, whether it is the one the person is on, and the pawn on it.
+// Each step as the page lists it: its words as read aloud (a picture's alternative text among them), whether it is the
+// one the person is on, and the pawn on it.
 function steps(page: ReactElement) {
   const head = (page.props as { children: ReactElement[] }).children[0];
   return [...renderToStaticMarkup(head).matchAll(/<li([^>]*)>(.*?)<\/li>/g)].map(([, attributes, inside]) => ({
     step: inside
       .replace(/<span[^>]* aria-hidden="true">\d<\/span>/, "")
+      .replace(/<img([^>]*)>/g, (_, img: string) => img.match(/ alt="([^"]*)"/)?.[1] ?? "(a picture without alternative text)")
       .replace(/<[^>]+>/g, "")
       .trim(),
     current: attributes.includes('aria-current="step"'),

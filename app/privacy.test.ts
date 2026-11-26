@@ -315,6 +315,15 @@ describe("the welcome step", () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["has agreed but not connected Lichess", { lichessId: null, lichessUsername: null }],
+    ["is a Member", {}],
+  ])("sends someone who %s home, as there is nothing left to agree to", async (_, details) => {
+    addPerson("agreed", details);
+    signedIn = "agreed";
+    await expect(welcomeStep()).rejects.toThrow(/^redirect \/$/);
+  });
+
   it("says names and Companies are public everywhere they are, as a condition of membership, and how to leave", async () => {
     const html = await welcomeStep();
     expect(html).toContain("<p>You&#x27;ll appear as Person newcomer. Only signed-in Members see your photo and Profile, and your email is never shown.</p>");

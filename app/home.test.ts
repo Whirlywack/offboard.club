@@ -1,8 +1,9 @@
 // The home page: its words as each reader meets it, and its description in search results and link previews; the next
 // Matchday, its time for everyone, and its Lichess tournament for Members once the site has created it; and who is
-// signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts). Everything else is the
-// app's own code.
-import type { ReactElement } from "react";
+// signed in, when that cannot be read; and the site's own header, which the home page draws for itself. Faked: the
+// session and the database (lib/fake-db.ts). Everything else is the app's own code.
+import { LayoutRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { createElement, type ContextType, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { prerenderToNodeStream } from "react-dom/static";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +12,7 @@ import { addPerson, db, fromDatabase, matchdays, people, requestFailures, resetD
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { metadata } from "./layout";
+import { NotOnHome } from "./not-on-home";
 import Home, { NextMatchday, SeasonChampions, You } from "./page";
 
 const { getSession, request } = vi.hoisted(() => ({ getSession: vi.fn(), request: { headers: new Headers() } }));
@@ -207,6 +209,22 @@ describe("the pawns on the home page", () => {
   it("do not count anyone part-way through signing up", async () => {
     seasons.clear();
     expect(pawns(await nextMatchday())).toEqual(["pawn", ...Array(15).fill("pawn-empty")]);
+  });
+});
+
+// The root layout's header goes on every page but the home page, which draws its own with the strip above it (#77).
+describe("the site's header from the root layout", () => {
+  // What the layout's header shows as at an address, given the route below the root layout as Next.js hands it over:
+  // a segment for each folder, the page last.
+  const at = (...segments: string[]) => {
+    const below = segments.reduceRight<unknown[]>((inner, segment) => [segment, { children: inner }], ["__PAGE__", {}]);
+    const route = { parentTree: ["", { children: below }] } as unknown as ContextType<typeof LayoutRouterContext>;
+    return renderToStaticMarkup(createElement(LayoutRouterContext.Provider, { value: route }, createElement(NotOnHome, null, "header")));
+  };
+
+  it("is left out of the home page and shown on every other", () => {
+    expect(at()).toBe("");
+    for (const address of [["seasons"], ["recaps", "2026-11-15"], ["profiles", "ana"], ["/_not-found"]]) expect(at(...address)).toBe("header");
   });
 });
 

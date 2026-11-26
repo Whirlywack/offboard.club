@@ -34,7 +34,6 @@
   --raised: #dcdbd7;
   --sunken: #c4c3bf;
   --accent: var(--ink);
-  --on-accent: var(--ground);
   --image-outline: rgb(20 19 16 / 0.1);
   --shadow-raised: 0 0 0 1px var(--line);
   --radius-sm: 0;

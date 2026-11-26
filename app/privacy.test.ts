@@ -340,6 +340,23 @@ describe("the welcome step", () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["has agreed but not connected Lichess", { lichessId: null, lichessUsername: null }],
+    ["is a Member", {}],
+  ])("sends someone who %s home, as there is nothing left to agree to", async (_, details) => {
+    addPerson("agreed", details);
+    signedIn = "agreed";
+    await expect(welcomeStep()).rejects.toThrow(/^redirect \/$/);
+  });
+
+  it("will not send the form until both boxes are ticked, the browser checking before the site does", async () => {
+    const boxes = [...(await welcomeStep()).matchAll(/<input type="checkbox"[^>]*>/g)].map(([box]) => box);
+    expect(boxes).toEqual([
+      '<input type="checkbox" required="" name="publicDisplay" value="yes"/>',
+      '<input type="checkbox" required="" name="houseRules" value="yes"/>',
+    ]);
+  });
+
   it("says names and Companies are public everywhere they are, as a condition of membership, and how to leave", async () => {
     const html = await welcomeStep();
     expect(html).toContain("<p>You&#x27;ll appear as Person newcomer. Only signed-in Members see your photo and Profile, and your email is never shown.</p>");

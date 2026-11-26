@@ -12,14 +12,16 @@ import { mustConnectLichess } from "@/lib/members";
 export const metadata: Metadata = { title: "Delete your account" };
 
 // The confirmation step before someone part-way through signing up deletes their account, reached from either welcome
-// step: the same deletion and the same choice as a Member's (app/profile/leave), saying only what is true for someone
-// with no Profile, results, Games or Lichess account. Nothing is deleted until its button is pressed.
+// step: the same deletion and the same choice as a Member's (app/profile/leave), in the same layout, saying only what is
+// true for someone with no Profile, results, Games or Lichess account. Nothing is deleted until its button is pressed.
 export default function DeleteAccountPage() {
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
-        <h1>Delete your account</h1>
-        <p className={ui.lede}>This can&apos;t be undone.</p>
+    <main id="main" className={styles.page}>
+      <div className={styles.head}>
+        <h1 className={`${styles.title} ${ui.display}`}>
+          <em>Delete</em> your account
+        </h1>
+        <p className={styles.line}>This can&apos;t be undone.</p>
       </div>
       <Suspense>
         <Confirm />
@@ -36,7 +38,7 @@ async function Confirm() {
   const agreed = !mustWelcome(session.user);
   if (agreed && !mustConnectLichess(session.user)) redirect("/profile/leave");
   return (
-    <form action={deleteSignUp} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
+    <form action={deleteSignUp} className={`${styles.body} ${styles.confirm}`}>
       <p>Your name, photo, email address and anything you&apos;ve agreed to will be deleted.</p>
       <LeaveActions keep={agreed ? "/welcome/lichess" : "/welcome"} />
     </form>

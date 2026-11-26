@@ -197,6 +197,8 @@ describe("a Season's Leaderboard", () => {
     expect(text(html)).toContain("Season 2 starts on Sunday, 31 January 2027.");
     expect(text(html)).toContain("It fills in after the first Matchday.");
     expect(html).not.toContain("<table");
+    // Its six Matchdays are still to come, not gone by unplayed.
+    expect(html).not.toContain("Not played");
   });
 
   it("is not found, without reading the database, for an address that cannot be a Season's", async () => {

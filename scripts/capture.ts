@@ -157,6 +157,10 @@ async function image(browser: Browser, origin: string, cookie: Cookie | undefine
       if (step.waitFor) await page.locator(step.waitFor).first().waitFor({ timeout: 30_000 });
       await settle(page);
     }
+    // An image further down waits for the visitor to scroll near it (loading="lazy"), and a picture of the whole page
+    // has them all. One that fails to load is complete too.
+    await page.evaluate(() => document.querySelectorAll("img").forEach((img) => (img.loading = "eager")));
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete), null, { timeout: 30_000 });
     // Next.js's development badge is not part of the site.
     const path = join(OUT, `${state.name}-${size}.png`);
     await page.screenshot({ path, fullPage: true, animations: "disabled", style: "nextjs-portal { display: none !important; }" });

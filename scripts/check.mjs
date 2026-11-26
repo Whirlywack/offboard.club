@@ -1,6 +1,6 @@
 // Everything a branch must pass before it is handed over, in one run, as CI (.github/workflows/ci.yml) runs it and a
 // little more: no merged migration edited, every migration applied to an empty database, lint, typecheck, every test
-// including the real-Postgres suites, the build, and the three seeds with the settings CI gives them. It fails if any
+// including the real-Postgres suites, the build, and the four seeds with the settings CI gives them. It fails if any
 // test was skipped or a test file is one vitest never runs (*.test.tsx).
 //
 //   pnpm check  Prints each step as it ends, the output of a step that failed, and at the end the tallies a report needs,
@@ -272,7 +272,7 @@ export const tail = (log, lines = 60) =>
 const seconds = (ms) => (ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`);
 
 // CI's settings for the seeds (the step "Seed each local scenario into a second database"), its database aside.
-export const SCENARIOS = ["club", "season-over", "empty"];
+export const SCENARIOS = ["club", "season-over", "empty", "scheduled"];
 export const seedSettings = () => ({
   BETTER_AUTH_URL: "http://localhost:3100",
   LICHESS_TEAM_ID: "pretend-team",

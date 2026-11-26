@@ -86,4 +86,4 @@ jobs:
           psql postgres://postgres:postgres@localhost:5432/postgres -c "create database seeded" \
             -c "comment on database seeded is 'offboard: a throwaway local database made by pnpm db:start'"
           pnpm migrate
-          for scenario in club season-over empty; do pnpm seed "$scenario"; done
+          for scenario in club season-over empty scheduled; do pnpm seed "$scenario"; done

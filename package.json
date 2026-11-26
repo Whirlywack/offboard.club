@@ -10,6 +10,7 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "check": "node scripts/check.mjs",
+    "capture": "tsx scripts/capture.ts",
     "guards": "node scripts/guards.mjs",
     "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts",
@@ -44,6 +45,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "playwright-core": "1.65.1",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.1"

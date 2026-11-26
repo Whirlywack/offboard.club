@@ -79,7 +79,9 @@ export function createOnce(path, text) {
   }
 }
 
-const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+// Not new URL("..", import.meta.url), which Turbopack reads as a file to bundle: the switch between people in the local
+// site (app/sign-in-as) imports this file's tests of a database.
+const root = resolve(fileURLToPath(import.meta.url), "../..");
 const ENV_LOCAL = `${root}/.env.local`;
 const HEADER = "# From `pnpm db:start`: a throwaway database on this machine, and every other value pretend.";
 const USAGE =

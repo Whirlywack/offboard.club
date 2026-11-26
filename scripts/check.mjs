@@ -196,6 +196,14 @@ export function run(command, args, { cwd, env = {}, log, limit = 20 * 60_000 }) 
   });
 }
 
+// `command` run as run() runs it, but left running: `ended` resolves as run()'s promise does, and `stop()` stops it and
+// everything it started, then resolves to `ended`. pnpm capture (scripts/capture.ts) runs the local site so.
+export function start(command, args, options) {
+  const ended = run(command, args, options);
+  const child = [...children].at(-1); // added by run() before it returned
+  return { ended, stop: () => (stopGroup(child), ended) };
+}
+
 // A fresh, empty, migrated database from `pnpm db:start --dir <folder>/db-<name>`, run in the copy: its folder, and its
 // address, null if it could not be started; `running` says whether the server came up all the same, as when a migration
 // does not apply. db:start finds free ports itself, and others if another start takes them first. The .env.local

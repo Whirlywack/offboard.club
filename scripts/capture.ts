@@ -20,7 +20,7 @@
 // The phone is 390 x 844 at a device scale of 3, mobile and touch, as an iPhone of that width renders a page; the
 // desktop 1280 x 800. Every request but the local site's is answered with a blank page, so nothing real is reached. The
 // browser is Google Chrome, which must be installed: Playwright's library is a dev dependency and downloads no browser.
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "playwright-core";
@@ -97,34 +97,43 @@ function streamed() {
   return !document.querySelector('template[id^="B:"]');
 }
 
-// The page once every part React streams has arrived, the text has stopped changing, a refresh has taken it where it
-// goes, the fonts have loaded and the animations have finished.
+// The page once every part React streams has arrived, the text has stopped changing, the fonts have loaded and the
+// animations have finished, and it has not loaded again meanwhile: a refresh takes a visitor home from a page for
+// Members, and `next dev` can reload a page under the browser.
 async function settle(page: Page) {
-  await page.waitForLoadState("load");
-  await page.waitForFunction(streamed, null, { timeout: 60_000 });
-  let last = "";
-  for (let i = 0; i < 25; i++) {
-    const now = await page
-      .evaluate(() => `${document.body.innerText.length}:${document.documentElement.scrollHeight}:${location.href}`)
-      .catch(() => "navigating");
-    if (now === last) break;
-    last = now;
-    await page.waitForTimeout(400);
+  // A mark on the window that a page loaded again does not have.
+  const marked = () => page.evaluate(() => (window as unknown as Record<string, unknown>).captureMark === true).catch(() => false);
+  for (let tries = 0; tries < 5; tries++) {
+    await page.waitForLoadState("load");
+    await page.waitForFunction(streamed, null, { timeout: 60_000 });
+    // A redirect after the page has started is a refresh a second later (<meta http-equiv="refresh">): it is followed.
+    await page.waitForFunction(() => !document.querySelector('meta[http-equiv="refresh"]'), null, { timeout: 30_000 });
+    await page.evaluate(() => ((window as unknown as Record<string, unknown>).captureMark = true)).catch(() => {});
+    let last = "";
+    for (let i = 0; i < 25; i++) {
+      const now = await page
+        .evaluate(() => `${document.body.innerText.length}:${document.documentElement.scrollHeight}:${location.href}`)
+        .catch(() => "loading");
+      if (now === last) break;
+      last = now;
+      await page.waitForTimeout(400);
+    }
+    // Each fails only if the page loads again under it, which the loop then waits for.
+    await page.evaluate(() => document.fonts.ready.then(() => true)).catch(() => {});
+    await page
+      .evaluate(() =>
+        Promise.race([Promise.all(document.getAnimations().map((a) => a.finished.catch(() => null))), new Promise((done) => setTimeout(done, 3000))]),
+      )
+      .catch(() => {});
+    await page.waitForTimeout(300);
+    if (await marked()) return;
   }
-  await page.waitForFunction(streamed, null, { timeout: 60_000 }); // again, after a refresh
-  await page.evaluate(() => document.fonts.ready.then(() => true));
-  await page.evaluate(() =>
-    Promise.race([Promise.all(document.getAnimations().map((a) => a.finished.catch(() => null))), new Promise((done) => setTimeout(done, 3000))]),
-  );
+  throw new Error("the page kept loading again");
 }
 
-// Both images of one state, one after the other: the first may wait for `next dev` to compile the page, and a page it
-// has just compiled can reload itself under the browser, so each is tried a second time.
+// Both images of one state, one after the other: the first may wait for `next dev` to compile the page.
 async function photograph(browser: Browser, site: string, cookies: Record<string, Cookie>, state: State) {
-  for (const size of Object.keys(SIZES)) {
-    const take = () => image(browser, new URL(site).origin, cookies[state.as ?? ""], state, size);
-    await take().catch(take);
-  }
+  for (const size of Object.keys(SIZES)) await image(browser, new URL(site).origin, cookies[state.as ?? ""], state, size);
 }
 
 async function image(browser: Browser, origin: string, cookie: Cookie | undefined, state: State, size: string) {
@@ -194,6 +203,9 @@ async function capture(states: State[]): Promise<number> {
       const wanted = clockFor(state, new Date());
       if (site === undefined || wanted !== clock) {
         await site?.stop();
+        // Without what `next dev` compiled under the other clock: started on a folder with many pages compiled under the
+        // real clock, the site with a moved one was seen to reload the home page again and again.
+        rmSync(join(checkout, ".next/dev"), { recursive: true, force: true });
         const moved = wanted ? { NODE_OPTIONS: `--require ${join(checkout, "scripts/capture-clock.cjs")}`, CAPTURE_NOW: wanted } : {};
         site = start("pnpm", ["dev:local", "--dir", dir], { cwd: checkout, log: join(folder, "site.log"), env: { ...recorded, ...moved }, limit: 3 * 3_600_000 });
         clock = wanted;

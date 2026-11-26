@@ -50,3 +50,6 @@ next-env.d.ts
 
 # the throwaway local database (scripts/local-db.mjs)
 /.local-db*/
+
+# the images and the page pnpm capture writes (scripts/capture.ts)
+/.capture/

@@ -6,7 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { join, resolve } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { shortFolder } from "../lib/fixtures/short-folder";
-import { run, SCENARIOS, seedSettings, testTally } from "./check.mjs";
+import { run, SCENARIOS, seedSettings, start, testTally } from "./check.mjs";
 
 // A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use,
 // removed when the test that made it ends (`finished`, its onTestFinished), passed or failed.
@@ -296,6 +296,17 @@ describe("a step", () => {
     const code = await run("/bin/sh", ["-c", `sleep 30 & echo $! > ${pid}; wait`], { cwd: root, log: join(root, "log"), limit: 500 });
     expect(code).toBeNull();
     expect(await until(() => !alive(Number(readFileSync(pid, "utf8"))), 5_000)).toBe(true);
+  });
+
+  it("left running is stopped when asked, with everything it started", async () => {
+    const root = checkout();
+    const pid = join(root, "pid");
+    const running = start("/bin/sh", ["-c", `sleep 30 & echo $! > ${pid}; wait`], { cwd: root, log: join(root, "log") });
+    expect(await until(() => existsSync(pid) && readFileSync(pid, "utf8").trim() !== "", 5_000)).toBe(true);
+    const sleeping = Number(readFileSync(pid, "utf8"));
+    expect(alive(sleeping)).toBe(true);
+    expect(await running.stop()).toBe(1);
+    expect(await until(() => !alive(sleeping), 5_000)).toBe(true);
   });
 });
 

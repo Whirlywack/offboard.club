@@ -131,7 +131,7 @@
           "as": "ana",
           "path": "/",
           "minutesIntoLatestMatchday": 40,
-          "note": "The seed cannot put 'now' inside a Matchday, so the seed and the site were run with the clock moved (a preloaded Date shim, no code changed). Card reads 'Matchday under way' with the join link; the champion line shows."
+          "note": "No seed can put now inside a Matchday, so the local site is run with its clock moved to 20:40 on the latest Sunday (scripts/capture-clock.cjs). Card reads 'Matchday under way' with the join link; the champion line shows."
         },
         {
           "name": "home-visitor-champion-named",

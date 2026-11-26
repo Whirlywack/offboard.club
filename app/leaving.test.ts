@@ -17,6 +17,7 @@ import { deleteSignUp, leaveClub } from "./actions";
 import AllTimePage from "./all-time/page";
 import LeftPage from "./left/page";
 import { teamRemovalDone } from "./organiser/actions";
+import styles from "./organiser/organiser.module.css";
 import OrganiserPage from "./organiser/page";
 import LeavePage, { maxDuration } from "./profile/leave/page";
 import EditProfile from "./profile/page";
@@ -465,6 +466,8 @@ describe("the Organiser's list of people to remove from the Lichess team by hand
     jobFailures.set("1", { id: 1, job: "create-matchdays", at: NOW, matchdayDate: null, problem: "The Matchday could not be created: oops." });
     const html = await organiserPage();
     expect(listed(html)).toEqual(["lichess-ana", "lichess-ben"]);
+    // A list of things to do by hand, so its section is marked as needing the Organiser.
+    expect(html).toContain(`<section aria-labelledby="removals" class="${styles.section} ${styles.byHand}">`);
     expect(text(html)).toContain("Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions.");
     expect(html).toContain(`href="https://lichess.org/team/${TEAM}/kick"`);
     expect(html.match(/<section aria-labelledby="jobs".*?<\/section>/)![0]).not.toContain("lichess-ana");

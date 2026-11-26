@@ -31,6 +31,7 @@ import { createUpcomingMatchday } from "@/lib/create-matchdays";
 import { LICHESS_DEADLINE_MS } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { changeSunday, removeFromClub, setStart, tournamentCancelled } from "./organiser/actions";
+import styles from "./organiser/organiser.module.css";
 import OrganiserPage from "./organiser/page";
 import RemovePage, { generateMetadata as confirmTitle } from "./organiser/remove/page";
 
@@ -131,6 +132,11 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;"
 const section = (html: string, id: string) => html.match(new RegExp(`<section aria-labelledby="${id}"[^>]*>.*?</section>`))?.[0] ?? null;
 // The schedule's Sundays as listed, each as its text and its buttons.
 const sundays = (html: string) => [...section(html, "schedule")!.matchAll(/<li[^>]*>(.*?)<\/li>/g)].map(([, row]) => text(row));
+// The Seasons the schedule offers to set the start of, each as its value and label, the first ticked.
+const seasonChoices = (html: string) =>
+  [...section(html, "schedule")!.matchAll(/<input type="radio" name="season"( checked="")? value="(\d+)"\/>(.*?)<\/label>/g)].map(
+    ([, ticked, n, label]) => [n, label, ticked !== undefined],
+  );
 
 const form = (fields: Record<string, string>) => {
   const data = new FormData();
@@ -245,7 +251,7 @@ describe("removing a Member", () => {
 
   it("asks for confirmation first, saying who and what it does, and removes nobody", async () => {
     const html = await confirmPage({ member: "ana" });
-    expect(html).toContain("<h1>Remove a Member</h1>");
+    expect(html).toContain("<em>Remove</em> a Member</h1>");
     expect(text(html)).toContain("This can't be undone. Remove Ana Petraitė , Pretend Robotics, Ana-Plays on Lichess?");
     expect(text(html)).toContain("They disappear from every Leaderboard and Recap, including past ones.");
     expect(text(html)).toContain("The site asks Lichess to remove their account from the Club's team.");
@@ -365,10 +371,11 @@ describe("the schedule on the Organiser page", () => {
   });
 
   it("offers the next two Seasons that have not started, with when each starts now", async () => {
-    const part = section(await openPage(), "schedule")!;
-    expect([...part.matchAll(/<option value="(\d+)">(.*?)<\/option>/g)].map(([, n, label]) => [n, label])).toEqual([
-      ["1", "Season 1, now from Sunday 29 November"],
-      ["2", "Season 2, now from Sunday 17 January"],
+    const html = await openPage();
+    const part = section(html, "schedule")!;
+    expect(seasonChoices(html)).toEqual([
+      ["1", "Season 1, now from Sunday 29 November", true],
+      ["2", "Season 2, now from Sunday 17 January", false],
     ]);
     expect(part).toContain('<input id="start" type="date" required="" min="2026-11-29" step="7" name="start"/>');
     expect(text(part)).toContain("Season start Later Seasons whose start isn't set move with it.");
@@ -378,11 +385,9 @@ describe("the schedule on the Organiser page", () => {
   it("offers Season 1 alone, and nothing to skip, while it is not scheduled", async () => {
     seasons.clear();
     matchdays.clear();
-    const part = section(await openPage(), "schedule")!;
-    expect(text(part)).toContain("No Matchday in the next 8 weeks.");
-    expect([...part.matchAll(/<option value="(\d+)">(.*?)<\/option>/g)].map(([, n, label]) => [n, label])).toEqual([
-      ["1", "Season 1, not scheduled yet"],
-    ]);
+    const html = await openPage();
+    expect(text(section(html, "schedule")!)).toContain("No Matchday in the next 8 weeks.");
+    expect(seasonChoices(html)).toEqual([["1", "Season 1, not scheduled yet", true]]);
   });
 
   it("while a change is being sent, holds every button and says so", async () => {
@@ -501,6 +506,8 @@ describe("skipping a Sunday", () => {
     // Above the schedule, where the sentence says it is.
     expect(html.indexOf('aria-labelledby="cancellations"')).toBeLessThan(html.indexOf('aria-labelledby="schedule"'));
     expect(part).toContain("<h2 id=\"cancellations\">Cancel on Lichess</h2>");
+    // A list of things to do by hand, so its section is marked as needing the Organiser.
+    expect(part).toMatch(new RegExp(`^<section aria-labelledby="cancellations" class="${styles.section} ${styles.byHand}">`));
     expect(text(part)).toContain(
       "The site couldn't cancel these Sundays' tournaments on Lichess. Cancel each there, signed in as the account that created it, then press Done.",
     );
@@ -679,7 +686,7 @@ describe("setting a Season's start", () => {
     expect(lichess.calls).toEqual([]);
     const page = await openPage();
     expect(sundays(page).at(-1)).toBe("Sunday 17 January No Matchday");
-    expect(section(page, "schedule")).toContain('<option value="2">Season 2, now from Sunday 24 January</option>');
+    expect(seasonChoices(page)).toContainEqual(["2", "Season 2, now from Sunday 24 January", false]);
   });
 
   it("cancels on Lichess the tournament of a Matchday it moves", async () => {

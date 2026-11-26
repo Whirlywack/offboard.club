@@ -246,3 +246,29 @@ How a photograph meets the page is most of this look.
 ## Adding to this file
 
 When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
+
+## The Organiser's pages
+
+The Organiser page and Remove a Member (`app/organiser/`, styled by `app/organiser/organiser.module.css`) are a control panel read by one person: the same world with nothing for show. No photograph, as no picture says what a list of jobs says; no cards; the display serif for the page's heading, each section's heading and the next Matchday's date, the grotesque for everything else.
+
+### A working section
+- **Style:** a 1px ink rule across the page, then the section: 28px above and 44px below on a phone, 40px and 64px on a desktop. Its heading (`h2`) in the display serif, 500, at 34px on a phone and `min(3.3vw, 50px)` on a desktop.
+- **Desktop:** two columns, 4 to 8, 4vw apart: the heading on the left, what the section holds on the right. The page's opening takes the same columns: the heading and the line under it left, the next Matchday right, as on the Season Leaderboard's mock-up.
+- **A part** inside a section (a scheduled job, a Sunday's tournament to cancel, a form) sits under a 1px `--line` rule, 24px below it. Its heading (`h3`) is the grotesque, 600, 17px. On a desktop the heading stands to the left of the rest, 1 to 3.
+- **Facts:** a label in `ui.caps`, muted, and its value. On a phone each fact is a row between `--line` rules, the labels in a column at least 5.5rem wide; on a desktop the facts stand side by side, each label over its value, each at least 8rem wide so that they line up from part to part, onto a second line where there is no room, and no rules.
+- **Rows:** a list of Sundays or Matchdays is a row each between `--line` rules; a Sunday's button stays at the end of its row, the day over what it holds on a phone.
+
+### State, at a glance
+Three states, told by form and never by colour alone:
+
+- **Fine:** unmarked.
+- **Needs you:** the square (`--ink`, 9px) before the words, which are ink at 500. A message to act on (`role="alert"`, or not when it is how things stand, such as "Not connected"), and a row of a list that wants a hand.
+- **Failed:** the same square and words turned over, on a black band: paper on `--black`, 12px above and below, the square and the words in line with the others' (the band reaches the phone's edges and, on a desktop, 16px to the left). A fact that is wrong where it stands, such as a failed outcome or a last run too long ago, is turned over in place (`.flag`): paper on black, 600.
+- **A section's heading** takes the mark of the worst thing in it: the square before it when anything needs the Organiser, and the heading itself turned over, on black, when anything failed. A list of things to do by hand needs the Organiser by being there at all (`.byHand`).
+- Contrast: ink on the ground 11.9:1, paper on the black 16.4:1.
+
+### Forms
+- A field's label above it, the grotesque at 600; the field as `globals.css` draws it.
+- Two or three choices are radio buttons, a 44px row each, not a list to open: a closed list cuts long choices off on a phone.
+- A form's own action is a primary button, the full width of a phone. The quieter actions beside a row (Skip, Undo, Done) are `ui.quiet`.
+- **Removing someone:** keeping them first, the ink block; removing outlined in `--error`, never filled, 54px tall like the other. Stacked at full width on a phone.

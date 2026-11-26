@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { ExternalLink } from "../external-link";
-import profile from "../profile/profile.module.css";
+import { RuledLinks } from "../ruled-links";
 import ui from "../ui.module.css";
 import { connectOrganiserLichess, tournamentCancelled } from "./actions";
 import { ConnectButton } from "./connect-button";
@@ -69,8 +68,9 @@ const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-const Alert = ({ children }: { children: ReactNode }) => (
-  <p role="alert" className={ui.alert}>
+// What needs the Organiser, or with `failed`, what went wrong: marked so (organiser.module.css), and so is its section.
+const Alert = ({ children, failed = false }: { children: ReactNode; failed?: boolean }) => (
+  <p role="alert" className={failed ? styles.failed : styles.needs}>
     {children}
   </p>
 );
@@ -105,33 +105,37 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
   const usable = permission !== null && permission.readable && permission.expiresAt > now;
   const blockers = Number(!usable) + Number(secretProblem !== null);
   return (
-    <main id="main" className={`${ui.page} ${ui.arrive}`}>
-      <div className={ui.intro}>
-        <p className={ui.eyebrow}>Only you can see this page</p>
-        <h1>Organiser</h1>
+    <main id="main" className={styles.page}>
+      <div className={styles.top}>
+        <div>
+          <h1 className={ui.display}>
+            <em>Organiser</em>
+          </h1>
+          <p className={styles.lede}>Only you can see this page</p>
+        </div>
+
+        {removal && (
+          <p role={removal.problem ? "alert" : "status"} className={removal.problem ? styles.needs : styles.notice}>
+            {removal.text}
+          </p>
+        )}
+
+        <NextMatchday next={next} tournament={tournament} blockers={blockers} now={now} />
       </div>
-
-      {removal && (
-        <p role={removal.problem ? "alert" : "status"} className={removal.problem ? ui.alert : styles.notice}>
-          {removal.text}
-        </p>
-      )}
-
-      <NextMatchday next={next} tournament={tournament} blockers={blockers} now={now} />
 
       <section aria-labelledby="lichess" className={styles.section}>
         <h2 id="lichess">Lichess permission</h2>
         {message && (
-          <p role={message.problem ? "alert" : "status"} className={message.problem ? ui.alert : styles.notice}>
+          <p role={message.problem ? "alert" : "status"} className={message.problem ? styles.needs : styles.notice}>
             {message.text}
           </p>
         )}
         <Permission permission={permission} now={now} />
-        <p className={`${ui.small} ${ui.muted}`}>
+        <p className={styles.detail}>
           Before you connect, sign in to Lichess as a leader of the Club&apos;s team with its &ldquo;Tournaments&rdquo;
           and &ldquo;Remove&rdquo; permissions.
         </p>
-        <form action={connectOrganiserLichess} className={ui.actions}>
+        <form action={connectOrganiserLichess} className={`${ui.actions} ${styles.fill}`}>
           <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
         </form>
       </section>
@@ -185,8 +189,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         <LastFailedRequest failure={failedRequest} />
       </section>
 
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/">Home</Link>
+      <nav aria-label="More" className={styles.more}>
+        <RuledLinks links={[["/", "Home"]]} />
       </nav>
     </main>
   );
@@ -197,9 +201,9 @@ type Creation = { tournament: string | null; blockers: number; now: Date };
 // Whether the next Matchday is on Lichess yet, and if not, when it will be, or what stops it being created.
 function NextMatchday({ next, ...creation }: Creation & { next: Matchday | null }) {
   return (
-    <section aria-labelledby="next" className={`${ui.panel} ${styles.status}`}>
-      <h2 id="next" className={`${ui.eyebrow} ${styles.label}`}>
-        <span className={ui.marker} aria-hidden="true" /> Next Matchday
+    <section aria-labelledby="next" className={styles.next}>
+      <h2 id="next" className={ui.caps}>
+        Next Matchday
       </h2>
       {next ? (
         <>
@@ -211,7 +215,7 @@ function NextMatchday({ next, ...creation }: Creation & { next: Matchday | null 
       ) : (
         <>
           <p className={styles.value}>Not scheduled yet</p>
-          <p className={styles.note}>Season 1 is scheduled once sixteen Members have joined.</p>
+          <p className={styles.detail}>Season 1 is scheduled once sixteen Members have joined.</p>
         </>
       )}
     </section>
@@ -245,19 +249,19 @@ function OnLichess({ start, tournament, blockers, now }: Creation & { start: Dat
   }
   if (now < due)
     return (
-      <p className={styles.note}>
+      <p className={styles.detail}>
         It&apos;s due on Lichess on <Time at={due} as={WEEKDAY} />.
       </p>
     );
   // A run every hour: give the first two a chance before calling it late.
   if (now.getTime() - due.getTime() <= OVERDUE_MS)
-    return <p className={styles.note}>It&apos;s due on Lichess now. The next hourly run should create it.</p>;
-  return <Alert>It should be on Lichess by now. See Creating Matchdays below.</Alert>;
+    return <p className={styles.detail}>It&apos;s due on Lichess now. The next hourly run should create it.</p>;
+  return <Alert failed>It should be on Lichess by now. See Creating Matchdays below.</Alert>;
 }
 
 // An expired permission is dead on Lichess too, so there is nothing left to revoke, even if it cannot be read.
 function Permission({ permission, now }: { permission: OrganiserPermission | null; now: Date }) {
-  if (permission === null) return <p>Not connected, so Matchdays aren&apos;t being created.</p>;
+  if (permission === null) return <p className={styles.needs}>Not connected, so Matchdays aren&apos;t being created.</p>;
   const expired = permission.expiresAt <= now;
   return (
     <>
@@ -284,7 +288,7 @@ function Permission({ permission, now }: { permission: OrganiserPermission | nul
 // The stored permission cannot be opened with LICHESS_TOKEN_KEY: still valid on Lichess, and only its account can end it.
 function Unreadable({ lichessId }: { lichessId: string }) {
   return (
-    <div role="alert" className={`${ui.alert} ${styles.steps}`}>
+    <div role="alert" className={`${styles.needs} ${styles.steps}`}>
       <p>
         This permission can&apos;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&apos;t being created. To
         end it and connect again:
@@ -310,8 +314,9 @@ type Status = { title: string; neverRun: string; run: LastRun | null; now: Date;
 
 // A scheduled job's last run, and plainly when it has never run or has not run for over two hours, or a day and two
 // hours for one that runs nightly, and why it does nothing when it is switched off (`off`). The outcome comes first, in
-// the same place for every job, so that a glance down the box answers "is anything wrong?": a failed outcome and a late
-// last run are flagged where they stand, and explained in an alert below. A run that went well keeps its sentence quiet.
+// the same place for every job, so that a glance down the section answers "is anything wrong?": a failed outcome and a
+// late last run are flagged where they stand, and explained in an alert below, marked as failed. A run that went well
+// keeps its sentence quiet.
 function JobStatus({ title, neverRun, run, now, daily = false, off = null }: Status) {
   const late = run !== null && now.getTime() - run.at.getTime() > (daily ? DAY_MS : 0) + OVERDUE_MS;
   return (
@@ -322,20 +327,20 @@ function JobStatus({ title, neverRun, run, now, daily = false, off = null }: Sta
         <>
           <dl className={styles.facts}>
             <Fact label="Outcome">
-              {run.outcome === "failed" ? <span className={styles.flagged}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
+              {run.outcome === "failed" ? <span className={styles.flag}>{OUTCOMES.failed}</span> : OUTCOMES[run.outcome]}
             </Fact>
             <Fact label="Last run">
-              <Time at={run.at} as={DATE_TIME} className={late ? styles.flagged : undefined} />
+              <Time at={run.at} as={DATE_TIME} className={late ? styles.flag : undefined} />
             </Fact>
           </dl>
           {run.outcome === "failed" ? (
-            <Alert>{run.detail}</Alert>
+            <Alert failed>{run.detail}</Alert>
           ) : (
             // Said once: a run that did nothing because the job is off says what the alert above says.
             run.detail !== off && <p className={styles.detail}>{run.detail}</p>
           )}
           {late && (
-            <Alert>
+            <Alert failed>
               It hasn&apos;t run for over {daily ? "a day" : "two hours"}. Check that CRON_SECRET is set on Vercel and that
               cron jobs are enabled.
             </Alert>
@@ -349,7 +354,8 @@ function JobStatus({ title, neverRun, run, now, daily = false, off = null }: Sta
 }
 
 // The Matchdays of the last eight Sundays played on Lichess whose results are not in (lib/collect-results.ts), so that
-// one Collecting results has stopped looking after stays in sight. Nothing when there are none.
+// one Collecting results has stopped looking after stays in sight, marked as needing the Organiser. Nothing when there
+// are none.
 function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date }) {
   if (matchdays.length === 0) return null;
   const latest = latestSunday(now);
@@ -358,7 +364,7 @@ function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date 
       <h3>Results not in</h3>
       <ul className={styles.list}>
         {matchdays.map(({ date, lichessTournamentId }) => (
-          <li key={date}>
+          <li key={date} className={date === latest ? undefined : styles.needs}>
             <Time at={matchdayStart(date)} as={WEEKDAY} className={styles.when} />{" "}
             {date === latest ? (
               <>
@@ -436,11 +442,11 @@ function LastFailedRequest({ failure }: { failure: FailedRequest | null }) {
 
 // The tournaments the site couldn't cancel on Lichess for Sundays that are no longer Matchdays (lib/reschedule.ts), by
 // Sunday, each with why, the page on Lichess that cancels it, and a button for once the Organiser has, which forgets
-// it. Nothing at all when there are none.
+// it, the whole section marked as needing the Organiser. Nothing at all when there are none.
 function TournamentCancellations({ cancellations }: { cancellations: Cancellation[] }) {
   if (cancellations.length === 0) return null;
   return (
-    <section aria-labelledby="cancellations" className={styles.section}>
+    <section aria-labelledby="cancellations" className={`${styles.section} ${styles.byHand}`}>
       <h2 id="cancellations">Cancel on Lichess</h2>
       <p>
         The site couldn&apos;t cancel these Sundays&apos; tournaments on Lichess. Cancel each there, signed in as the
@@ -453,7 +459,7 @@ function TournamentCancellations({ cancellations }: { cancellations: Cancellatio
               <Time at={matchdayStart(date)} as={WEEKDAY} />
             </h3>
             <p className={styles.detail}>{problem}</p>
-            <p>
+            <p className={styles.link}>
               <ExternalLink href={lichessSwissEditUrl(lichessTournamentId)}>Cancel it on Lichess</ExternalLink>
             </p>
             <form action={tournamentCancelled} className={ui.actions}>
@@ -522,7 +528,7 @@ function RemoveMember({ members }: { members: Removable[] }) {
         <p className={styles.detail}>There&apos;s nobody to remove.</p>
       ) : (
         <form action="/organiser/remove" className={styles.part}>
-          <div className={profile.field}>
+          <div className={styles.field}>
             <label htmlFor="remove-member">Member</label>
             <select id="remove-member" name="member" required defaultValue="">
               <option value="" disabled>
@@ -535,7 +541,7 @@ function RemoveMember({ members }: { members: Removable[] }) {
               ))}
             </select>
           </div>
-          <div className={ui.actions}>
+          <div className={`${ui.actions} ${styles.fill}`}>
             <button>Continue</button>
           </div>
         </form>

@@ -6,12 +6,13 @@ export type Queryable = Pick<ClientBase, "query">;
 
 type Connected = (error: Error | undefined, client: PoolClient | undefined, release: (error?: Error | boolean) => void) => void;
 
-// What the pool throws, when it cannot connect or a statement fails, carries this mark, so that a failed request is said
-// to be the database's only when its error came from here (lib/request-failures.ts, #60 review): a code such as
-// ECONNRESET is any socket's, a visitor's who drops an upload included. Symbol.for, as Next.js gives the hook a copy of
-// this module of its own, and a key no request can set, as nothing parsed from one makes a symbol.
+// What the pool throws carries this mark, saying whether it could not connect ("connect") or a statement failed
+// ("statement"), so that a failed request is said to be the database's only when its error came from here
+// (lib/request-failures.ts, #60 review): a code such as ECONNRESET is any socket's, a visitor's who drops an upload
+// included. Symbol.for, as Next.js gives the hook a copy of this module of its own, and a key no request can set, as
+// nothing parsed from one makes a symbol.
 const FROM_DATABASE = Symbol.for("offboard.from-database");
-const marked = (error: Error) => Object.defineProperty(error, FROM_DATABASE, { value: true });
+const marked = (error: Error, stage: "connect" | "statement") => Object.defineProperty(error, FROM_DATABASE, { value: stage });
 
 // Marks what each statement on `client` fails with, promised or called back, as pg-pool's own query calls back. Once a
 // client: the pool hands the same ones out again.
@@ -22,9 +23,10 @@ function watch(client: PoolClient) {
   const query = client.query.bind(client) as (...args: unknown[]) => unknown;
   client.query = ((...args: unknown[]) => {
     const callback = args.at(-1);
-    if (typeof callback === "function") args[args.length - 1] = (error: Error | null, ...rest: unknown[]) => callback(error && marked(error), ...rest);
+    if (typeof callback === "function")
+      args[args.length - 1] = (error: Error | null, ...rest: unknown[]) => callback(error && marked(error, "statement"), ...rest);
     const answer = query(...args);
-    return answer instanceof Promise ? answer.catch((error: Error) => Promise.reject(marked(error))) : answer;
+    return answer instanceof Promise ? answer.catch((error: Error) => Promise.reject(marked(error, "statement"))) : answer;
   }) as PoolClient["query"];
   return client;
 }
@@ -45,7 +47,7 @@ class Pool extends pg.Pool {
         console.error(`Connecting to the database failed after ${Date.now() - started} ms, trying once more:`, error.message);
         return super.connect();
       })
-      .then(watch, (error: Error) => Promise.reject(marked(error)));
+      .then(watch, (error: Error) => Promise.reject(marked(error, "connect")));
     if (!callback) return connected;
     connected.then(
       (client) => callback(undefined, client, client.release),

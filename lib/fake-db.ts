@@ -1097,6 +1097,8 @@ function connection(): Queryable & { release: (error?: Error) => void } {
 
 export const db = { query: vi.fn(run), connect: vi.fn(async () => connection()) };
 
-// `error` marked as lib/db.ts's pool marks what it throws, for a test that makes the database fail by hand, as with
-// db.query.mockRejectedValueOnce: only such an error is the database's to lib/request-failures.ts.
-export const fromDatabase = <T extends object>(error: T): T => Object.defineProperty(error, Symbol.for("offboard.from-database"), { value: true });
+// `error` marked as lib/db.ts's pool marks what it throws, a statement's failure unless `stage` says it could not
+// connect, for a test that makes the database fail by hand, as with db.query.mockRejectedValueOnce: only such an error
+// is the database's to lib/request-failures.ts.
+export const fromDatabase = <T extends object>(error: T, stage: "connect" | "statement" = "statement"): T =>
+  Object.defineProperty(error, Symbol.for("offboard.from-database"), { value: stage });

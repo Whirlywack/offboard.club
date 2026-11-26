@@ -169,6 +169,9 @@ describe("a request that fails on the server", () => {
       [quoting(), "the code threw an error"],
       // Node's, five letters long like Postgres's codes.
       [fromDatabase(Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" })), "the code threw Error"],
+      // A connection the pool could not open, whatever Node's code for it, as when a machine runs out of sockets.
+      [fromDatabase(Object.assign(new Error("connect EINVAL"), { code: "EINVAL" }), "connect"), "the database couldn't be reached"],
+      [fromDatabase(Object.assign(new Error("connect EINVAL"), { code: "EINVAL" })), "the code threw Error"],
       // With a severity, but a code not in SQLSTATE's form.
       [fromDatabase(Object.assign(new pg.DatabaseError("A message", 0, "error"), { severity: "ERROR", code: "ana@pretend.invalid" })), "the code threw an error"],
       [Object.assign(new Error("Lichess said no"), { cause: fetchFailed }), "another site couldn't be reached"],

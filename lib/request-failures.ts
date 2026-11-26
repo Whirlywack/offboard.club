@@ -27,8 +27,9 @@ function shape(routePath: string) {
   return ROUTE.test(route) ? route : "an unknown address";
 }
 
-// The mark lib/db.ts puts on what the site's pool throws, by the same Symbol.for key: an error is the database's only
-// when it has it, as a code such as ECONNRESET is any socket's, a visitor's who drops an upload included (#60 review).
+// The mark lib/db.ts puts on what the site's pool throws, by the same Symbol.for key, saying whether it could not
+// connect or a statement failed: an error is the database's only when it has it, as a code such as ECONNRESET is any
+// socket's, a visitor's who drops an upload included (#60 review).
 const FROM_DATABASE = Symbol.for("offboard.from-database");
 // Node's codes for a connection that was never made or was cut, and pg's words when it gave up on one or lost it.
 const UNREACHABLE_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
@@ -38,16 +39,17 @@ const DATABASE = "the database";
 // Why it failed, in words from a fixed list, looking through the error and what caused it, five deep, as the sign-in
 // library wraps the database's error in its own ("Failed to get session"). A fetch that failed is another site's. Of
 // what the pool threw, a code with a severity is Postgres's own error (SQLSTATE), whose message can quote a value a
-// person sent, and a connection that could not be made or was lost is the database's being out of reach.
+// person sent, and a connection that could not be made, whatever Node's code for it, or was lost in a statement is the
+// database's being out of reach.
 export const reasonOf = (error: unknown) => causeOf(error, 0) ?? thrown(error);
 
 function causeOf(error: unknown, depth: number): string | null {
   if (!(error instanceof Object) || depth === 5) return null;
-  const { message, code, cause } = error as { message?: unknown; code?: unknown; cause?: unknown };
+  const { message, code, cause, [FROM_DATABASE]: stage } = error as { message?: unknown; code?: unknown; cause?: unknown; [FROM_DATABASE]?: unknown };
   if (message === "fetch failed") return "another site couldn't be reached";
-  if (Object.hasOwn(error, FROM_DATABASE)) {
+  if (stage === "connect" || stage === "statement") {
     if ("severity" in error && typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return `${DATABASE} refused it (error ${code})`;
-    if ((typeof code === "string" && UNREACHABLE_CODES.has(code)) || (typeof message === "string" && UNREACHABLE.test(message)))
+    if (stage === "connect" || (typeof code === "string" && UNREACHABLE_CODES.has(code)) || (typeof message === "string" && UNREACHABLE.test(message)))
       return `${DATABASE} couldn't be reached`;
   }
   return causeOf(cause, depth + 1);

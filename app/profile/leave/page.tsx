@@ -17,10 +17,12 @@ export const maxDuration = 60;
 // deleted until its button is pressed.
 export default function LeavePage() {
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
-        <h1>Leave the Club</h1>
-        <p className={ui.lede}>This can&apos;t be undone.</p>
+    <main id="main" className={styles.page}>
+      <div className={styles.head}>
+        <h1 className={`${styles.title} ${ui.display}`}>
+          <em>Leave</em> the Club
+        </h1>
+        <p className={styles.line}>This can&apos;t be undone.</p>
       </div>
       <Suspense>
         <Confirm />
@@ -31,12 +33,12 @@ export default function LeavePage() {
 
 async function Confirm() {
   const person = await requireSignedUp();
-  // What goes, what stays and, for the Organiser, what stops, then the choice: one panel, as the Profile form is. What
-  // stays is all of it: Games (their side empty), everything on Lichess but the team and, only when removing them from
-  // the team fails, their Lichess id on the Organiser's list until the Organiser has removed it (lib/leaving.ts). An
-  // Award won against them keeps its winner and shows nothing of them.
+  // What goes, what stays and, for the Organiser, what stops, then the choice. What stays is all of it: Games (their
+  // side empty), everything on Lichess but the team and, only when removing them from the team fails, their Lichess id
+  // on the Organiser's list until the Organiser has removed it (lib/leaving.ts). An Award won against them keeps its
+  // winner and shows nothing of them.
   return (
-    <form action={leaveClub} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
+    <form action={leaveClub} className={`${styles.body} ${styles.confirm}`}>
       <p>When you delete your account:</p>
       <ul className={styles.consequences}>
         <li>Your name, photo, email address and Profile are deleted.</li>
@@ -46,7 +48,7 @@ async function Confirm() {
       </ul>
       <p>If the site can&apos;t remove you from the team, your Lichess username is kept until the Organiser does.</p>
       {isOrganiser(person) && (
-        <p className={ui.alert}>
+        <p className={styles.warning}>
           You&apos;re the Organiser. Once you leave, Matchdays stop being created and nobody is removed from the Lichess
           team until someone else is made Organiser.
         </p>

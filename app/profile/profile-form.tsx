@@ -40,13 +40,13 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
   });
   const error = (field: Field) =>
     wrong === field && (
-      <p id={`${field}-error`} role="alert" className={ui.alert}>
+      <p id={`${field}-error`} role="alert" className={styles.problem}>
         {state?.problem}
       </p>
     );
 
   return (
-    <form action={action} className={`${styles.form} ${ui.arrive}`}>
+    <form action={action} className={styles.form}>
       {welcome && <input type="hidden" name="next" value="home" />}
 
       <div className={styles.field}>
@@ -95,7 +95,12 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
           are only allowed if this line invites them.
         </p>
         {error("openTo")}
-        <input {...describe("openTo", "openTo-hint")} placeholder="e.g. A coffee, mentoring, hearing about jobs" />
+        {/* Four lines, so all of it can be read back on a phone; a line break is saved as a space (lib/profile.ts) */}
+        <textarea
+          {...describe("openTo", "openTo-hint")}
+          rows={4}
+          placeholder="e.g. A coffee, mentoring, hearing about jobs"
+        />
       </div>
 
       <div className={`${ui.actions} ${styles.formActions}`}>

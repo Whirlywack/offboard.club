@@ -252,7 +252,7 @@ describe("deleting your own account", () => {
     expect(await countSignUps()).toBe(3);
     const left = renderToStaticMarkup(LeftPage());
     // The page reads nothing, so it says only what is true for anyone who opens it.
-    expect(left).toContain("<h1>After you leave the Club</h1>");
+    expect(text(left.match(/<h1.*<\/h1>/)![0]).trim()).toBe("After you leave the Club");
     expect(text(left)).toContain("If you've just deleted your account, it's gone and you're signed out.");
   });
 

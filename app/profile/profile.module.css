@@ -1,18 +1,75 @@
-/* The Profile form (the optional sign-up step and the edit page), the parts below it, and the step that confirms
-   leaving the Club. */
+/*
+ * Edit your Profile, Leave the Club and the page after leaving, all on the grey with no photograph: tasks, said in the
+ * display serif and done in plain fields and ink blocks. On a phone one column; on a desktop the heading on the left
+ * and the work on the right, on the header's left edge.
+ *
+ * The Profile form is also the optional sign-up step's (app/welcome/profile). .field, .formActions, .confirm,
+ * .consequences and .delete are used by the Organiser's pages and app/welcome/leave as well.
+ */
+
+/* ---------- The page ---------- */
+
+.page {
+  display: grid;
+  align-content: start;
+  row-gap: 40px;
+  padding: 36px var(--gutter) 72px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* At this line-height a descender (0.26em in this serif) never meets an ascender (0.76em) under it */
+.title {
+  font-size: clamp(44px, 12vw, 60px);
+  line-height: 1.04;
+}
+
+.title em {
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  max-width: 26em;
+  color: var(--muted);
+}
+
+/* A sentence said in the serif, under the heading: "This can't be undone." */
+.line {
+  font: 500 30px/1.06 var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  max-width: 40rem;
+}
+
+/* A page with a few words and nowhere else to go: the heading, the words under it, the links */
+.plain {
+  padding: 48px var(--gutter) 96px;
+}
+
+.plain .head {
+  max-width: 34rem;
+}
+
+.plain .body {
+  gap: 24px;
+  margin-top: 28px;
+}
+
+/* ---------- The Profile form ---------- */
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  background: var(--raised);
-  box-shadow: var(--shadow-raised);
-}
-
-.form input:not([type="hidden"]) {
-  background: var(--paper);
+  gap: 32px;
 }
 
 .field {
@@ -26,30 +83,116 @@
 }
 
 .hint {
-  margin-top: calc(-1 * var(--space-1));
+  max-width: 34em;
   color: var(--muted);
-  font-size: var(--text-sm);
-  line-height: var(--leading-snug);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
-/* On a phone the form's buttons stack at full width, primary first, rather than wrapping unevenly */
+.field .hint {
+  margin-top: calc(-1 * var(--space-1));
+}
+
+/* A plain box on the grey, as tall as a button, so a thumb finds it */
+.form input:not([type="hidden"]),
+.form textarea {
+  min-height: 54px;
+  padding: 12px 14px;
+  background: transparent;
+}
+
+.form textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: max(16px, var(--text-base)); /* 16px or more, or iOS zooms in on focus */
+  line-height: 1.45;
+  resize: vertical;
+  transition: border-color var(--duration-hover) ease;
+}
+
+.form textarea:focus-visible {
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+
+.form textarea[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.form textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Why something can't be saved, beside what it is about: in the error's colour, nothing round it */
+.problem {
+  color: var(--error);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* A link beside a button is a button's size */
+.formActions > a {
+  min-height: 54px;
+  padding: 0 28px;
+  font-size: 16px;
+}
+
+/* On a phone the buttons stack at full width, the first choice first, rather than wrapping unevenly */
 @media (max-width: 29.99rem) {
   .formActions > * {
     flex: 1 1 100%;
   }
 }
 
-/* Each part below the form (the Lichess account, leaving the Club) in a hairline panel */
+/* ---------- Below the form: the Lichess account, leaving ---------- */
+
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 0 1px var(--line);
+  gap: 16px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
 }
 
-/* The step that confirms leaving (leave/page.tsx): what goes and what stays, then the choice, in one raised panel */
+.section h2 {
+  margin-bottom: 4px;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.section form {
+  margin-top: 8px;
+}
+
+/* The link in a sentence is a full-size target without moving the text */
+.section p > a {
+  padding-block: 11px;
+}
+
+/* Its button a button's size, and on a phone the width of the column */
+.section button,
+.section a[class] {
+  min-height: 54px;
+  padding: 0 28px;
+  font-size: 16px;
+}
+
+@media (max-width: 29.99rem) {
+  .section button,
+  .section a[class] {
+    width: 100%;
+  }
+}
+
+/* ---------- Leaving: what goes and what stays, then the choice ---------- */
+
 .confirm {
   display: flex;
   flex-direction: column;
@@ -57,22 +200,27 @@
 }
 
 .consequences {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-left: 1.25em;
+  list-style: none;
+  border-bottom: 1px solid var(--line);
 }
 
-.consequences li::marker {
-  color: var(--muted);
+.consequences li {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+/* The Organiser's warning: what stops when they leave */
+.warning {
+  color: var(--error);
+  font-weight: 600;
 }
 
 .confirm > .formActions {
-  margin-top: var(--space-2);
+  margin-top: 16px;
 }
 
-/* Deleting: the quiet button's shape in the error colour, never filled, so it is found at once without being the easy
-   press. Keeping, beside it, is the filled one. */
+/* Deleting: the button's shape in the error colour, never filled, so it is found at once without being the easy press.
+   Keeping, beside it, is the filled one. */
 .delete {
   background: transparent;
   color: var(--error);
@@ -93,4 +241,72 @@
 .confirm a[aria-disabled="true"] {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* =========================================================
+   The desktop: the heading on the left, the work on the right
+   ========================================================= */
+@media (min-width: 900px) {
+  /* The heading across the page on one line, as the name on a Profile; under it the words on the left and the work on
+     the right, starting on one line */
+  .page {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: 6vw;
+    row-gap: 0;
+    padding: 88px var(--gutter) 128px;
+  }
+
+  .page .head {
+    display: contents;
+  }
+
+  .page .title {
+    grid-column: 1 / -1;
+  }
+
+  .page .lede,
+  .page .line,
+  .page .body {
+    grid-row: 2;
+    align-self: start;
+    margin-top: 56px;
+  }
+
+  .page .body {
+    grid-column: 2;
+  }
+
+  .title {
+    font-size: min(7.8vw, 128px);
+  }
+
+  .lede {
+    font-size: 18px;
+  }
+
+  .line {
+    font-size: min(2.8vw, 44px);
+  }
+
+  .plain {
+    padding: 120px var(--gutter) 160px;
+  }
+
+  .plain .head {
+    max-width: 62rem;
+  }
+
+  .plain .title {
+    font-size: min(8.4vw, 140px);
+  }
+
+  .plain .body {
+    max-width: 34rem;
+    margin-top: 40px;
+    font-size: 18px;
+  }
+
+  .section h2 {
+    font-size: 44px;
+  }
 }

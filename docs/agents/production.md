@@ -11,7 +11,7 @@ The records, none of which changes anything in production:
 - `scripts/after-merge.sh <PR>`: what a merge did, the deploy and its migrations included. `scripts/pr-ci.sh <PR or branch>`: CI. Each header has the usage.
 - The Vercel MCP's runtime logs and runtime errors for the project, one day back. Filter by request id to see how far into a request an error came.
 - The Neon MCP's list of operations, for when the compute started and suspended. Ask for a small number: the list is long and has no time filter.
-- `vercel blob list --prefix backups/`, for which dumps exist.
+- `vercel blob list --prefix backups/`, given the store's token as `docs/restore.md` gives it, for which dumps exist.
 
 ## Who may do what
 

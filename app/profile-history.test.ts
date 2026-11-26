@@ -171,6 +171,10 @@ describe("a Member's Profile seen by another Member", () => {
     expect(rows(html)).toEqual(["Drew with Ana Petraitė"]);
   });
 
+  it("offers the viewer no way to edit it", async () => {
+    expect(await open("ana")).not.toContain('href="/profile"');
+  });
+
   it("shows a Member whose Lichess account is marked or closed, and their opponents, like anyone else", async () => {
     people.get("ana")!.lichessMarked = true;
     people.get("cid")!.lichessClosed = true;

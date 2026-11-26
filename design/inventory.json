@@ -734,6 +734,24 @@
           "as": "ana",
           "path": "/profile?lichess=taken",
           "note": "Added. /profile?lichess=taken: 'That Lichess account is already connected to another Member...' above 'Switch Lichess account'."
+        },
+        {
+          "name": "profile-edit-open-to-refused",
+          "label": "An open-to line over 140 characters",
+          "seed": "club",
+          "as": "ana",
+          "path": "/profile",
+          "steps": [
+            {
+              "fill": "#openTo",
+              "value": "A coffee after Sunday's Games, a chat about hiring, mentoring someone starting out, and hearing about platform roles in Vilnius, or remote ones too."
+            },
+            {
+              "click": "button:has-text('Save changes')",
+              "waitFor": "#openTo-error"
+            }
+          ],
+          "note": "Added with #80, when Open to became a box of four lines: its refusal beside it, what was typed kept."
         }
       ]
     },

@@ -47,10 +47,10 @@ Both work on a copy of the worktree (its tracked files and untracked ones git do
 
 - **`pnpm check`** (about a minute): no merged migration edited, every migration on an empty database, lint, typecheck, every test with the real-Postgres suites, the build, and CI's three seeds with CI's settings. A skipped test, or a `*.test.tsx` file (vitest never runs one), fails it. It cannot see a test that returns early or is registered inside an `if`. Its last lines are the tallies a report gives, then the Node.js and Postgres it ran on beside CI's and the commit it checked. It checks uncommitted and untracked files too, which CI never sees: commit first, or read that line.
 - **`pnpm guards <file>:<line>`** deletes that line and runs the tests. `<file>:<first>-<last>` deletes lines; `--replace <text> <with>` after a place replaces text that is there once instead; `+` makes two places one change, such as a query and its copy in `lib/fake-db.ts`.
-  - **RED**: the tests it names failed with the change and pass without it. Read them: they are the guard's test.
+  - **RED**: the tests it names failed with the change, failed again when run alone with it, and pass without it. Read them: they are the guard's test.
   - **GREEN**: every test that ran passed. The verdict says whether the real-Postgres suites were among them.
   - **BROKEN**: the change does not parse, the typecheck refuses it, or a changed migration does not apply, so no test judged it. Choose a change the code still accepts.
-  - **UNJUDGED**: the tests cannot say (a test that fails without the change too, a timeout, an error outside any test, a skipped real-Postgres test). Run it again, or with `--tests <file>`.
+  - **UNJUDGED**: the tests cannot say (a failure that did not come again, a test that fails without the change too, a timeout, an error outside any test, a skipped real-Postgres test). Run it again, or with `--tests <file>`.
   - **NOT MADE**: the place is not in the file as named.
 - The real-Postgres suites run too with `--pg`, when the file holds SQL, or when it has a `.postgres.test.ts` beside it. A change inside SQL is judged by them alone, as the fake refuses any statement it was not written with. A change to a migration is judged by them on a database migrated afresh with it. `--tests <file>` runs only that file, to see whether a test that claims a guard bites. With no places it proposes some for the lines changed since `origin/main` by a few patterns. That is only a proposal and never exits 0: each guard the branch adds or touches still needs naming.
 

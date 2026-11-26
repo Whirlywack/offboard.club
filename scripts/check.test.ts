@@ -3,15 +3,16 @@
 // whole command runs here in a small checkout of its own whose package.json scripts stand in for the real ones.
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { run, SCENARIOS, seedSettings, testTally } from "./check.mjs";
 
 // A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use,
-// removed when the test that made it ends (`finished`, its onTestFinished), passed or failed.
+// removed when the test that made it ends (`finished`, its onTestFinished), passed or failed. In /tmp, not TMPDIR, as
+// check refuses a temporary folder too long for the Unix sockets opened in it, and TMPDIR is deep when this runs
+// inside a check of its own.
 function checkout(finished: (end: () => void) => void = onTestFinished) {
-  const root = mkdtempSync(join(tmpdir(), "offboard-check-test-"));
+  const root = realpathSync(mkdtempSync("/tmp/ob-test-"));
   finished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
   mkdirSync(join(root, "tmp"));
@@ -33,7 +34,7 @@ describe("a checkout whose .env.local holds real settings", () => {
     const root = checkout();
     writeFileSync(join(root, ".env.local"), "DATABASE_URL=postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb\n");
     const { status, stdout, stderr } = await check(root);
-    const left = readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"));
+    const left = readdirSync(join(root, "tmp")).filter((name) => name.startsWith("ob-"));
     expect(stderr.trim()).toMatch(/^This checkout's \.env\.local holds real settings/);
     expect(stdout).toBe("");
     expect(status).toBe(1);
@@ -81,7 +82,7 @@ function fakeCheckout(finished: (end: () => void) => void, ci = SETUP_NODE) {
   const devEngines = { runtime: { name: "node", version: "26.x" } };
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts, ...(ci === NODE_FROM_PACKAGE ? { devEngines } : {}) }));
   writeFileSync(join(root, "fake.mjs"), FAKE);
-  writeFileSync(join(root, ".gitignore"), "tmp\nfake.log\nfake.log.pid\n");
+  writeFileSync(join(root, ".gitignore"), "tmp\nbin\nfake.log\nfake.log.pid\nfake.log.pnpm\n");
   mkdirSync(join(root, "migrations"));
   writeFileSync(join(root, "migrations/001_first.sql"), "create table a (b int);\n");
   mkdirSync(join(root, ".github/workflows"), { recursive: true });
@@ -99,7 +100,7 @@ const runs = (log: string) =>
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as { name: string; args: string[]; env: Record<string, string>; envLocal: boolean });
-const leftovers = (root: string) => readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-"));
+const leftovers = (root: string) => readdirSync(join(root, "tmp")).filter((name) => name.startsWith("ob-"));
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -128,14 +129,18 @@ function storeLinks(root: string) {
 describe.concurrent("a check", () => {
   it("passes when every step does, and reports each with the tallies, what it ran on and what it checked, leaving nothing behind", async ({ onTestFinished }) => {
     const { root, log, head } = fakeCheckout(onTestFinished);
-    const { status, stdout } = await check(root, { FAKE_LOG: log });
+    // Every pnpm the run starts goes through this, which notes where it ran.
+    const pnpm = spawnSync("sh", ["-c", "command -v pnpm"], { encoding: "utf8" }).stdout.trim();
+    mkdirSync(join(root, "bin"));
+    writeFileSync(join(root, "bin/pnpm"), `#!/bin/sh\nprintf '%s|%s\\n' "$(pwd -P)" "$*" >> "${log}.pnpm"\nexec "${pnpm}" "$@"\n`, { mode: 0o755 });
+    const { status, stdout } = await check(root, { FAKE_LOG: log, PATH: `${join(root, "bin")}:${process.env.PATH}` });
     const summary = stdout.slice(stdout.indexOf("\npnpm check "));
     expect(summary).toMatch(/^\npnpm check passed, in \d+ s\./);
     expect(summary).toContain("✓ migrations: none that has merged was edited");
     expect(summary).toContain("✓ tests: 1 files, 1 tests: 1 passed, 0 failed, 0 skipped; 0 of the files real-Postgres suites (0 tests)");
     expect(summary).toContain("✓ seeds: club 3 of 3 states, season-over 3 of 3 states, empty 3 of 3 states");
     expect(summary).toMatch(/\nRan on Node\.js v\d+\.\d+\.\d+ and Postgres of an unknown version; CI runs Node\.js 26 and Postgres 18\.\n/);
-    expect(summary).toContain(`\nChecked ${head} first, as committed: what CI tests.\n`);
+    expect(summary).toContain(`\nChecked ${head} first, as committed. CI tests what is committed, and on a pull request that merged into main.\n`);
     expect(status).toBe(0);
     const ran = runs(log);
     expect(ran.map((run) => run.name)).toEqual(["db:start", "db:start", "lint", "typecheck", "test", "build", "seed", "seed", "seed", "db:stop", "db:stop"]);
@@ -152,14 +157,32 @@ describe.concurrent("a check", () => {
     expect(existsSync(join(root, ".env.local"))).toBe(false);
     expect(leftovers(root)).toEqual([]);
     expect(storeLinks(root)).toEqual([]);
+    // Nothing is written in the checkout: no pnpm runs there, as pnpm leaves a file of its own where it runs.
+    const where = readFileSync(`${log}.pnpm`, "utf8").trim().split("\n").map((line) => line.split("|"));
+    expect(where.some(([, args]) => args === "store path")).toBe(true);
+    expect(where.filter(([cwd]) => cwd === root || !cwd.startsWith(join(root, "tmp", "ob-check-")))).toEqual([]);
   }, 60_000);
+
+  it("refuses a temporary folder too long for the Unix sockets the tools open in it, before anything is copied or started", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
+    const deep = join(root, "tmp", "x".repeat(60));
+    mkdirSync(deep);
+    const { status, stdout, stderr } = await check(root, { FAKE_LOG: log, TMPDIR: deep });
+    expect(stderr.trim()).toMatch(/^The temporary folder \/.*x{60} is too long: a Unix socket opened in it would be \d+ characters, and the system allows 103\. Set TMPDIR to a shorter folder, such as \/tmp\.$/);
+    expect(stdout).toBe("");
+    expect(status).toBe(1);
+    expect(readdirSync(deep)).toEqual([]);
+    expect(existsSync(log)).toBe(false);
+  });
 
   it("says so when the tree it checked holds what CI will not see", async ({ onTestFinished }) => {
     const { root, log, head } = fakeCheckout(onTestFinished);
     writeFileSync(join(root, "migrations/002_second.sql"), "create table c (d int);\n");
     writeFileSync(join(root, "fake.mjs"), `${FAKE}\n`);
     const { stdout } = await check(root, { FAKE_LOG: log });
-    expect(stdout).toContain(`\nChecked ${head} first with 1 uncommitted and 1 untracked files, which CI will not see: it tests only what is committed.\n`);
+    expect(stdout).toContain(
+      `\nChecked ${head} first with 1 uncommitted and 1 untracked files, which CI will not see. CI tests what is committed, and on a pull request that merged into main.\n`,
+    );
   }, 60_000);
 
   it("fails when any step does, runs the others, and says which failed, a skipped test among them", async ({ onTestFinished }) => {
@@ -209,7 +232,7 @@ describe.concurrent("a check", () => {
     for (const run of ran.filter((run) => run.name === "test" || run.name === "seed")) expect(run.env.OFFBOARD_LOCAL_REGISTRY).toBeUndefined();
     for (const run of ran.filter((run) => !["test", "seed"].includes(run.name))) {
       expect([run.name, run.env.DATABASE_URL, run.env.ALLOW_DB_TESTS]).toEqual([run.name, undefined, undefined]);
-      expect(run.env.TMPDIR.startsWith(join(realpathSync(join(root, "tmp")), "offboard-check-"))).toBe(true);
+      expect(run.env.TMPDIR.startsWith(join(root, "tmp", "ob-check-"))).toBe(true);
       // What db:start starts in the copy is recorded in the repository's own registry (ticket #58), and only db:start
       // and db:stop are given it: a test of them that was given it would list and stop the repository's servers.
       if (run.name.startsWith("db:")) {

@@ -33,7 +33,7 @@ import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "n
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { cleanUp, copyCheckout, environmentProblem, git, readJson, relative, root, run, scratch, startDatabase, stopDatabase } from "./check.mjs";
+import { cleanUp, copyCheckout, environmentProblem, git, readJson, relative, root, run, scratch, startDatabase, stopDatabase, tail } from "./check.mjs";
 
 const USAGE = "Usage: pnpm guards [--pg] [--tests <file>] [<file>[:<line>[-<last>]] [--replace <text> <with>] [+ <place>]] ...";
 // What lib/fake-db.ts throws on a statement it does not know.
@@ -231,16 +231,19 @@ export function verdict(report, code, postgres) {
   return { kind: "green", why: `no test noticed: ${passed} passed` };
 }
 
-// A red run judged again by the same tests run without the change (`without`, their JSON report): red if some of the
-// tests that failed pass without it, naming them, and unjudged if none does.
-export function confirmed(red, without) {
-  const passed = new Set(
-    (without?.testResults ?? []).flatMap((file) => file.assertionResults.filter((test) => test.status === "passed").map((test) => `${relative(file.name)} > ${test.fullName}`)),
-  );
-  const names = red.failed.map(({ file, name }) => `${file} > ${name}`);
-  const noticed = names.filter((name) => passed.has(name));
-  if (noticed.length === 0) return { kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${names.slice(0, 2).join("; ")}` };
-  return { kind: "red", why: `${noticed.length} failed with the change and pass without it, first: ${noticed.slice(0, 2).join("; ")}` };
+// A red run judged again by the tests that failed, run alone with the change once more (`again`) and without it
+// (`without`), their JSON reports: red if some failed both times with it and pass without it, naming them; unjudged
+// if none did, as a failure that does not come again was chance, and one that comes without the change says nothing.
+export function confirmed(red, again, without) {
+  const names = (report, status) =>
+    new Set((report?.testResults ?? []).flatMap((file) => file.assertionResults.filter((test) => test.status === status).map((test) => `${relative(file.name)} > ${test.fullName}`)));
+  const [failedAgain, passedWithout] = [names(again, "failed"), names(without, "passed")];
+  const failed = red.failed.map(({ file, name }) => `${file} > ${name}`);
+  const noticed = failed.filter((name) => failedAgain.has(name) && passedWithout.has(name));
+  if (noticed.length) return { kind: "red", why: `${noticed.length} failed with the change, again, and pass without it, first: ${noticed.slice(0, 2).join("; ")}` };
+  const first = failed.slice(0, 2).join("; ");
+  if (!failed.some((name) => failedAgain.has(name))) return { kind: "unjudged", why: `what failed with the change passed when run with it again, so it failed by chance: ${first}` };
+  return { kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${first}` };
 }
 
 // A --testNamePattern for exactly the tests of these names, each its describe blocks' names and its own joined by " > ".
@@ -268,7 +271,7 @@ async function guards(args) {
   try {
     say(`Copying this checkout to ${checkout}, and installing.`);
     const files = copyCheckout(checkout);
-    if ((await run("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], { cwd: checkout, log })) !== 0) throw new Error(`pnpm install failed (${log}).`);
+    if ((await run("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], { cwd: checkout, log })) !== 0) throw new Error(`pnpm install failed:\n${tail(log, 20)}`);
     for (const file of options.tests) if (!files.includes(file)) throw new Error(`--tests ${file}: there is no such file.`);
     const suites = files.filter((file) => file.endsWith(".postgres.test.ts"));
     const postgresTests = options.tests.length ? options.tests.filter((file) => suites.includes(file)) : suites;
@@ -312,7 +315,7 @@ async function guards(args) {
     if (plans.some((plan) => plan.postgres)) {
       say("Starting a throwaway Postgres (pnpm db:start).");
       database = await startDatabase(folder, "tests", log);
-      if (!database) throw new Error(`pnpm db:start failed (${log}).`);
+      if (!database.url) throw new Error(`pnpm db:start failed:\n${tail(log, 20)}`);
     }
     const report = join(folder, "report.json");
     // Runs the test files `filters` (all of them if none) with `pnpm test`, on the database `url` if any, stopped at the
@@ -352,19 +355,23 @@ async function guards(args) {
       let result;
       let on = options.tests.length ? `the tests named (${options.tests.join(", ")})` : plan.postgres ? "the fast tests and the real-Postgres suites" : "the fast tests only: no real-Postgres suite ran";
       let url = plan.postgres ? database.url : null;
+      let fresh = null;
+      let again = null;
       try {
         const refused = plan.broken ? null : typesBefore && plan.types ? (await typeErrors()).find((line) => !typesBefore.includes(line)) : null;
         if (plan.broken) result = { kind: "broken", why: plan.broken };
         else if (refused) result = { kind: "broken", why: `TypeScript refuses the change, as CI's typecheck would: ${refused.trim()}` };
         else if (plan.migration) {
           on = "the real-Postgres suites alone, on a database migrated afresh with the change";
-          const fresh = await startDatabase(folder, `change-${n + 1}`, log);
-          if (!fresh) result = { kind: "broken", why: "the changed migrations do not apply to an empty database (pnpm db:start failed)" };
+          fresh = await startDatabase(folder, `change-${n + 1}`, log);
+          // Broken only if the server came up and the migrations failed on it; any other failure of db:start says nothing.
+          const said = readFileSync(log, "utf8").trim().split("\n").filter((line) => !line.includes("ELIFECYCLE")).at(-1)?.trim();
+          if (!fresh.url && fresh.running) result = { kind: "broken", why: "the changed migrations do not apply to an empty database" };
+          else if (!fresh.url) result = { kind: "unjudged", why: `pnpm db:start failed before it could migrate: ${said}` };
           else {
             url = fresh.url;
             const { report: r, code } = await tests(postgresTests, fresh.url);
             result = verdict(r, code, true);
-            await stopDatabase(folder, fresh.dir, log);
           }
         } else {
           const whole = plan.sql ? null : await tests(options.tests, url);
@@ -377,14 +384,16 @@ async function guards(args) {
           } else if (result.kind === "refused")
             result = { kind: "unjudged", why: "the fast tests failed only because lib/fake-db.ts does not know the changed statement: run it again with --pg" };
         }
+        // The tests a red run failed are run again alone, with the change still made, then without it (below).
+        if (result.kind === "red") again = await tests([...new Set(result.failed.map((test) => test.file))], url, result.failed.map((test) => test.path));
       } finally {
         for (const [file, text] of plan.texts) writeFileSync(join(checkout, file), text);
+        if (fresh?.url) await stopDatabase(folder, fresh.dir, log);
       }
-      // A red run is run again, the failing tests alone, without the change: only a test that passes there noticed it.
       if (result.kind === "red") {
         const failing = [...new Set(result.failed.map((test) => test.file))];
         const without = await tests(failing, plan.migration ? database.url : url, result.failed.map((test) => test.path));
-        result = confirmed(result, without.report);
+        result = confirmed(result, again.report, without.report);
       }
       say(`${NAMES[result.kind].padEnd(8)}  ${label(plan.change)}`);
       for (const edit of plan.located) say(shown(plan.texts.get(edit.file), edit));

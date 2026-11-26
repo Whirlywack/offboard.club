@@ -209,16 +209,17 @@ describe("a run of the tests", () => {
     expect(ran.sort()).toEqual(["passed a page, for a stranger refuses (once) [all] of it?", "skipped a page, for a stranger refuses", "skipped refuses (once) [all] of it?"]);
   });
 
-  it("stays red only for the tests that pass without the change", () => {
+  it("stays red only for the tests that fail with the change again and pass without it", () => {
     const red = { kind: "red", failed: [{ file: "app/a.test.ts", name: "refuses a stranger" }, { file: "app/a.test.ts", name: "it works" }] };
-    const without = report([{ tests: [{ ...failed, status: "passed" }, { status: "failed", fullName: "it works" }] }]);
-    expect(confirmed(red, without)).toEqual({ kind: "red", why: "1 failed with the change and pass without it, first: app/a.test.ts > refuses a stranger" });
-    const unjudged = confirmed(red, report([{ tests: [failed, { status: "failed", fullName: "it works" }] }]));
-    expect(unjudged).toEqual({
-      kind: "unjudged",
-      why: "what failed with the change fails without it too, so it says nothing of the change: app/a.test.ts > refuses a stranger; app/a.test.ts > it works",
-    });
-    expect(confirmed(red, null).kind).toBe("unjudged");
+    const both = report([{ tests: [failed, { status: "failed", fullName: "it works" }] }]);
+    const one = report([{ tests: [{ ...failed, status: "passed" }, { status: "failed", fullName: "it works" }] }]);
+    const neither = report([{ tests: [{ ...failed, status: "passed" }, { status: "passed", fullName: "it works" }] }]);
+    expect(confirmed(red, both, one)).toEqual({ kind: "red", why: "1 failed with the change, again, and pass without it, first: app/a.test.ts > refuses a stranger" });
+    expect(confirmed(red, one, neither)).toEqual({ kind: "red", why: "1 failed with the change, again, and pass without it, first: app/a.test.ts > it works" });
+    const names = "app/a.test.ts > refuses a stranger; app/a.test.ts > it works";
+    expect(confirmed(red, both, both)).toEqual({ kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${names}` });
+    expect(confirmed(red, neither, neither)).toEqual({ kind: "unjudged", why: `what failed with the change passed when run with it again, so it failed by chance: ${names}` });
+    expect(confirmed(red, null, null).kind).toBe("unjudged");
   });
 });
 
@@ -246,6 +247,7 @@ const FAKE = [
   'const dir = args[args.indexOf("--dir") + 1];',
   'const migration = readFileSync("migrations/001_a.sql", "utf8");',
   'if (name === "db:start") {',
+  '  if (process.env.FAKE_FAIL === "db:start" || migration.includes("noports")) { console.log("No set of free ports was found."); process.exit(1); }',
   "  mkdirSync(dir, { recursive: true });",
   '  writeFileSync(dir + "/offboard.env", "DATABASE_URL=postgres://offboard@127.0.0.1:1/" + dir.split("/").pop() + "\\n");',
   '  writeFileSync(dir + "/postmaster.pid", "1\\n");',
@@ -260,7 +262,7 @@ const FAKE = [
   '  const counter = process.env.TMPDIR + "/runs";',
   "  const runs = existsSync(counter) ? Number(readFileSync(counter, \"utf8\")) + 1 : 1;",
   "  writeFileSync(counter, String(runs));",
-  '  const broken = process.env.FAKE_FAIL === "all" || (process.env.FAKE_FAIL === "again" && runs > 1);',
+  '  const broken = process.env.FAKE_FAIL === "all" || (process.env.FAKE_FAIL === "again" && runs > 1) || (process.env.FAKE_FAIL === "second" && runs === 2);',
   '  const filters = args.filter((arg) => !arg.startsWith("--"));',
   "  const ran = (file) => filters.length === 0 || filters.includes(file);",
   "  const tests = [];",
@@ -295,7 +297,9 @@ const exec = (file: string, args: string[], env: NodeJS.ProcessEnv) =>
 
 // Removed when the test that made it ends (`finished`, its own onTestFinished), passed or failed.
 function fakeCheckout(finished: (end: () => void) => void) {
-  const root = mkdtempSync(join(tmpdir(), "offboard-guards-test-"));
+  // In /tmp, not TMPDIR, as guards refuses a temporary folder too long for the Unix sockets opened in it, and TMPDIR is
+  // deep when this runs inside a check of its own.
+  const root = realpathSync(mkdtempSync("/tmp/ob-test-"));
   finished(() => rmSync(root, { recursive: true, force: true }));
   for (const dir of ["scripts", "lib", "app", "migrations", "tmp"]) mkdirSync(join(root, dir));
   for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
@@ -304,6 +308,7 @@ function fakeCheckout(finished: (end: () => void) => void) {
   writeFileSync(join(root, "fake.mjs"), FAKE);
   writeFileSync(join(root, "lib/a.ts"), A);
   writeFileSync(join(root, "lib/b.ts"), B);
+  writeFileSync(join(root, "notes.md"), "# Notes\nA line nothing reads.\n");
   writeFileSync(join(root, "migrations/001_a.sql"), MIGRATION);
   writeFileSync(join(root, "lib/a.postgres.test.ts"), "// the real-Postgres suite, in fake.mjs\n");
   writeFileSync(join(root, "app/a.test.ts"), "// the fast test, in fake.mjs\n");
@@ -326,7 +331,7 @@ function fakeCheckout(finished: (end: () => void) => void) {
   const filters = () => tests().map((run) => [run.args.includes("--bail=1") ? "bail" : "all", ...run.args.filter((arg) => !arg.startsWith("--"))].join(" "));
   // What is left: guards' folders in the temporary folder, git's status, and the files.
   const left = () => [
-    readdirSync(join(root, "tmp")).filter((name) => name.startsWith("offboard-")),
+    readdirSync(join(root, "tmp")).filter((name) => name.startsWith("ob-")),
     git("status", "--porcelain").stdout,
     readFileSync(join(root, "lib/a.ts"), "utf8") + readFileSync(join(root, "lib/b.ts"), "utf8") + readFileSync(join(root, "migrations/001_a.sql"), "utf8"),
   ];
@@ -342,7 +347,7 @@ describe.concurrent("a run of pnpm guards", () => {
     const places = ["lib/a.ts:3", "lib/a.ts:4", "lib/a.ts:5", "--replace", "where ${WHERE}", "where true", "lib/a.ts:1", "--replace", '"x" = $1', "true"];
     const { status, stdout } = await guards(places);
     expect(stdout).toContain("The tests pass as the code is (the whole suite with the real-Postgres suites: 5 passed).");
-    const noticed = (test: string) => `1 failed with the change and pass without it, first: ${test}`;
+    const noticed = (test: string) => `1 failed with the change, again, and pass without it, first: ${test}`;
     expect(stdout).toContain(`RED       lib/a.ts:3\n         - if (!ok) return "refused";\n         ${noticed("app/a.test.ts > refuses a stranger")}, ${POSTGRES}\n`);
     expect(stdout).toContain(`GREEN     lib/a.ts:4\n         - if (ok === 2) return "two";\n         no test noticed: 5 passed, ${POSTGRES}\n`);
     expect(stdout).toContain(`RED       lib/a.ts:5 --replace 'where \${WHERE}' 'where true'\n`);
@@ -350,17 +355,21 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(stdout).toContain(`${one}         ${noticed("lib/a.postgres.test.ts > finds only its row")}, ${ALONE}\n`);
     expect(stdout).toContain("3 of 4 changes went red.\nNo test noticed: lib/a.ts:4.\n");
     expect(status).toBe(1);
-    // Every red run is run again on the failing file without the change. The change inside the template literal goes to
-    // the real-Postgres suite at once; the one outside it, once the fast tests have failed on the fake's refusal alone.
+    // The tests a red run failed are run again alone, with the change and without it. The change inside the template
+    // literal goes to the real-Postgres suite at once; the one outside it, once the fast tests have failed on the fake's
+    // refusal alone.
     expect(filters()).toEqual([
       "bail",
       "bail",
       "all app/a.test.ts",
+      "all app/a.test.ts",
       "bail",
       "bail lib/a.postgres.test.ts",
       "all lib/a.postgres.test.ts",
+      "all lib/a.postgres.test.ts",
       "bail",
       "bail lib/a.postgres.test.ts",
+      "all lib/a.postgres.test.ts",
       "all lib/a.postgres.test.ts",
     ]);
     expect(runs().filter((run) => run.name.startsWith("db:")).map((run) => run.name)).toEqual(["db:start", "db:stop"]);
@@ -375,7 +384,19 @@ describe.concurrent("a run of pnpm guards", () => {
     );
     expect(stdout).toContain("0 of 1 changes went red.\nNot judged: lib/b.ts:2.\n");
     expect(status).toBe(1);
-    expect(filters()).toEqual(["bail", "bail", "all app/a.test.ts"]);
+    expect(filters()).toEqual(["bail", "bail", "all app/a.test.ts", "all app/a.test.ts"]);
+    expect(left()).toEqual(AS_IT_WAS);
+  }, 60_000);
+
+  it("judges nothing by a failure that does not come again with the change, such as of a test that fails on its second run alone", async ({ onTestFinished }) => {
+    const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["notes.md:2", "--tests", "app/a.test.ts"], { FAKE_FAIL: "second" });
+    expect(stdout).toContain(
+      "UNJUDGED  notes.md:2\n         - A line nothing reads.\n         what failed with the change passed when run with it again, so it failed by chance: app/a.test.ts > refuses a stranger, on the tests named (app/a.test.ts)\n",
+    );
+    expect(stdout).toContain("0 of 1 changes went red.\n");
+    expect(status).toBe(1);
+    expect(filters()).toEqual(["bail app/a.test.ts", "bail app/a.test.ts", "all app/a.test.ts", "all app/a.test.ts"]);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
@@ -394,19 +415,24 @@ describe.concurrent("a run of pnpm guards", () => {
 
   it("judges a change to a migration on a database migrated afresh with it, and one that does not apply as broken", async ({ onTestFinished }) => {
     const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
-    const { status, stdout } = await guards(["migrations/001_a.sql", "--replace", "check (x > 0)", "check (true)", "migrations/001_a.sql:1", "--replace", "int", "broken"]);
+    const places = ["migrations/001_a.sql", "--replace", "check (x > 0)", "check (true)", "migrations/001_a.sql:1", "--replace", "int", "broken"];
+    const { status, stdout } = await guards([...places, "migrations/001_a.sql:1", "--replace", "int", "noports"]);
     expect(stdout).toContain(
-      "RED       migrations/001_a.sql --replace 'check (x > 0)' 'check (true)'\n         - create table t (x int check (x > 0));\n         + create table t (x int check (true));\n         1 failed with the change and pass without it, first: lib/a.postgres.test.ts > refuses a negative x, on the real-Postgres suites alone, on a database migrated afresh with the change\n",
+      "RED       migrations/001_a.sql --replace 'check (x > 0)' 'check (true)'\n         - create table t (x int check (x > 0));\n         + create table t (x int check (true));\n         1 failed with the change, again, and pass without it, first: lib/a.postgres.test.ts > refuses a negative x, on the real-Postgres suites alone, on a database migrated afresh with the change\n",
     );
     expect(stdout).toContain("BROKEN    migrations/001_a.sql:1 --replace int broken\n");
-    expect(stdout).toContain("the changed migrations do not apply to an empty database (pnpm db:start failed)\n");
+    expect(stdout).toContain("BROKEN    migrations/001_a.sql:1 --replace int broken\n         - create table t (x int check (x > 0));\n         + create table t (x broken check (x > 0));\n         the changed migrations do not apply to an empty database\n");
+    // A db:start that fails before the server is up says nothing of the migrations.
+    expect(stdout).toContain(
+      "UNJUDGED  migrations/001_a.sql:1 --replace int noports\n         - create table t (x int check (x > 0));\n         + create table t (x noports check (x > 0));\n         pnpm db:start failed before it could migrate: No set of free ports was found., on the real-Postgres suites alone, on a database migrated afresh with the change\n",
+    );
     expect(status).toBe(1);
     const databases = runs().filter((run) => run.name === "db:start").map((run) => run.args.at(-1)!.split("/").pop());
-    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2"]);
-    // The change is judged on its own database; the test that noticed it, again on the one migrated without it.
+    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2", "db-change-3"]);
+    // The change is judged on its own database, twice; the test that noticed it, then on the one migrated without it.
     const urls = runs().filter((run) => run.name === "test").map((run) => run.url?.split("/").pop());
-    expect(urls).toEqual(["db-tests", "db-change-1", "db-tests"]);
-    expect(filters()).toEqual(["bail", "bail lib/a.postgres.test.ts", "all lib/a.postgres.test.ts"]);
+    expect(urls).toEqual(["db-tests", "db-change-1", "db-change-1", "db-tests"]);
+    expect(filters()).toEqual(["bail", "bail lib/a.postgres.test.ts", "all lib/a.postgres.test.ts", "all lib/a.postgres.test.ts"]);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
@@ -440,7 +466,7 @@ describe.concurrent("a run of pnpm guards", () => {
       [false, null],
       [false, null],
     ]);
-    expect(tests().every((run) => run.tmp.startsWith(join(realpathSync(join(root, "tmp")), "offboard-guards-")))).toBe(true);
+    expect(tests().every((run) => run.tmp.startsWith(join(root, "tmp", "ob-guards-")))).toBe(true);
     // Only db:start and db:stop are given the repository's registry (ticket #58); the tests never.
     expect(tests().every((run) => run.registry === undefined)).toBe(true);
     const real = await guards(["lib/b.ts:2"], { DATABASE_URL: "postgres://someone:a-pretend-password@ep-pretend-123.eu-central-1.aws.neon.tech/neondb" });
@@ -476,6 +502,19 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(status).toBe(1);
     expect(runs().map((run) => run.name)).toEqual(["test"]);
     expect(left()).toEqual(AS_IT_WAS);
+  }, 60_000);
+
+  it("says what pnpm install and db:start said when they failed, before the folder that held their output is removed", async ({ onTestFinished }) => {
+    const { root, guards, left } = fakeCheckout(onTestFinished);
+    const database = await guards(["lib/a.ts:3"], { FAKE_FAIL: "db:start" });
+    expect(database.stderr).toMatch(/^pnpm db:start failed:\n(.*\n)*    No set of free ports was found\.\n/);
+    expect(database.status).toBe(1);
+    const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ ...manifest, dependencies: { "left-pad": "1.3.0" } }));
+    const install = await guards(["lib/b.ts:2"]);
+    expect(install.stderr).toMatch(/^pnpm install failed:\n(.*\n)*.*frozen-lockfile/);
+    expect(install.status).toBe(1);
+    expect(left()[0]).toEqual([]);
   }, 60_000);
 
   it("refuses --tests that names no file", async ({ onTestFinished }) => {

@@ -54,18 +54,27 @@ let store = "";
 let registry = "";
 const list = () => running && writeFileSync(running, [...children].map((child) => child.pid).join("\n"));
 
-// A temporary folder for one run, `<folder>/checkout` the copy, `<folder>/db-*` its databases and `<folder>/tmp` every
-// step's TMPDIR. The watcher is started through a shell that exits at once, so it belongs to launchd and its own
-// session: stopping this process and every process it started, as an agent's tool does, leaves it running, and it stops
-// the databases and removes the folder.
+// A temporary folder for one run, `<folder>/checkout` the copy, `<folder>/db-*` its databases and `<folder>/t` every
+// step's TMPDIR, kept short: tsx opens a Unix socket in it, and the system allows such a path 103 characters. The
+// watcher is started through a shell that exits at once, so it belongs to launchd and its own session: stopping this
+// process and every process it started, as an agent's tool does, leaves it running, and it stops the databases and
+// removes the folder.
 export function scratch(name) {
   // Its real path, which pnpm's store links name, so that they can be found once the folder is gone.
-  const folder = realpathSync(mkdtempSync(join(tmpdir(), `offboard-${name}-`)));
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), `ob-${name}-`)));
+  const socket = `${folder}/t/tsx-${process.getuid?.() ?? 0}/1234567.pipe`;
+  if (socket.length > 103) {
+    rmSync(folder, { recursive: true, force: true });
+    throw new Error(
+      `The temporary folder ${tmpdir()} is too long: a Unix socket opened in it would be ${socket.length} characters, and the system allows 103. Set TMPDIR to a shorter folder, such as /tmp.`,
+    );
+  }
   running = join(folder, "running");
-  temporary = join(folder, "tmp");
-  registry = process.env.OFFBOARD_LOCAL_REGISTRY || `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
-  store = spawnSync("pnpm", ["store", "path"], { cwd: root, encoding: "utf8" }).stdout?.trim() ?? "";
+  temporary = join(folder, "t");
   mkdirSync(temporary);
+  registry = process.env.OFFBOARD_LOCAL_REGISTRY || `${git(["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim()}/offboard-local`;
+  // In the folder: pnpm writes a file of its own where it runs.
+  store = spawnSync("pnpm", ["store", "path"], { cwd: folder, encoding: "utf8", env: outside() }).stdout?.trim() ?? "";
   spawn("/bin/sh", ["-c", '"$0" "$1" clean-up "$2" "$3" "$4" "$5" >/dev/null 2>&1 &', process.execPath, self, String(process.pid), folder, store, registry], {
     detached: true,
     stdio: "ignore",
@@ -187,14 +196,16 @@ export function run(command, args, { cwd, env = {}, log, limit = 20 * 60_000 }) 
   });
 }
 
-// A fresh, empty, migrated database from `pnpm db:start --dir <folder>/db-<name>`, run in the copy: its address and
-// folder, or null if it could not be started. db:start finds free ports itself, and others if another start takes them
-// first. The .env.local db:start gives the copy is removed: CI has none, and the build and the seeds would read it.
+// A fresh, empty, migrated database from `pnpm db:start --dir <folder>/db-<name>`, run in the copy: its folder, and its
+// address, null if it could not be started; `running` says whether the server came up all the same, as when a migration
+// does not apply. db:start finds free ports itself, and others if another start takes them first. The .env.local
+// db:start gives the copy is removed: CI has none, and the build and the seeds would read it.
 export async function startDatabase(folder, name, log) {
   const dir = join(folder, `db-${name}`);
   const code = await run("pnpm", ["db:start", "--dir", dir], { cwd: join(folder, "checkout"), log, env: recording(registry) });
   rmSync(join(folder, "checkout", ".env.local"), { force: true });
-  return code === 0 ? { url: /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1], dir } : null;
+  const url = code === 0 ? /^DATABASE_URL=(.*)$/m.exec(readFileSync(join(dir, "offboard.env"), "utf8"))[1] : null;
+  return { url, dir, running: existsSync(join(dir, "postmaster.pid")) };
 }
 
 // Stops the database db:start made in `dir`.
@@ -241,7 +252,7 @@ export function testTally(report) {
 }
 
 // The output's last lines, indented, for a step that failed.
-const tail = (log, lines = 60) =>
+export const tail = (log, lines = 60) =>
   (existsSync(log) ? readFileSync(log, "utf8") : "")
     .replace(/\x1b\[[0-9;]*m/g, "")
     .trimEnd()
@@ -277,10 +288,11 @@ function provenance(checkout, database) {
     const head = git(["log", "-1", "--format=%h %s"]).trim();
     const status = git(["status", "--porcelain=v1", "--untracked-files=all"]).split("\n").filter(Boolean);
     const untracked = status.filter((line) => line.startsWith("??")).length;
+    const ci = "CI tests what is committed, and on a pull request that merged into main";
     commit =
       status.length === 0
-        ? `Checked ${head}, as committed: what CI tests.`
-        : `Checked ${head} with ${status.length - untracked} uncommitted and ${untracked} untracked files, which CI will not see: it tests only what is committed.`;
+        ? `Checked ${head}, as committed. ${ci}.`
+        : `Checked ${head} with ${status.length - untracked} uncommitted and ${untracked} untracked files, which CI will not see. ${ci}.`;
   } catch {
     commit = "Checked a checkout git could not describe.";
   }
@@ -331,8 +343,8 @@ async function check() {
   let seeded = null;
   if (ready)
     await step("empty databases", async (log) => {
-      tests = await startDatabase(folder, "tests", log);
-      seeded = tests && (await startDatabase(folder, "seeded", log));
+      tests = (await startDatabase(folder, "tests", log)).url;
+      seeded = tests && (await startDatabase(folder, "seeded", log)).url;
       return { problem: seeded ? null : "pnpm db:start failed", line: "two, every migration applied to each" };
     });
   if (ready) await step("lint", (log) => pnpm(["lint"], log));
@@ -342,7 +354,7 @@ async function check() {
       const report = join(folder, "tests.json");
       const code = await pnpm(["test", "--reporter=default", "--reporter=json", `--outputFile.json=${report}`], log, {
         ALLOW_DB_TESTS: "1",
-        DATABASE_URL: tests.url,
+        DATABASE_URL: tests,
       });
       const tally = testTally(readJson(report));
       const unrun = files.filter((file) => file.endsWith(".test.tsx"));
@@ -352,7 +364,7 @@ async function check() {
   if (ready) await step("build", (log) => pnpm(["build"], log));
   if (seeded)
     await step("seeds", async (log) => {
-      const settings = { ...seedSettings(), DATABASE_URL: seeded.url };
+      const settings = { ...seedSettings(), DATABASE_URL: seeded };
       const kept = [];
       let failed = null;
       for (const scenario of SCENARIOS) {
@@ -364,7 +376,7 @@ async function check() {
       return { problem: failed, line: kept.join(", ") };
     });
 
-  const about = ready ? provenance(checkout, tests) : [];
+  const about = ready ? provenance(checkout, tests && { dir: join(folder, "db-tests") }) : [];
   cleanUp(folder);
   const names = ["migrations", "install", "empty databases", "lint", "typecheck", "tests", "build", "seeds"];
   const failed = names.filter((name) => results.find((result) => result.name === name)?.problem !== null);

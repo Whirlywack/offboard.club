@@ -343,7 +343,7 @@
   }
 
   .openTo dd {
-    font-size: min(2.8vw, 44px);
+    font-size: clamp(26px, 2.8vw, 44px);
     line-height: 1.08;
   }
 
@@ -360,7 +360,7 @@
   }
 
   .figure dd {
-    font-size: min(4.4vw, 68px);
+    font-size: clamp(42px, 4.4vw, 68px);
   }
 
   .edit {
@@ -378,7 +378,7 @@
 
   .together {
     margin-top: 32px;
-    font-size: min(2.4vw, 38px);
+    font-size: clamp(26px, 2.4vw, 38px);
     line-height: 1.1;
   }
 
@@ -391,7 +391,7 @@
   }
 
   .evening {
-    font-size: min(2.2vw, 32px);
+    font-size: clamp(25px, 2.2vw, 32px);
   }
 
   .evening a {

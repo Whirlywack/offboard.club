@@ -5,14 +5,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { shortFolder } from "../lib/fixtures/short-folder";
 import { run, SCENARIOS, seedSettings, testTally } from "./check.mjs";
 
 // A checkout holding scripts/check.mjs and scripts/local-db.mjs, and a temporary folder of its own for check to use,
-// removed when the test that made it ends (`finished`, its onTestFinished), passed or failed. In /tmp, not TMPDIR, as
-// check refuses a temporary folder too long for the Unix sockets opened in it, and TMPDIR is deep when this runs
-// inside a check of its own.
+// removed when the test that made it ends (`finished`, its onTestFinished), passed or failed.
 function checkout(finished: (end: () => void) => void = onTestFinished) {
-  const root = realpathSync(mkdtempSync("/tmp/ob-test-"));
+  const root = shortFolder();
   finished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
   mkdirSync(join(root, "tmp"));
@@ -262,6 +261,17 @@ describe.concurrent("a check", () => {
     expect(await until(() => leftovers(root).length === 0)).toBe(true);
     expect(alive(step)).toBe(false);
     expect(runs(log).filter((entry) => entry.name === "db:stop")).toHaveLength(2);
+  });
+});
+
+describe("a test's own folder", () => {
+  it("is short, and takes away those left by a test process that has gone", () => {
+    const gone = mkdtempSync("/tmp/ob-test-999999-");
+    const mine = shortFolder();
+    onTestFinished(() => rmSync(mine, { recursive: true, force: true }));
+    expect(mine.length).toBeLessThan(40);
+    expect(existsSync(mine)).toBe(true);
+    expect(existsSync(gone)).toBe(false);
   });
 });
 

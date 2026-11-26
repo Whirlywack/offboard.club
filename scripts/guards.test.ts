@@ -6,6 +6,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpa
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { shortFolder } from "../lib/fixtures/short-folder";
 import { apply, confirmed, FAKE_REFUSES, hasSql, inSql, label, locate, namePattern, parse, parseErrors, propose, shown, verdict } from "./guards.mjs";
 
 const TEXT = "one\ntwo\nthree\n";
@@ -297,9 +298,7 @@ const exec = (file: string, args: string[], env: NodeJS.ProcessEnv) =>
 
 // Removed when the test that made it ends (`finished`, its own onTestFinished), passed or failed.
 function fakeCheckout(finished: (end: () => void) => void) {
-  // In /tmp, not TMPDIR, as guards refuses a temporary folder too long for the Unix sockets opened in it, and TMPDIR is
-  // deep when this runs inside a check of its own.
-  const root = realpathSync(mkdtempSync("/tmp/ob-test-"));
+  const root = shortFolder();
   finished(() => rmSync(root, { recursive: true, force: true }));
   for (const dir of ["scripts", "lib", "app", "migrations", "tmp"]) mkdirSync(join(root, dir));
   for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));

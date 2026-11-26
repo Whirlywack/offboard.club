@@ -4,7 +4,7 @@
 
 /* ---------- The heading plate ---------- */
 
-/* What is in it is positioned, so it paints over the grain and the pieces multiply onto it */
+/* What is in it is positioned, so it paints over the grain */
 .head {
   position: relative;
   overflow-x: clip;
@@ -34,18 +34,18 @@
   letter-spacing: -0.04em;
 }
 
-/* The six pieces, tallest to shortest, and their shadows, cut out (1376 x 390): the pieces are 1137px of it, from 119px
-   in. The box is as wide as the pieces; the photograph overhangs it on both sides, white that multiplies away. */
+/* The six pieces, tallest to shortest, and their shadows (1300 x 400, black with the photograph's darkness as its
+   alpha): the pieces are 1120px of it, from 133px in. The box is as wide as the pieces; the photograph overhangs it on
+   both sides, where it holds only the faint end of a shadow. */
 .row {
   margin-top: 30px;
 }
 
 .row img {
-  width: calc(100% * 1376 / 1137);
+  width: calc(100% * 1300 / 1120);
   max-width: none;
   height: auto;
-  margin-left: calc(-100% * 119 / 1137);
-  mix-blend-mode: multiply;
+  margin-left: calc(-100% * 133 / 1120);
 }
 
 .standing {
@@ -260,20 +260,11 @@
   }
 }
 
-/* ---------- A Season too far off to have dates (app/seasons/[number]/not-found.tsx) ---------- */
-
-.noSeason {
-  display: grid;
-  align-content: start;
-  gap: 40px;
-  padding: 26px var(--gutter) 64px;
-}
-
-/* The label clears the heading's descenders */
-.noSeason h1 {
-  margin-bottom: 0.42em;
-  font-size: clamp(44px, 13vw, 60px);
-  line-height: 0.92;
+/* A Season too far off to have dates (app/seasons/[number]/not-found.tsx), in the not-found page's plate
+   (app/fallback.module.css): its label under the heading, clear of its descenders */
+.noSeasonLabel {
+  margin-top: 26px;
+  color: var(--muted);
 }
 
 /* =========================================================
@@ -315,7 +306,7 @@
     grid-area: row;
     align-self: end;
     justify-self: end;
-    width: min(100%, 1137px);
+    width: min(100%, 1120px);
     margin-top: 24px;
   }
 
@@ -393,14 +384,7 @@
     margin-top: 28px;
   }
 
-  .noSeason {
-    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
-    align-items: end;
-    column-gap: 6vw;
-    padding: 72px var(--gutter) 120px;
-  }
-
-  .noSeason h1 {
-    font-size: min(6.4vw, 108px);
+  .noSeasonLabel {
+    margin-top: 44px;
   }
 }

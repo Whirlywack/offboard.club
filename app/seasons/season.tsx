@@ -72,7 +72,7 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
           <em>Season</em> <span className={styles.number}>{number}</span>
         </h1>
         <div className={styles.row}>
-          <Image src={pieces} alt="" sizes="(min-width: 900px) min(80vw, 1376px), calc(121vw - 39px)" preload />
+          <Image src={pieces} alt="" sizes="(min-width: 900px) min(77vw, 1300px), calc(116vw - 37px)" preload />
         </div>
         <div className={styles.standing}>
           <p className={`${ui.caps} ${styles.label}`}>Season Leaderboard</p>

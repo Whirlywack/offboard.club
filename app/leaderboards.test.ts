@@ -151,6 +151,8 @@ describe("a Season's Leaderboard", () => {
     SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
     const html = await season("1");
     expect(html).not.toContain("Season champion");
+    // The only Season so far has no row of Seasons to go to.
+    expect(html).not.toContain('aria-label="Seasons"');
     expect(text(html)).toContain("Matchday 5 of 6 is done. Results from Sunday, 17 January 2027 aren't in yet.");
     vi.setSystemTime(new Date("2027-01-12T12:00:00Z"));
     expect(text(await season("1"))).toContain("Matchday 5 of 6 is done. The next one is on Sunday, 17 January 2027.");

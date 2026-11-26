@@ -61,7 +61,7 @@ export async function seasonLeaderboard(which: number | "current"): Promise<Reac
 // The Season's number beside the six pieces, tallest to shortest, with where it stands and its champion; its
 // Leaderboard; then, in black, its six Matchdays and the other Seasons.
 function SeasonView({ season, played, member, now }: { season: Season; played: number[]; member: boolean; now: Date }) {
-  const { number, matchdays, leaderboard, over, champions } = season;
+  const { number, matchdays, leaderboard, champions } = season;
   // How far the Season has gone: the latest of its Matchdays to have been ingested.
   const done = matchdays ? matchdays.findLastIndex((m) => m.ingested) + 1 : 0;
   const others = played.some((n) => n !== number);
@@ -78,7 +78,8 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
           <p className={`${ui.caps} ${styles.label}`}>Season Leaderboard</p>
           <p className={styles.lede}>{progress(season, done, now)}</p>
         </div>
-        {over && champions.length > 0 && <Champions champions={champions} score={leaderboard[0].score} />}
+        {/* A Season has champions only once it is over (lib/leaderboards.ts). */}
+        {champions.length > 0 && <Champions champions={champions} score={leaderboard[0].score} />}
       </div>
 
       <section aria-labelledby="leaderboard" className={board.board}>

@@ -20,7 +20,7 @@ export function ConsentForm({ name }: { name: string }) {
       </p>
     );
   return (
-    <form action={action} className={`${styles.consent} ${ui.arrive}`}>
+    <form action={action} className={styles.consent}>
       <fieldset className={styles.agreement}>
         <legend>Your name in public</legend>
         <p>
@@ -68,9 +68,7 @@ export function ConsentForm({ name }: { name: string }) {
         {error("houseRules")}
       </fieldset>
 
-      <div className={ui.actions}>
-        <button disabled={pending}>{pending ? "Saving…" : "Agree and continue"}</button>
-      </div>
+      <button disabled={pending}>{pending ? "Saving…" : "Agree and continue"}</button>
     </form>
   );
 }

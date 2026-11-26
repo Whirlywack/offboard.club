@@ -246,3 +246,15 @@ How a photograph meets the page is most of this look.
 ## Adding to this file
 
 When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
+
+## Signing up
+
+The three steps after signing in (agree, connect Lichess, the optional Profile) and deleting an account part-way: `app/welcome/`, styled in `app/welcome/welcome.module.css`. Three short steps on a phone, straight after the home page, so they are the same place, quieter.
+
+- **The plate.** One grey plate under the header, with the grain where the steps' pawn stands; deleting part-way has no photograph and no grain. On a phone: the steps, the heading, then what there is to do, all at the gutter. On a desktop (`.page`, a grid of `5fr` and `6fr`, `6vw` apart): the steps over the heading on the left, and what there is to do on the right, at most 600px wide against the right gutter, its top level with the heading's.
+- **The heading.** The display serif at `clamp(44px, 13.4vw, 60px)` on a phone and `min(6.4vw, 108px)` on a desktop, line-height 0.92 and 0.9, its first word in italic. A line under it in the body size (18px on a desktop), in ink.
+- **The steps** (`SignUpSteps` in `app/welcome/steps.tsx`): three squares of a rank, side by side, each under a 1px rule: its number in the display serif (32px, 44px on a desktop) over its name in the grotesque (14px, 15px). The squares behind the person and theirs are ruled in ink; the ones ahead in `--line`, their numbers in outline (`-webkit-text-stroke: 0.8px`). The person's pawn stands on the rule of their square, so it moves one square a step: `pawn-empty.webp`, the outline of a place not yet taken as on the home page, until they are a Member, and `pawn.webp` on the third step. It is 30px wide on a phone and 40px on a desktop.
+- **An agreement** (the first step): a fieldset under a 1px rule in ink, its legend in the serif at 30px (34px on a desktop), then what it says, then its box. 40px between the two.
+- **The box that accepts** (`.check`): the whole row is the label, inside a 1px rule in ink with 16px of padding, its words at 600. The box is a 28px square with a 1.5px ink border, filled with ink and a paper tick when ticked, its border 2.5px under the pointer. Refused, the row and the box take `--error`, and the refusal (`ui.alert`) follows it. In forced colours the browser draws its own box.
+- **The action** is a full-width button on a phone and its own width on a desktop. A note beside it is 15px in `--muted`; a link in a line of text has 12px of padding above and below, a 44px target that moves no line. Leaving instead ("Rather not join?") comes last, under a rule in `--line`.
+- **Deleting part-way**: what is deleted, then keeping (the ink block) and deleting (outlined in `--error`), both 54px tall, full width on a phone.

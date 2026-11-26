@@ -852,6 +852,23 @@
           "seed": "club",
           "as": "step1",
           "path": "/welcome"
+        },
+        {
+          "name": "welcome-agree-ticked",
+          "label": "Both boxes ticked",
+          "seed": "club",
+          "as": "step1",
+          "path": "/welcome",
+          "steps": [
+            {
+              "click": "label:has([name=publicDisplay])"
+            },
+            {
+              "click": "label:has([name=houseRules])",
+              "waitFor": "[name=houseRules]:checked"
+            }
+          ],
+          "note": "Added (#81): what a ticked box looks like, just before 'Agree and continue'."
         }
       ]
     },

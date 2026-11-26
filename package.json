@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
+    "check": "node scripts/check.mjs",
+    "guards": "node scripts/guards.mjs",
     "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts",
     "db:start": "node scripts/local-db.mjs start",

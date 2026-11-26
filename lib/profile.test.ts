@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { growth } from "./fixtures/growth";
 import { linkedInProfileUrl, OPEN_TO_MAX, POSITION_MAX, readProfileForm } from "./profile";
 
 const form = (fields: Record<string, string>) => {
@@ -236,13 +237,15 @@ describe("readProfileForm", () => {
     expect(readProfileForm(form({ position: "؜CTO؜" }))).toMatchObject({ position: "CTO" });
   });
 
-  it("tidies a megabyte of spaces and joiners in turn in well under a second", () => {
-    const position = "x" + " ‍".repeat(500_000) + "y";
-    const start = performance.now();
-    expect(readProfileForm(form({ position }))).toMatch(/80 characters/);
-    expect(readProfileForm(form({ position: "CTO" + " ‍".repeat(500_000) }))).toMatchObject({ position: "CTO" });
-    expect(performance.now() - start).toBeLessThan(500);
-  });
+  // One pass takes about eight times as long for eight times the text; a pass that went back over it for each character
+  // would take sixty-four (lib/fixtures/growth.ts). The sizes let such a pass end, and fail, in seconds.
+  it("tidies spaces and joiners in turn in one pass", async () => {
+    const inside = (n: number) => "x" + " ‍".repeat(n) + "y";
+    const after = (n: number) => "CTO" + " ‍".repeat(n);
+    expect(readProfileForm(form({ position: inside(20_000) }))).toMatch(/80 characters/);
+    expect(readProfileForm(form({ position: after(20_000) }))).toMatchObject({ position: "CTO" });
+    for (const make of [inside, after]) expect(await growth((position) => readProfileForm(form({ position })), make, 2_500)).toBeLessThan(24);
+  }, 30_000);
 
   it("keeps the zero-width joiner inside emoji", () => {
     expect(readProfileForm(form({ position: "‍👩‍💻 engineer, 🏳️‍🌈‍" }))).toMatchObject({

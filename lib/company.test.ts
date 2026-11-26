@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { companyDomain, fetchCompanyMeta, isPublicAddress } from "./company";
+import { growth } from "./fixtures/growth";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 
@@ -293,23 +294,30 @@ describe("fetchCompanyMeta", () => {
     expect([...name]).toHaveLength(80);
   });
 
+  // One pass takes about eight times as long for eight times the page; a pass that went back over it for each
+  // character would take sixty-four (lib/fixtures/growth.ts). Both sizes fit in half the 200 KB that is read, so that
+  // both are read whole the same way (at the limit, reading sometimes stops early), and let such a pass end, and fail,
+  // in seconds. Each page is `before`, then `unit` `count` times, then `after`.
   it.each([
-    ["repeated meta prefixes", `<meta name="og:site_name" `.repeat(8_000)],
-    ["repeated link prefixes", `<link rel="icon" `.repeat(12_000)],
-    ["repeated title openings", `<title`.repeat(34_000)],
-    ["an unterminated title", `<title>` + `Acme `.repeat(40_000)],
-    ["an unterminated attribute", `<meta property="og:site_name" content="` + `a`.repeat(200_000)],
-    ["repeated attributes in one tag", `<meta` + ` content= property=`.repeat(11_000) + `>`],
-    ["an unterminated entity", `<title>&#x` + `1`.repeat(200_000)],
-    ["spaces and joiners in turn", `<title>x` + ` ‍`.repeat(100_000) + `y`],
-    ["a name ending in spaces and joiners", `<meta property="og:site_name" content="x` + ` ‍`.repeat(100_000) + `">`],
-  ])("reads 200 KB of hostile HTML (%s) in well under a second", async (_, html) => {
-    expect(html.length).toBeGreaterThanOrEqual(200_000);
-    fetchMock.mockResolvedValue(page(html));
-    const start = performance.now();
-    const { name } = await fetchCompanyMeta("vinted.com");
-    expect(performance.now() - start).toBeLessThan(500);
-    expect([...name].length).toBeLessThanOrEqual(80);
+    ["repeated meta prefixes", "", `<meta name="og:site_name" `, 8_000, ""],
+    ["repeated link prefixes", "", `<link rel="icon" `, 12_000, ""],
+    ["repeated title openings", "", `<title`, 34_000, ""],
+    ["an unterminated title", `<title>`, `Acme `, 40_000, ""],
+    ["an unterminated attribute", `<meta property="og:site_name" content="`, `a`, 200_000, ""],
+    ["repeated attributes in one tag", `<meta`, ` content= property=`, 11_000, `>`],
+    ["an unterminated entity", `<title>&#x`, `1`, 200_000, ""],
+    ["spaces and joiners in turn", `<title>x`, ` ‍`, 100_000, `y`],
+    ["a name ending in spaces and joiners", `<meta property="og:site_name" content="x`, ` ‍`, 100_000, `">`],
+  ])("reads 200 KB of hostile HTML (%s) in one pass", { timeout: 30_000 }, async (_, before, unit, count, after) => {
+    const make = (n: number) => before + unit.repeat(n) + after;
+    const read = (html: string) => {
+      fetchMock.mockImplementation(async () => page(html));
+      return fetchCompanyMeta("vinted.com");
+    };
+    expect(make(count).length).toBeGreaterThanOrEqual(200_000);
+    expect([...(await read(make(count))).name].length).toBeLessThanOrEqual(80);
+    const sixteenth = Math.floor((200_000 - Buffer.byteLength(before + after)) / Buffer.byteLength(unit) / 16);
+    expect(await growth(read, make, sixteenth)).toBeLessThan(24);
   });
 
   it("stops reading the body after the first 200 KB", async () => {

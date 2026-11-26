@@ -45,11 +45,12 @@
   overflow-wrap: break-word;
 }
 
-/* A full-size target without spreading the lines, underlined under the pointer as a name on the Leaderboard is */
+/* A full-size target without spreading the lines (28px, the smallest a line of it gets, and 9px either side), underlined
+   under the pointer as a name on the Leaderboard is */
 .winner a {
   display: inline-block;
-  margin: -7px 0;
-  padding: 7px 0;
+  margin: -9px 0;
+  padding: 9px 0;
   text-decoration: none;
 }
 
@@ -59,9 +60,9 @@
   }
 }
 
-/* What they did, with the number that won it */
+/* What they did, with the number that won it: clear of the target above it */
 .feat {
-  margin-top: 8px;
+  margin-top: 10px;
   color: var(--muted);
 }
 

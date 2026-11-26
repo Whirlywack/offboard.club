@@ -401,6 +401,8 @@ describe("a Recap's Awards", () => {
       { title: "Fastest checkmate", winner: "Ben Kazlauskas", feat: "Checkmated their opponent in 11 moves.", game: null },
     ]);
     expect(html).toContain("Their opponent has since left the Club, so the Game isn&#x27;t shown.");
+    // Under that Award alone: the other two were won against someone still in the Club.
+    expect(html.match(/has since left/g)).toHaveLength(1);
     expect(html).not.toContain("BENMATES");
     expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the biggest upset<\/span>/);
     expect(html).not.toContain("of the fastest checkmate</span>");

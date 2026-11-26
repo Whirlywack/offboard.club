@@ -71,11 +71,12 @@
 }
 
 /* "Recap of", then the date on lines of its own, broken after the day: "September 2026", the longest month and year,
-   is 7.25em wide, which sets the size on a phone and the measure on a desktop */
+   is 7.25em wide, which sets the size on a phone, on one line from 300 wide, and the measure at every width */
 .head .title {
   position: relative;
   z-index: 1;
-  font-size: clamp(38px, 12.4vw, 60px);
+  max-width: 8em;
+  font-size: clamp(36px, 12vw, 60px);
   line-height: 0.9;
 }
 
@@ -83,18 +84,20 @@
   display: block;
 }
 
+/* Its lines far enough apart that the two links' targets do not meet */
 .night {
   position: relative;
   z-index: 1;
   display: grid;
+  row-gap: 22px;
   margin-top: 22px;
 }
 
-/* Two small links, each a full-size target without spreading the lines */
+/* Two small links, each a full-size target: its 25 to 27px line and 10px either side */
 .night a {
   display: inline-block;
-  margin: -12px 0;
-  padding: 12px 0;
+  margin: -10px 0;
+  padding: 10px 0;
 }
 
 /* The queen over the fallen king, cut out (720 x 430): at 0.5 on the phone, half its pixels on a 2x screen, under the
@@ -105,7 +108,7 @@
   width: calc(720px * var(--s));
   max-width: none;
   height: calc(430px * var(--s));
-  margin: -12px 0 0 calc(100% - (665px + 8px) * var(--s));
+  margin: 4px 0 0 calc(100% - (665px + 8px) * var(--s));
   mix-blend-mode: multiply;
 }
 
@@ -365,7 +368,6 @@
   }
 
   .head .title {
-    max-width: 8em;
     font-size: min(7.4vw, 124px);
     line-height: 0.86;
   }

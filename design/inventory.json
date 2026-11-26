@@ -462,7 +462,7 @@
         "The table fits: 358 px, columns Rank 43, Name 143, Company 120, Points 52 px. A long Company name wraps to five lines plus its domain: the tallest row is 141 px, the shortest 55 px. Names wrap to two or three lines.",
         "No control is under 44 px: a name in the table is its whole cell; Award winners, 'Season 3', 'Open this Matchday on Lichess' and 'Open the Game on Lichess' are padded to 44 px or more; 'Replay the Game' is 54 px.",
         "11 px column headings (labels in capitals) and 13.5 px Companies; everything else 15 px or more.",
-        "1,022 px (nobody on it) to 3,948 px tall (a Member with a board opened, which adds about 580 px)."
+        "1,034 px (nobody on it) to 3,988 px tall (a Member with a board opened, which adds about 580 px)."
       ],
       "differs_from_spec": [
         "The spec's 'Least time left' Award is titled 'Closest call'.",

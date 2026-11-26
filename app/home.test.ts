@@ -337,6 +337,14 @@ describe("the signed-in panel on the home page", () => {
     expect(html).not.toContain("Sign in with LinkedIn");
   });
 
+  it("shows a Member their own panel when their session reads, with the session cookie everyone signed in has", async () => {
+    request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
+    signedIn = "member";
+    const html = await you();
+    expect(html).toContain("Signed in as");
+    expect(html).not.toContain("can&#x27;t be checked");
+  });
+
   it("offers to sign in to a visitor with no session cookie, whether or not the database can be read", async () => {
     expect(await you()).toContain("Sign in with LinkedIn");
     unreadable();

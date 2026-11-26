@@ -6,6 +6,29 @@ export type Queryable = Pick<ClientBase, "query">;
 
 type Connected = (error: Error | undefined, client: PoolClient | undefined, release: (error?: Error | boolean) => void) => void;
 
+// What the pool throws, when it cannot connect or a statement fails, carries this mark, so that a failed request is said
+// to be the database's only when its error came from here (lib/request-failures.ts, #60 review): a code such as
+// ECONNRESET is any socket's, a visitor's who drops an upload included. Symbol.for, as Next.js gives the hook a copy of
+// this module of its own, and a key no request can set, as nothing parsed from one makes a symbol.
+const FROM_DATABASE = Symbol.for("offboard.from-database");
+const marked = (error: Error) => Object.defineProperty(error, FROM_DATABASE, { value: true });
+
+// Marks what each statement on `client` fails with, promised or called back, as pg-pool's own query calls back. Once a
+// client: the pool hands the same ones out again.
+const watched = new WeakSet<PoolClient>();
+function watch(client: PoolClient) {
+  if (watched.has(client)) return client;
+  watched.add(client);
+  const query = client.query.bind(client) as (...args: unknown[]) => unknown;
+  client.query = ((...args: unknown[]) => {
+    const callback = args.at(-1);
+    if (typeof callback === "function") args[args.length - 1] = (error: Error | null, ...rest: unknown[]) => callback(error && marked(error), ...rest);
+    const answer = query(...args);
+    return answer instanceof Promise ? answer.catch((error: Error) => Promise.reject(marked(error))) : answer;
+  }) as PoolClient["query"];
+  return client;
+}
+
 // A connection that could not be opened is tried once more, at once: nothing has been sent on it, so nothing can run
 // twice, and a statement that fails is never sent again. On 25 November 2026 (#55) two attempts were ended by their own
 // 5 s timer without reaching the database, which was running, or woke in 300 ms for the next attempt; one of the timers
@@ -16,10 +39,13 @@ class Pool extends pg.Pool {
   connect(callback: Connected): void;
   connect(callback?: Connected) {
     const started = Date.now();
-    const connected = super.connect().catch((error: Error) => {
-      console.error(`Connecting to the database failed after ${Date.now() - started} ms, trying once more:`, error.message);
-      return super.connect();
-    });
+    const connected = super
+      .connect()
+      .catch((error: Error) => {
+        console.error(`Connecting to the database failed after ${Date.now() - started} ms, trying once more:`, error.message);
+        return super.connect();
+      })
+      .then(watch, (error: Error) => Promise.reject(marked(error)));
     if (!callback) return connected;
     connected.then(
       (client) => callback(undefined, client, client.release),

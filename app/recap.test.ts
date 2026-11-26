@@ -5,7 +5,7 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecapAward } from "@/lib/awards";
-import { addCompany, addPerson, db, games, matchdays, people, requestFailures, resetDb, results, seasons, type GameRow } from "@/lib/fake-db";
+import { addCompany, addPerson, db, fromDatabase, games, matchdays, people, requestFailures, resetDb, results, seasons, type GameRow } from "@/lib/fake-db";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { ingestMatchday } from "@/lib/matchday";
 import { getRecap } from "@/lib/recaps";
@@ -144,7 +144,7 @@ describe("a Recap", () => {
   it("says plainly that it cannot be shown when the database cannot be read, and records the page's failure", async () => {
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    db.query.mockRejectedValueOnce(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }));
+    db.query.mockRejectedValueOnce(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
     expect(await open(DATE)).toContain("This Recap can&#x27;t be shown right now.");
     await settled();
     expect(recorded()).toEqual([{ route: "/recaps/[date]", kind: "page", reason: "the database couldn't be reached" }]);
@@ -156,7 +156,7 @@ describe("a Recap", () => {
     expect(await open(DATE)).toContain("Season 1");
     const real = db.query.getMockImplementation()!;
     db.query.mockImplementation((sql: string, params?: unknown[]) =>
-      sql.includes(`from "season"`) ? Promise.reject(new Error("Connection terminated unexpectedly")) : real(sql, params),
+      sql.includes(`from "season"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
     );
     const html = await open(DATE);
     db.query.mockImplementation(real);
@@ -433,7 +433,7 @@ describe("the list of Recaps", () => {
     expect(await list()).toContain("No Recaps yet");
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    db.query.mockRejectedValueOnce(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }));
+    db.query.mockRejectedValueOnce(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
     expect(await list()).toContain("The Recaps can&#x27;t be shown right now.");
     await settled();
     expect(recorded()).toEqual([{ route: "/recaps", kind: "page", reason: "the database couldn't be reached" }]);

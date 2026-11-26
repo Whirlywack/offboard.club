@@ -5,6 +5,7 @@ import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeLichess, type FakeAccount } from "@/lib/fixtures/fake-lichess";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
+import { fromDatabase } from "@/lib/fake-db";
 import { codeChallenge, REVOKED_BY_MS } from "@/lib/connect-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/callback/route";
@@ -333,7 +334,7 @@ describe("coming back from Lichess", () => {
     const back = await approveOnLichess(await pressConnect(), "bobby");
     const settled = keepWaitUntil();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    getSession.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
     expect(await arrive(back)).toBe("/welcome/lichess?lichess=failed");
     expect(lichess.calls).toEqual([]);
     expect(jar.values.size).toBe(0);
@@ -468,7 +469,7 @@ describe("coming back from Lichess", () => {
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
     query.mockImplementation(async (sql: string, params?: unknown[]) =>
-      sql.includes("with saved as") ? Promise.reject(new Error("Connection terminated unexpectedly")) : fakeQuery(sql, params),
+      sql.includes("with saved as") ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : fakeQuery(sql, params),
     );
     expect(await connectAs("bobby")).toBe("/welcome/lichess?lichess=failed");
     expect(revoked()).toBe(true);

@@ -4,7 +4,7 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addCompany, addPerson, db, matchdays, people, resetDb, results, seasons, skippedSundays } from "@/lib/fake-db";
+import { addCompany, addPerson, db, fromDatabase, matchdays, people, resetDb, results, seasons, skippedSundays } from "@/lib/fake-db";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import AllTimePage from "./all-time/page";
 import RootLayout from "./layout";
@@ -96,7 +96,7 @@ const answering = db.query.getMockImplementation()!;
 const unreachable = () => {
   const settled = keepWaitUntil();
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-  db.query.mockRejectedValue(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }));
+  db.query.mockRejectedValue(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
   return async () => {
     await settled();
     return logged.mock.calls.map(([said]) => String(said)).filter((said) => said.includes("couldn't be recorded"));

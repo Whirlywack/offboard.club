@@ -1,6 +1,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
+import { fromDatabase } from "@/lib/fake-db";
 import { failedRequestsSince, lastFailedRequest, noticeFailedRequest } from "./request-failures";
 
 // The failed requests' real SQL (#60) against the database in DATABASE_URL (migrations/012_request_failures.sql): one
@@ -46,7 +47,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await backdate("/profile", "2026-01-01T00:00:00Z");
     await page("/profile");
     await page("/welcome");
-    await noticeFailedRequest(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }), { routePath: "/profile", routeType: "action" }, "POST");
+    const unreachable = fromDatabase(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }));
+    await noticeFailedRequest(unreachable, { routePath: "/profile", routeType: "action" }, "POST");
     await page("/profile", new RangeError("Oops"));
     const [{ now }] = await select(`select now()`);
     expect(await select(`select "route", "kind", "reason", "lastAt" from "requestFailure" order by "route", "kind", "reason"`)).toEqual([

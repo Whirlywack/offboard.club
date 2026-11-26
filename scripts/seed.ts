@@ -21,7 +21,7 @@
 // Matchday's two reminders there, and in season-over `pnpm collect-results` posts the Recap of the Matchday it collects.
 // Both have Backing up run, which says backups aren't set up, as no local block has the store's token, and Alerting you
 // run twice, which in season-over sends the Organiser privately, once each, the failure and a page that failed as the
-// database couldn't be reached, which the Organiser page shows as the last failed request, and in club has nothing to
+// database refused a statement, which the Organiser page shows as the last failed request, and in club has nothing to
 // send, as no request has failed.
 //
 // Season 2's first Matchday in season-over is on Lichess only: with LICHESS_URL set, the seed writes its tournament,
@@ -467,12 +467,11 @@ async function organiser(name: string) {
       if (name === "club" && lichess.team.members.has(lichessId(p))) throw new Error(`${p.id} left, but is still in the fake Lichess team.`);
     }
     await backUp(now);
-    // A Member's page that failed as the database couldn't be reached, as the sign-in library throws it then.
-    if (name === "season-over")
-      await noticeFailedRequest(new Error("Failed to get session", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) }), {
-        routePath: "/profile",
-        routeType: "render",
-      });
+    // A Member's page that failed as the database refused a statement, as the sign-in library throws what the pool did.
+    if (name === "season-over") {
+      const refused = await db.query(`select from "noSuchTable"`).then(() => null, (error: unknown) => error);
+      await noticeFailedRequest(new Error("Failed to get session", { cause: refused }), { routePath: "/profile", routeType: "render" });
+    }
     for (let run = 0; run < 2; run++) await alertOrganiser(now);
   } finally {
     globalThis.fetch = realFetch;
@@ -612,8 +611,8 @@ async function check(name: string) {
     promises.push(["Backing up ran, and says backups aren't set up, as no local block has the store's token",
       backingUp?.outcome === "skipped" && backingUp.detail === backupProblem()]);
     promises.push(name === "season-over"
-      ? ["the Organiser page's last failed request: a page that failed as the database couldn't be reached",
-          failedRequest?.route === "/profile" && failedRequest.kind === "page" && failedRequest.reason === "the database couldn't be reached"]
+      ? ["the Organiser page's last failed request: a page that failed as the database refused a statement",
+          failedRequest?.route === "/profile" && failedRequest.kind === "page" && failedRequest.reason === "the database refused it (error 42P01)"]
       : ["no request has failed", failedRequest === null]);
     if (alertsProblem())
       promises.push(["Alerting you ran, and says alerts are off, as the environment hasn't the Telegram settings for them",

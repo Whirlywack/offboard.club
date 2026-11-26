@@ -1,8 +1,10 @@
 // Requests that fail on the server (#60): through the hook Next.js calls (onRequestError in instrumentation.ts, given
 // what a production build of the site gave it), the hourly alerts (alertOrganiser, and the endpoint Vercel calls) and
 // what the Organiser is sent. Faked: the database (lib/fake-db.ts), Telegram (lib/fixtures/fake-telegram.ts, standing
-// in for fetch), Vercel's request context, which holds waitUntil, and the clock. The errors are real ones: pg's own,
-// against a port nothing listens on and one that never answers, and Next.js's own redirect() and notFound().
+// in for fetch), Vercel's request context, which holds waitUntil, and the clock. The errors are real ones: the site's
+// own pool's (lib/db.ts) and pg's, against a port nothing listens on and one that never answers, Node's at an upload
+// cut off part-way, and Next.js's own redirect() and notFound().
+import http from "node:http";
 import net from "node:net";
 import { parseAndValidateFlightRouterState } from "next/dist/server/app-render/parse-and-validate-flight-router-state";
 import { notFound, redirect } from "next/navigation";
@@ -10,7 +12,7 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { onRequestError } from "@/instrumentation";
 import { GET as alertsRequest } from "@/app/api/jobs/alert-organiser/route";
-import { db, requestFailures, resetDb, telegramPosts } from "@/lib/fake-db";
+import { db, fromDatabase, requestFailures, resetDb, telegramPosts } from "@/lib/fake-db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { alertOrganiser } from "./alerts";
 
@@ -26,10 +28,37 @@ const DATABASE = "ep-pretend-123456-pooler.eu-central-1.aws.neon.tech";
 
 let telegram: ReturnType<typeof createFakeTelegram>;
 let kept: Promise<unknown>[];
-let refused: Error; // pg's, from a port nothing listens on
-let timedOut: Error; // pg's pool's, from a server that never answers
+let refused: Error; // the site's pool's, from a port nothing listens on
+let socketRefused: Error; // a bare pg client's from the same port, which is not the pool's, so carries no mark
+let timedOut: Error; // pg's pool's, from a server that never answers, marked as the site's pool marks it
 let fetchFailed: Error; // fetch's, from a port nothing listens on
+let cutOff: Error[]; // Node's, at an upload whose sender closed, and one whose sender reset, part-way through
 const silent = net.createServer(() => {});
+
+// What a server's request says when its sender leaves part-way through the body, by closing or by resetting.
+async function cutOffUploads() {
+  const errors: Error[] = [];
+  for (const leave of ["destroy", "resetAndDestroy"] as const)
+    errors.push(
+      await new Promise<Error>((said) => {
+        const server = http.createServer((request) => {
+          request.on("error", (error) => {
+            said(error);
+            server.close();
+          });
+          request.resume();
+        });
+        server.listen(0, "127.0.0.1", () => {
+          const socket = net.connect((server.address() as net.AddressInfo).port, "127.0.0.1", () => {
+            socket.write("POST /profile HTTP/1.1\r\nHost: offboard.test\r\nContent-Type: multipart/form-data; boundary=zz\r\nContent-Length: 100000\r\n\r\n--zz\r\n");
+            setTimeout(() => socket[leave](), 50);
+          });
+          socket.on("error", () => {});
+        });
+      }),
+    );
+  return errors;
+}
 
 const dms = () => telegram.posts.filter((post) => post.chatId === CHAT).map((post) => post.text);
 // As the sign-in library threw it from a page when the database could not be reached, in a production build.
@@ -62,12 +91,20 @@ beforeAll(async () => {
   await new Promise<void>((listening) => closed.listen(0, "127.0.0.1", listening));
   const port = (closed.address() as net.AddressInfo).port;
   await new Promise((done) => closed.close(done));
-  refused = await new pg.Client({ connectionString: `postgres://offboard@127.0.0.1:${port}/offboard` }).connect().then(() => new Error("connected"), (error: Error) => error);
+  vi.stubEnv("DATABASE_URL", `postgres://offboard@127.0.0.1:${port}/offboard`);
+  const retried = vi.spyOn(console, "error").mockImplementation(() => {});
+  const { db: pool } = await vi.importActual<typeof import("@/lib/db")>("@/lib/db");
+  refused = await pool.query("select 1").then(() => new Error("answered"), (error: Error) => error);
+  await pool.end();
+  retried.mockRestore();
+  vi.unstubAllEnvs();
+  socketRefused = await new pg.Client({ connectionString: `postgres://offboard@127.0.0.1:${port}/offboard` }).connect().then(() => new Error("connected"), (error: Error) => error);
   fetchFailed = await fetch(`http://127.0.0.1:${port}/`).then(() => new Error("fetched"), (error: Error) => error);
   await new Promise<void>((listening) => silent.listen(0, "127.0.0.1", listening));
   const never = new pg.Pool({ connectionString: `postgres://offboard@127.0.0.1:${(silent.address() as net.AddressInfo).port}/offboard`, connectionTimeoutMillis: 50 });
-  timedOut = await never.query("select 1").then(() => new Error("answered"), (error: Error) => error);
+  timedOut = fromDatabase(await never.query("select 1").then(() => new Error("answered"), (error: Error) => error));
   await never.end();
+  cutOff = await cutOffUploads();
 });
 
 afterAll(() => void silent.close());
@@ -121,16 +158,19 @@ describe("a request that fails on the server", () => {
   });
 
   it("is said to have failed for a reason from a fixed list, found through what caused it, never in the error's words", async () => {
-    const quoting = Object.assign(new pg.DatabaseError('invalid input syntax for type uuid: "ana@pretend.invalid"', 0, "error"), { severity: "ERROR", code: "22P02" });
+    const quoting = () => Object.assign(new pg.DatabaseError('invalid input syntax for type uuid: "ana@pretend.invalid"', 0, "error"), { severity: "ERROR", code: "22P02" });
     const cases: [unknown, string][] = [
       [sessionFailed(), "the database couldn't be reached"],
       [refused, "the database couldn't be reached"],
       [timedOut, "the database couldn't be reached"],
-      [quoting, "the database refused it (error 22P02)"],
+      [fromDatabase(quoting()), "the database refused it (error 22P02)"],
+      // The same, but not from the site's pool: anyone's socket can be refused, and any object can say "severity".
+      [socketRefused, "the code threw Error"],
+      [quoting(), "the code threw an error"],
       // Node's, five letters long like Postgres's codes.
-      [Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" }), "the code threw Error"],
+      [fromDatabase(Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" })), "the code threw Error"],
       // With a severity, but a code not in SQLSTATE's form.
-      [Object.assign(new pg.DatabaseError("A message", 0, "error"), { severity: "ERROR", code: "ana@pretend.invalid" }), "the code threw an error"],
+      [fromDatabase(Object.assign(new pg.DatabaseError("A message", 0, "error"), { severity: "ERROR", code: "ana@pretend.invalid" })), "the code threw an error"],
       [Object.assign(new Error("Lichess said no"), { cause: fetchFailed }), "another site couldn't be reached"],
       [Object.assign(new Error("A name no reason should carry"), { name: "Error for ana@pretend.invalid" }), "the code threw an error"],
       ["a thrown string about ana@pretend.invalid", "the code threw an error"],
@@ -184,8 +224,33 @@ describe("a request that fails on the server", () => {
 
   it("holds no response: the hook hands its work to Vercel's waitUntil and returns", async () => {
     db.query.mockImplementationOnce(() => new Promise(() => {})); // a database that never answers
-    await onRequestError(new Error("Oops"), { path: "/profile", method: "GET", headers: {} }, context("/profile", "route"));
+    await onRequestError(new Error("Oops"), { path: "/never-answered", method: "GET", headers: {} }, context("/never-answered", "route"));
     expect(kept).toHaveLength(1);
+  });
+
+  it("is recorded one at a time a kind in each process: while the database is slow, many cost one statement and one line", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const real = db.query.getMockImplementation()!;
+    const held: ((error: unknown) => void)[] = [];
+    db.query.mockImplementation((sql: string, params?: unknown[]) =>
+      sql.includes(`"requestFailure"`) ? new Promise((_, fail) => held.push(fail)) : real(sql, params),
+    );
+    // 200 home page views at once, each handing over its four failures, and one of another kind.
+    const request = { path: "/", method: "GET", headers: {} };
+    for (let view = 0; view < 200; view++)
+      for (let part = 0; part < 4; part++) await onRequestError(sessionFailed(), request, context("/", "render"));
+    await onRequestError(sessionFailed(), request, context("/recaps", "render"));
+    expect(held).toHaveLength(2);
+    for (const fail of held.splice(0)) fail(refused);
+    await Promise.all(kept.splice(0));
+    expect(logged.mock.calls.map(([said]) => said)).toEqual([
+      "A page failed at /: the database couldn't be reached. It couldn't be recorded: the database couldn't be reached.",
+      "A page failed at /recaps: the database couldn't be reached. It couldn't be recorded: the database couldn't be reached.",
+    ]);
+    // Once that statement has ended, the next failure of the kind is recorded again.
+    db.query.mockImplementation(real);
+    await fail(sessionFailed(), "/");
+    expect(rows()).toEqual([{ route: "/", kind: "page", reason: "the database couldn't be reached" }]);
   });
 
   it("is logged in the same words when the database can't record it, with nothing the error said, and sends nothing", async () => {
@@ -232,6 +297,21 @@ describe("what a visitor can make fail at will", () => {
       { route: "/recaps", kind: "page", reason: "the database couldn't be reached" },
       { route: "/recaps", kind: "page", reason: "the code threw TypeError" },
     ]);
+  });
+
+  it("is not an upload its sender cut off, closing or resetting, which Node says with a code a database's socket can have", async () => {
+    expect(cutOff.map((error) => [error.message, (error as { code?: string }).code])).toEqual([
+      ["aborted", "ECONNRESET"],
+      ["aborted", "ECONNRESET"],
+    ]);
+    for (const error of cutOff) {
+      await fail(error, "/", "action", "/", "POST");
+      await fail(error, "/profile", "render", "/profile", "POST");
+    }
+    expect(rows()).toEqual([]);
+    // Thrown on a page asked for, it is the code's, not the database's.
+    await fail(cutOff[0], "/recaps");
+    expect(rows()).toEqual([{ route: "/recaps", kind: "page", reason: "the code threw Error" }]);
   });
 });
 
@@ -287,7 +367,7 @@ describe("a database that can't be used", () => {
     "The site can't use its database: the database couldn't be reached. Pages that need it fail, and no alert can be read from it. You'll hear this every hour until it works again.";
   // Every statement fails as pg fails when it cannot connect, naming the database's host as a real one would.
   const unreachable = () => {
-    const named = Object.assign(new Error(`getaddrinfo ENOTFOUND ${DATABASE}`), { code: "ENOTFOUND", hostname: DATABASE });
+    const named = fromDatabase(Object.assign(new Error(`getaddrinfo ENOTFOUND ${DATABASE}`), { code: "ENOTFOUND", hostname: DATABASE }));
     db.query.mockImplementation(async () => Promise.reject(named));
     return vi.spyOn(console, "error").mockImplementation(() => {});
   };

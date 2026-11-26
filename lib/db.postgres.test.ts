@@ -1,5 +1,5 @@
 import net from "node:net";
-import type { Pool } from "pg";
+import pg, { type Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // The site's one pool (lib/db.ts), which pages, the sign-in library, the scheduled jobs and the scripts all use, against
@@ -89,6 +89,26 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(kept).not.toEqual([]);
     await Promise.all(kept);
     expect(db.totalCount).toBe(0);
+  }, 20_000);
+
+  // What a statement fails with is the database's, to the failed requests (lib/request-failures.ts, #60 review), sent
+  // through the pool, which calls a client back, or on a client it handed out, as the sign-in library sends it; and an
+  // error not from the pool is not. A client is watched once, however often it is handed out.
+  it("marks what a statement fails with as the database's, through the pool and on a client it hands out, and nothing else", async () => {
+    const { reasonOf } = await import("./request-failures");
+    const refused = "the database refused it (error 42P01)";
+    expect(reasonOf(await db.query(`select from "noSuchTable"`).catch((error: unknown) => error))).toBe(refused);
+    const client = await db.connect();
+    const watching = client.query;
+    expect(reasonOf(await client.query(`select from "noSuchTable"`).catch((error: unknown) => error))).toBe(refused);
+    client.release();
+    const again = await db.connect();
+    expect(again === client && again.query === watching).toBe(true);
+    again.release();
+    const bare = new pg.Client({ connectionString: postgres.href });
+    await bare.connect();
+    expect(reasonOf(await bare.query(`select from "noSuchTable"`).catch((error: unknown) => error))).toBe("the code threw an error");
+    await bare.end();
   }, 20_000);
 
   it("answers the first query after the database has scaled to zero, though waking it takes 11.3 s", async () => {

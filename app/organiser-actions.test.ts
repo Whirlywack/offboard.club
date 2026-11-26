@@ -12,6 +12,7 @@ import {
   addPerson,
   addCompany,
   db,
+  fromDatabase,
   matchdays,
   organiserLichess,
   people,
@@ -257,7 +258,7 @@ describe("removing a Member", () => {
 
   it("is titled as the not-found page when the session cannot be read, and records the step's failure", async () => {
     const settled = keepWaitUntil();
-    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    getSession.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
     expect(await confirmTitle()).toEqual({ title: "Page not found" });
     await settled();
     expect([...requestFailures.values()].map(({ route, kind, reason }) => ({ route, kind, reason }))).toEqual([

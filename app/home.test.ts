@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { alertOrganiser } from "@/lib/alerts";
-import { addPerson, db, matchdays, people, requestFailures, resetDb, seasons } from "@/lib/fake-db";
+import { addPerson, db, fromDatabase, matchdays, people, requestFailures, resetDb, seasons } from "@/lib/fake-db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { NextMatchday, SeasonChampions, You } from "./page";
@@ -179,11 +179,11 @@ describe("the signed-in panel on the home page", () => {
 // recorded as the page's, and the Organiser is told of it: what showed nothing on 25 November 2026 (#55).
 describe("the home page's failures, which it shows plainly", () => {
   const CHAT = "123456789";
-  // As the sign-in library threw it when the pool gave up connecting (lib/db.ts, #55).
+  // As the sign-in library threw it when the pool gave up connecting, marked as the pool marks it (lib/db.ts, #55).
   const timedOut = () =>
     Object.assign(
       new Error("Failed to get session", {
-        cause: new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") }),
+        cause: fromDatabase(new Error("Connection terminated due to connection timeout", { cause: new Error("Connection terminated unexpectedly") })),
       }),
       { name: "APIError" },
     );

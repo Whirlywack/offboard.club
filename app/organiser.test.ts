@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addPerson,
   db,
+  fromDatabase,
   jobFailures,
   matchdays,
   organiserLichess,
@@ -184,7 +185,7 @@ describe("who the Organiser is", () => {
 
   it("titles the tab as the not-found page when the session cannot be read, and records the page's failure", async () => {
     const settled = keepWaitUntil();
-    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    getSession.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
     expect(await generateMetadata()).toEqual({ title: "Page not found" });
     await settled();
     expect(failedRequests()).toEqual([{ route: "/organiser", kind: "page", reason: "the database couldn't be reached" }]);
@@ -214,7 +215,7 @@ describe("who the Organiser is", () => {
   it("is sent back to the Organiser page, told it didn't work, when the session cannot be read at the callback", async () => {
     const back = await approveOnLichess(await pressConnect(), "boss");
     const settled = keepWaitUntil();
-    getSession.mockRejectedValue(new Error("Connection terminated due to connection timeout"));
+    getSession.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
     expect(await arrive(back)).toBe("/organiser?lichess=failed");
     expect(lichess.calls).toEqual([]);
     expect(jar.values.size).toBe(0);
@@ -383,13 +384,16 @@ describe("connecting the Organiser's Lichess account", () => {
     const settled = keepWaitUntil();
     const real = db.query.getMockImplementation()!;
     db.query.mockImplementation((sql: string, params?: unknown[]) =>
-      sql.includes(`insert into "organiserLichess"`) ? Promise.reject(new Error("Connection terminated unexpectedly")) : real(sql, params),
+      sql.includes(`insert into "organiserLichess"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
     );
-    expect(await connectAs("boss")).toBe("/organiser?lichess=failed");
-    expect(liveTokens()).toEqual([]);
-    await settled();
-    expect(failedRequests()).toEqual([{ route: "/api/lichess/organiser-callback", kind: "route", reason: "the database couldn't be reached" }]);
-    db.query.mockImplementation(real);
+    try {
+      expect(await connectAs("boss")).toBe("/organiser?lichess=failed");
+      expect(liveTokens()).toEqual([]);
+      await settled();
+      expect(failedRequests()).toEqual([{ route: "/api/lichess/organiser-callback", kind: "route", reason: "the database couldn't be reached" }]);
+    } finally {
+      db.query.mockImplementation(real);
+    }
   });
 
   it("changes nothing when the Organiser declines on Lichess", async () => {

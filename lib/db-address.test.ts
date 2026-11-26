@@ -6,8 +6,9 @@ import { afterAll, expect, it, vi } from "vitest";
 // error level. Nothing connects.
 const NEON = "postgres://neondb_owner:a-pretend-password@ep-pretend-123456-pooler.eu-central-1.aws.neon.tech/neondb";
 const REWRITTEN = ["?sslmode=require&channel_binding=require", "?sslmode=prefer", "?channel_binding=require&sslmode=verify-ca"];
-// Left as they are: libpq's meanings, under which require checks no certificate, and a mode inside another value.
-const KEPT = ["?uselibpqcompat=true&sslmode=require", "?sslmode=require&uselibpqcompat=true", "?application_name=a?sslmode=require"];
+// Left as they are: libpq's meanings, under which require checks no certificate, a mode inside another value, and one
+// with no query, which pg reads as part of the database's name.
+const KEPT = ["?uselibpqcompat=true&sslmode=require", "?sslmode=require&uselibpqcompat=true", "?application_name=a?sslmode=require", "&sslmode=require"];
 
 afterAll(() => {
   vi.unstubAllEnvs();
@@ -43,7 +44,8 @@ it("is connected to as with the address given, verified as pg verifies it now, a
   for (const i of REWRITTEN.keys()) expect(connecting[i].ssl).toEqual({});
   // ...but not under libpq's meanings, which the pool keeps.
   expect(connecting[REWRITTEN.length].ssl).toEqual({ rejectUnauthorized: false });
-  expect(connecting.at(-1)!.application_name).toBe("a?sslmode=require");
+  expect(connecting.at(-2)!.application_name).toBe("a?sslmode=require");
+  expect((connecting.at(-1) as unknown as { database: string }).database).toBe("neondb&sslmode=require");
   // DATABASE_URL itself is warned of.
   expect(warned).toHaveBeenCalledOnce();
   expect(String(warned.mock.calls[0][0])).toMatch(/^SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'/);

@@ -67,7 +67,7 @@ async function Confirm({ searchParams }: Pick<PageProps<"/organiser/remove">, "s
             <p role="alert" className={styles.needs}>
               {chosen === id ? NOT_YOURSELF : "That Member isn't in the Club."}
             </p>
-            <nav aria-label="More" className={styles.more}>
+            <nav aria-label="More">
               <RuledLinks links={[["/organiser", "Back to the Organiser page"]]} />
             </nav>
           </>

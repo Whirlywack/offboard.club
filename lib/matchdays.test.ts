@@ -238,7 +238,7 @@ describe("a redo", () => {
   it("keeps the Games of someone who has left since, once, even if they come back with the same Lichess account", async () => {
     await ingestTournament(TOURNAMENT);
     // cora deletes her account (#15), as the site deletes it: her side of her two Games empties.
-    await db.query(`delete from "user" where id = $1`, ["cora"]);
+    await db.query(`delete from "user" where id = $1 returning "lichessId"`, ["cora"]);
     const kept = [...games.values()].filter((g) => g.whiteId === null || g.blackId === null);
     expect(kept.map((g) => g.lichessGameId).sort()).toEqual(["Pretend066", "Pretend119"]);
 

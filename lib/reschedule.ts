@@ -17,7 +17,7 @@
 import { db, type Queryable } from "./db";
 import { sentence } from "./jobs";
 import { LICHESS_DEADLINE_MS } from "./leaving";
-import { cancelSwiss, timeLimit } from "./lichess";
+import { cancelSwiss, limitBy, NO_TIME_LEFT } from "./lichess";
 import { organiserToken, refusedPermission } from "./organiser-lichess";
 import { matchdayStart, ZONE } from "./schedule";
 import { placesIn, postgresStore, readSchedule, seasonDates, setSeasonStart, skipSunday, unskipSunday, type Store } from "./seasons";
@@ -43,12 +43,17 @@ const UNANSWERED = "The site stopped before Lichess said whether it had cancelle
 // it did as a sentence. Then asks Lichess to cancel the tournaments the change left without a Matchday.
 async function changeSchedule(now: Date, change: (store: Store) => Promise<Said | string>): Promise<Said> {
   const made = await inTransaction(async (q) => {
+    // One change at a time: each waits here until any other has ended, so that it reads the schedule as that one left
+    // it, and two changes each allowed alone cannot together put a Sunday in two Seasons. Only a lock that ends with the
+    // transaction holds through Neon's pooled connections, which are shared by transaction. The migrations take another
+    // key (scripts/migrate.mjs).
+    await q.query(`select pg_advisory_xact_lock(16)`);
     const store = postgresStore(q);
     const done = await change(store);
     return typeof done === "string" ? { text: done, stranded: await strand(q, store, now) } : done;
   });
   if (!("stranded" in made)) return made;
-  const cancelled = await cancelOnLichess(made.stranded, now);
+  const cancelled = await cancelOnLichess(made.stranded, now, Date.now() + LICHESS_DEADLINE_MS);
   // The change's notice for the Telegram group, queued in its transaction (lib/seasons.ts), now that the change is kept;
   // after Lichess, so that Telegram cannot hold up the cancelling. It cannot fail the change, and if it is not sent now
   // the next run of Posting to Telegram sends it.
@@ -98,11 +103,12 @@ export const changeSeasonStart = (number: number, start: string, now: Date) =>
 
 // For Creating Matchdays, at the end of every run: clears and keeps any tournament without a Matchday since the last
 // change to the schedule, such as one the job recorded while a change was being made, then asks Lichess again to cancel
-// each one kept whose Sunday is still to come. Those Lichess cancelled, as sentences for the run's record.
-export async function sweepTournaments(now: Date): Promise<string[]> {
+// each one kept whose Sunday is still to come, giving up at `by` (a time, in ms), the run's own limit. Those Lichess
+// cancelled, as sentences for the run's record.
+export async function sweepTournaments(now: Date, by: number): Promise<string[]> {
   await inTransaction((q) => strand(q, postgresStore(q), now));
   const kept = (await tournamentCancellations()).filter((t) => matchdayStart(t.date) > now);
-  const cancelled = await cancelOnLichess(kept, now);
+  const cancelled = await cancelOnLichess(kept, now, by);
   return cancelled.filter((c) => c.problem === null).map(({ date }) => `The tournament for ${sunday(date)} is cancelled on Lichess.`);
 }
 
@@ -135,9 +141,9 @@ async function strand(q: Queryable, store: Store, now: Date): Promise<Tournament
   if (wanted.length > 0) await q.query(`delete from "tournamentCancellation" where "date" = any($1::date[])`, [wanted]);
   const stranded: Tournament[] = [];
   for (const { date, lichessTournamentId } of rows.filter((t) => matchdayStart(t.date) > now && !places.has(t.date))) {
-    if (lichessTournamentId === null) continue;
     // Only while it has this tournament and no results: the clearing is what decides, as the Matchday may have changed
-    // since it was read, or another request cleared it first.
+    // since it was read, or another request cleared it first. One without a tournament has nothing to clear, as nothing
+    // equals null.
     const { rowCount } = await q.query(
       `delete from "matchday" where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is null`,
       [date, lichessTournamentId],
@@ -148,21 +154,28 @@ async function strand(q: Queryable, store: Store, now: Date): Promise<Tournament
        on conflict ("lichessTournamentId") do update set "date" = excluded."date", "problem" = excluded."problem"`,
       [lichessTournamentId, date, UNANSWERED],
     );
-    stranded.push({ date, lichessTournamentId });
+    stranded.push({ date, lichessTournamentId: lichessTournamentId! });
   }
   return stranded;
 }
 
-// Asks Lichess to cancel each tournament, within one deadline for them all: forgotten once Lichess has, or has no such
-// tournament; otherwise kept with why, unless the Organiser has said it is done meanwhile. What became of each.
-async function cancelOnLichess(tournaments: Tournament[], now: Date): Promise<Cancelled[]> {
+// Asks Lichess to cancel each tournament, within one deadline for them all, LICHESS_DEADLINE_MS or `by` (a time, in ms)
+// if that comes first, and not at all once `by` has come: forgotten once Lichess has, or has no such tournament;
+// otherwise kept with why, unless the Organiser has said it is done meanwhile. What became of each.
+async function cancelOnLichess(tournaments: Tournament[], now: Date, by: number): Promise<Cancelled[]> {
   if (tournaments.length === 0) return [];
   const permission = await organiserToken(now);
-  const deadline = timeLimit(LICHESS_DEADLINE_MS, `Lichess took more than ${LICHESS_DEADLINE_MS / 1000} s`);
+  // Reckoned only now, once the permission has been read, just before Lichess is asked.
+  const deadline = limitBy(by, LICHESS_DEADLINE_MS);
   try {
     const cancelled: Cancelled[] = [];
     for (const { date, lichessTournamentId } of tournaments) {
-      const problem = "problem" in permission ? permission.problem : await tryCancel(lichessTournamentId, permission, deadline.signal);
+      const problem =
+        "problem" in permission
+          ? permission.problem
+          : deadline
+            ? await tryCancel(lichessTournamentId, permission, deadline.signal)
+            : NO_TIME_LEFT;
       if (problem)
         await db.query(`update "tournamentCancellation" set "problem" = $2 where "lichessTournamentId" = $1`, [
           lichessTournamentId,
@@ -173,7 +186,7 @@ async function cancelOnLichess(tournaments: Tournament[], now: Date): Promise<Ca
     }
     return cancelled;
   } finally {
-    deadline.clear();
+    deadline?.clear();
   }
 }
 

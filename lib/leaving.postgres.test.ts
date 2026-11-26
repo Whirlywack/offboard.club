@@ -1,9 +1,11 @@
+import type { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
-import type pg from "pg";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { finishConnection, startConnection } from "./connect-lichess";
 import { createFakeLichess } from "./fixtures/fake-lichess";
+import { waitingForLock } from "./fixtures/waiting-for-lock";
 import { forgetTeamRemoval, isMember, membersToRemove, removeMember, removeSwitchedFrom, teamRemovals } from "./leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
 
@@ -16,9 +18,15 @@ import { finishOrganiserConnection, startOrganiserConnection } from "./organiser
 // database from `pnpm db:start`, never a shared or live one, before seeding (once that one is seeded, a second from
 // `pnpm db:start --dir .local-db-tests`), with that database's address:
 // ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/leaving.postgres.test.ts
+//
+// One case needs two connections of its own, outside that transaction, which see each other's statements: it commits a
+// person of its own, part-way through signing up so that no other suite counts them, and deletes them whatever happens.
 vi.mock("@/lib/db", async () => {
+  const { AsyncLocalStorage } = await import("node:async_hooks");
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  // The connection the app's statements go to: the test's transaction, unless a case runs them on one of its own.
+  const on = new AsyncLocalStorage<pg.Client>();
   const inner: Record<string, string> = {
     begin: "savepoint leaving",
     commit: "release savepoint leaving",
@@ -26,6 +34,8 @@ vi.mock("@/lib/db", async () => {
   };
   // Nothing the app sends may end the test's transaction.
   const query = (sql: string, params?: unknown[]) => {
+    const own = on.getStore();
+    if (own) return own.query(sql, params);
     if (/^\s*(begin|start|commit|end|rollback|abort)\b/i.test(sql)) throw new Error(`refused inside the test's transaction: ${sql}`);
     return client.query(sql, params);
   };
@@ -33,11 +43,12 @@ vi.mock("@/lib/db", async () => {
     query: (sql: string, params?: unknown[]) => (Object.hasOwn(inner, sql) ? client.query(inner[sql]) : query(sql, params)),
     release: () => {},
   });
-  return { db: { client, query, connect } };
+  return { db: { client, on, query, connect } };
 });
 
 describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("leaving the Club in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
+  const { on } = db as unknown as { on: AsyncLocalStorage<pg.Client> };
   const run = (sql: string, params: unknown[] = []) => client.query(sql, params);
   const count = async (sql: string, params: unknown[]) => (await run(sql, params)).rowCount;
   const addPerson = (id: string, lichessId = `${id}-on-lichess`) =>
@@ -103,7 +114,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       expect(await count(`select 1 from "${table}" where "userId" = $1`, [STAYS])).toBe(1);
     // Their account is kept to remove from the Club's Lichess team by hand, with why.
     const why = "LICHESS_TEAM_ID is not set, so the Club's Lichess team is not known.";
-    expect(await teamRemovals()).toEqual([{ lichessId: `${GONE}-on-lichess`, problem: why }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: `${GONE}-on-lichess`, problem: why, heldBy: null }]);
 
     // Someone else leaves too; and someone who came back with the first one's Lichess account leaves again, which keeps
     // that account once.
@@ -115,7 +126,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
 
     // The Organiser has removed one of them on Lichess: only that one is forgotten.
     await forgetTeamRemoval("leaving-test-also-on-lichess");
-    expect(await teamRemovals()).toEqual([{ lichessId: `${GONE}-on-lichess`, problem: why }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: `${GONE}-on-lichess`, problem: why, heldBy: null }]);
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);
@@ -181,7 +192,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { id: MEMBER, lichessId: "switch-test-new" },
       { id: OTHER, lichessId: `${OTHER}-on-lichess` },
     ]);
-    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept" }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept", heldBy: null }]);
     // A second switch, from a session still naming the first account, names the account the row has now.
     for (const id of ["switch-test-third", "switch-test-unheld"]) lichess.accounts.set(id, { id, username: id });
     expect((await switchTo("switch-test-third", { id: MEMBER, lichessId: `${MEMBER}-on-lichess` })).replaced).toBe("switch-test-new");
@@ -193,10 +204,10 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await switchTo("switch-test-unheld", { id: "switch-test-gone", lichessId: null })).to).toBe("/welcome/lichess?lichess=failed");
     failing.mockRestore();
-    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept" }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: "kept", heldBy: null }]);
     expect(await switchTo("switch-test-unheld", { id: "switch-test-gone", lichessId: null })).toEqual({ to: "/welcome/profile", replaced: null });
     const never = "Its owner deleted their account on Offboard while it was joining the Club's team, so it was never connected.";
-    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: never }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: "switch-test-unheld", problem: never, heldBy: null }]);
 
     // The accounts switched from are nobody's now: kept, with why. The one in use, and another Member's, are left.
     const by = Date.now() + 25_000;
@@ -204,52 +215,161 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       await removeSwitchedFrom(account, by);
     const why = "LICHESS_TOKEN_KEY is not set, so the Organiser's Lichess permission cannot be read.";
     expect((await teamRemovals()).sort((a, b) => (a.lichessId < b.lichessId ? -1 : 1))).toEqual([
-      { lichessId: `${MEMBER}-on-lichess`, problem: why },
-      { lichessId: "switch-test-new", problem: why },
-      { lichessId: "switch-test-unheld", problem: never },
+      { lichessId: `${MEMBER}-on-lichess`, problem: why, heldBy: null },
+      { lichessId: "switch-test-new", problem: why, heldBy: null },
+      { lichessId: "switch-test-unheld", problem: never, heldBy: null },
     ]);
+
+    // Someone else who deleted their account while connecting, whose account another Member connected while it was
+    // joining the team: it is that Member's now, so nothing is kept to remove.
+    lichess.accounts.set("switch-test-shared", { id: "switch-test-shared", username: "switch-test-shared" });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/join")) await run(`update "user" set "lichessId" = 'switch-test-shared' where id = $1`, [OTHER]);
+      return lichess.fetch(input, init);
+    });
+    expect(await switchTo("switch-test-shared", { id: "switch-test-vanished", lichessId: null })).toEqual({ to: "/welcome/profile", replaced: null });
+    expect((await teamRemovals()).map((r) => r.lichessId)).not.toContain("switch-test-shared");
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);
 
-  it("keeps for the Organiser only an account nobody has once Lichess has answered", async () => {
-    // The Organiser has connected their Lichess account, which leads the team; Lichess then fails every removal, slowly
-    // enough that a Member can switch back to the account meanwhile.
+  // Two switches of one person saved at once, each on its own connection, as two of the site's servers would save them:
+  // the first holds its save, in a transaction, until the second waits for it.
+  it("names, of two switches saved at once, the account each replaced", async () => {
+    const tag = randomBytes(6).toString("hex");
+    const person = `switch-race-${tag}`;
+    const [was, first, second] = ["was", "one", "two"].map((n) => `race-${n}-${tag}`);
+    const lichess = createFakeLichess({ teamId: "switch-team", teamPassword: "pw", accounts: [first, second].map((id) => ({ id, username: id })) });
+    vi.stubGlobal("fetch", lichess.fetch);
+    for (const [name, value] of Object.entries({
+      LICHESS_URL: "https://fake.lichess.test",
+      BETTER_AUTH_URL: "https://offboard.test",
+      BETTER_AUTH_SECRET: "test secret",
+      LICHESS_TEAM_ID: "switch-team",
+      LICHESS_TEAM_PASSWORD: "pw",
+    }))
+      vi.stubEnv(name, value);
+    const [one, two, watcher] = [0, 1, 2].map(() => new pg.Client({ connectionString: process.env.DATABASE_URL }));
+    await Promise.all([one.connect(), two.connect(), watcher.connect()]);
+    try {
+      await watcher.query(
+        `insert into "user" (id, name, email, "emailVerified", "lichessId", "lichessUsername") values ($1, $1, $1 || '@example.invalid', false, $2, $2)`,
+        [person, was],
+      );
+      const switchOn = async (connection: pg.Client, account: string) => {
+        const { url, cookie } = startConnection(person);
+        lichess.signedInAs = account;
+        const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
+        // Both from a session read before either switch, naming the account the person had.
+        return on.run(connection, () => finishConnection({ id: person, lichessId: was }, back.searchParams, cookie));
+      };
+      await one.query("begin");
+      expect(await switchOn(one, first)).toEqual({ to: `/profiles/${person}`, replaced: was });
+      const { rows } = await two.query<{ pid: number }>(`select pg_backend_pid() as pid`);
+      const saving = switchOn(two, second);
+      await waitingForLock(watcher, rows[0].pid);
+      await one.query("commit");
+      expect(await saving).toEqual({ to: `/profiles/${person}`, replaced: first });
+      expect((await watcher.query(`select "lichessId" from "user" where id = $1`, [person])).rows).toEqual([{ lichessId: second }]);
+    } finally {
+      await one.query("rollback").catch(() => {});
+      await watcher.query(`delete from "user" where id = $1`, [person]);
+      await Promise.all([one.end(), two.end(), watcher.end()]);
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  }, 30_000);
+
+  // The Organiser `organiser` connects their Lichess account, which leads the team, to a fake Lichess, with nothing kept
+  // for the Organiser yet. Each request to remove an account from the team then runs `removal.during`, as another
+  // request at the same moment would, and is answered by `removal.answer`, as Lichess would by default.
+  async function connectOrganiser(organiser: string) {
     const lichess = createFakeLichess({ teamId: "switch-team", teamPassword: "pw", accounts: [{ id: "switch-boss", username: "switch-boss" }] });
     lichess.team.leaders.add("switch-boss");
-    const ORGANISER = "switch-test-organiser";
     for (const [name, value] of Object.entries({
       LICHESS_URL: "https://fake.lichess.test",
       BETTER_AUTH_URL: "https://offboard.test",
       BETTER_AUTH_SECRET: "test secret",
       LICHESS_TEAM_ID: "switch-team",
       LICHESS_TOKEN_KEY: randomBytes(32).toString("base64"),
-      ORGANISER_USER_ID: ORGANISER,
+      ORGANISER_USER_ID: organiser,
     }))
       vi.stubEnv(name, value);
-    let duringRemoval = async () => {};
+    const removal = { during: async () => {}, answer: (input: RequestInfo | URL, init?: RequestInit) => lichess.fetch(input, init) };
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       if (!String(input).includes("/kick/")) return lichess.fetch(input, init);
-      await duringRemoval();
-      return new Response("", { status: 503 });
+      await removal.during();
+      return removal.answer(input, init);
     });
-    await addPerson(ORGANISER, "switch-boss-plays");
+    await addPerson(organiser, `${organiser}-plays`);
     await run(`delete from "organiserLichess"`);
     await run(`delete from "teamRemoval"`);
-    const { url, cookie } = startOrganiserConnection(ORGANISER);
+    const { url, cookie } = startOrganiserConnection(organiser);
     lichess.signedInAs = "switch-boss";
     const back = new URL((await lichess.handle(new Request(url))).headers.get("location")!);
-    expect(await finishOrganiserConnection({ id: ORGANISER }, back.searchParams, cookie)).toBe("/organiser?lichess=connected");
+    expect(await finishOrganiserConnection({ id: organiser }, back.searchParams, cookie)).toBe("/organiser?lichess=connected");
+    return { lichess, removal };
+  }
+
+  it("keeps for the Organiser only an account nobody has once Lichess has answered", async () => {
+    // Lichess fails every removal, slowly enough that a Member can switch back to the account meanwhile.
+    const { removal } = await connectOrganiser("switch-test-organiser");
+    removal.answer = async () => new Response("", { status: 503 });
 
     // A Member has switched from race-old to race-new, and switches back while Lichess is being asked to remove race-old.
     const MEMBER = "switch-test-racer";
     await addPerson(MEMBER, "race-new");
-    duringRemoval = async () => void (await run(`update "user" set "lichessId" = 'race-old' where id = $1`, [MEMBER]));
+    removal.during = async () => void (await run(`update "user" set "lichessId" = 'race-old' where id = $1`, [MEMBER]));
     await removeSwitchedFrom("race-old", Date.now() + 25_000);
     // Someone else's old account, which nobody takes meanwhile.
-    duringRemoval = async () => {};
+    removal.during = async () => {};
     await removeSwitchedFrom("race-gone", Date.now() + 25_000);
-    expect(await teamRemovals()).toEqual([{ lichessId: "race-gone", problem: "Lichess answered POST /api/team/{teamId}/kick/{userId} with 503." }]);
+    expect(await teamRemovals()).toEqual([{ lichessId: "race-gone", problem: "Lichess answered POST /api/team/{teamId}/kick/{userId} with 503.", heldBy: null }]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  }, 60_000);
+
+  it("once Lichess has removed an account, keeps it only while someone has it, and names them", async () => {
+    const { lichess, removal } = await connectOrganiser("rejoin-test-organiser");
+    for (const id of ["rejoin-old", "rejoin-new", "leave-old", "leave-new"]) lichess.team.members.add(id);
+    const outOfTeam = "Lichess removed it from the Club's team just as it was connected again.";
+
+    // A Member has switched from rejoin-old to rejoin-new, and switches back while Lichess removes rejoin-old.
+    const BACK = "rejoin-test-back";
+    await addPerson(BACK, "rejoin-new");
+    removal.during = async () => void (await run(`update "user" set "lichessId" = 'rejoin-old' where id = $1`, [BACK]));
+    await removeSwitchedFrom("rejoin-old", Date.now() + 25_000);
+    expect(lichess.team.members.has("rejoin-old")).toBe(false);
+    // Kept for its Member to connect again, by name. An account kept for someone who is no Member names nobody.
+    await run(
+      `insert into "user" (id, name, email, "emailVerified", "lichessId") values ('rejoin-test-half', 'Half', 'rejoin-test-half@example.invalid', false, 'rejoin-half')`,
+    );
+    await run(`insert into "teamRemoval" ("lichessId", "problem") values ('rejoin-half', 'kept')`);
+    // (Each is kept at the same now(), the test's transaction's, so they come by account.)
+    expect(await teamRemovals()).toEqual([
+      { lichessId: "rejoin-half", problem: "kept", heldBy: null },
+      { lichessId: "rejoin-old", problem: outOfTeam, heldBy: BACK },
+    ]);
+
+    // They switch to another account, and Lichess removes rejoin-old again: nobody has it, so nothing is left to do.
+    removal.during = async () => {};
+    await run(`update "user" set "lichessId" = 'rejoin-third' where id = $1`, [BACK]);
+    await removeSwitchedFrom("rejoin-old", Date.now() + 25_000);
+    expect((await teamRemovals()).map((r) => r.lichessId)).toEqual(["rejoin-half"]);
+
+    // Someone leaves while their switch to leave-new is saved: that account, in the team, is kept for the Organiser.
+    const LEAVER = "rejoin-test-leaver";
+    await addPerson(LEAVER, "leave-old");
+    removal.during = async () => void (await run(`update "user" set "lichessId" = 'leave-new' where id = $1`, [LEAVER]));
+    expect(await removeMember(LEAVER)).toBe(true);
+    expect(await teamRemovals()).toEqual([
+      {
+        lichessId: "leave-new",
+        problem: "Its owner connected it to Offboard while their account was being deleted, so the site didn't remove it from the Club's team.",
+        heldBy: null,
+      },
+      { lichessId: "rejoin-half", problem: "kept", heldBy: null },
+    ]);
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   }, 60_000);

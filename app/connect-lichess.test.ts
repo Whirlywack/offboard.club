@@ -510,7 +510,7 @@ describe("coming back from Lichess", () => {
     await vi.advanceTimersByTimeAsync(300_000);
     expect(await arrived).toBe("/welcome/lichess?lichess=failed");
     expect(finished - started).toBeGreaterThanOrEqual(240_000);
-    expect(finished - started).toBeLessThan(295_000);
+    expect(finished - started).toBeLessThanOrEqual(REVOKED_BY_MS);
     // Token and account took 220 s; the marks were still being asked for at 240 s.
     expect(apiCalls()).toEqual(["POST /api/token", "GET /api/account", "DELETE /api/token"]);
     expect(revoked()).toBe(true);
@@ -522,7 +522,7 @@ describe("coming back from Lichess", () => {
     );
   });
 
-  it("revokes the token within 295 s of the callback's start, however long reading the session took", async () => {
+  it("revokes the token within 270 s of the callback's start, however long reading the session took", async () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const back = await approveOnLichess(await pressConnect(), "bobby");

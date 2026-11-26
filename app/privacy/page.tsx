@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ExternalLink } from "../external-link";
-import ui from "../ui.module.css";
+import { RuledLinks } from "../ruled-links";
 import styles from "./privacy.module.css";
 import { organiserEmail } from "@/lib/contact";
 import { HOUSE_RULES } from "@/lib/consent";
@@ -11,23 +12,63 @@ export const metadata: Metadata = {
   description: "What Offboard keeps about you, who sees it, and the terms of membership.",
 };
 
+// The sections in order, by their heading's id: their headings, and the list of them at the top that leads to each.
+const SECTIONS = {
+  who: "Who runs Offboard",
+  public: "Who sees what",
+  leaving: "Leaving",
+  kept: "What Offboard keeps",
+  why: "Why it's kept",
+  others: "Who else handles it",
+  "how-long": "How long it's kept",
+  rights: "Your rights",
+  complaints: "Complaints",
+  cookies: "Cookies",
+  "fair-play": "Fair play",
+  terms: "Terms of membership",
+};
+
+function Section({ id, children }: { id: keyof typeof SECTIONS; children: ReactNode }) {
+  return (
+    <section aria-labelledby={id} className={styles.section}>
+      <h2 id={id}>{SECTIONS[id]}</h2>
+      {children}
+    </section>
+  );
+}
+
 // What the site keeps, who sees it and the terms of membership, for anyone, signed in or not. Every statement rests on
 // research/privacy-policy-requirements.md and the code as it is; docs/record-of-processing.md is the same, in full, for
 // the Organiser. It names no person: the welcome step shows the Organiser's name to someone about to join. The first
-// three sections are the short version: who to write to, who sees what, and how to leave.
+// three sections are the short version: who to write to, who sees what, and how to leave. A reader goes straight to a
+// section from the list of headings at the top, which on a desktop stays beside the text.
 export default function PrivacyPage() {
   const contact = organiserEmail();
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
+    <main id="main" className={styles.page}>
+      <div className={styles.head}>
         <h1>Privacy and terms</h1>
-        <p className={`${ui.small} ${ui.muted}`}>
+        <p className={styles.changed}>
           Last changed <time dateTime="2026-11-26">26 November 2026</time>.
         </p>
       </div>
 
-      <section aria-labelledby="who" className={styles.section}>
-        <h2 id="who">Who runs Offboard</h2>
+      <nav aria-label="Privacy and terms" className={styles.contents}>
+        <ul>
+          {Object.entries(SECTIONS).map(([id, heading]) => (
+            <li key={id}>
+              <a href={`#${id}`}>
+                <span>{heading}</span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M8 2.5v11M3.5 9 8 13.5 12.5 9" />
+                </svg>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <Section id="who">
         <p>
           Offboard is run by one volunteer, the Organiser, who is responsible for what the site keeps (its
           &ldquo;controller&rdquo;, in GDPR terms). The welcome step shows their name before you agree to anything.
@@ -39,10 +80,9 @@ export default function PrivacyPage() {
         ) : (
           <p>The Organiser&apos;s contact address isn&apos;t set up yet.</p>
         )}
-      </section>
+      </Section>
 
-      <section aria-labelledby="public" className={styles.section}>
-        <h2 id="public">Who sees what</h2>
+      <Section id="public">
         <ul>
           <li>
             <strong>Anyone:</strong> your name and Company, with your place, points, Season score, Matchdays played and
@@ -63,10 +103,9 @@ export default function PrivacyPage() {
         </ul>
         <p>Being listed in public is a condition of membership, so objecting to it means leaving the Club.</p>
         <p>Lichess shows your username and Games publicly on its own site.</p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="leaving" className={styles.section}>
-        <h2 id="leaving">Leaving</h2>
+      <Section id="leaving">
         <p>
           To leave, choose &ldquo;Delete your account&rdquo; on <Link href="/profile">Edit your Profile</Link>. That
           deletes your account, Profile, Lichess connection, results and acceptances at once, signs you out and takes you
@@ -78,10 +117,9 @@ export default function PrivacyPage() {
           Lichess id and both ratings. An Award someone won against you stays theirs, but its Game is no longer shown. Your
           Lichess account, its Games and Recaps already posted to the Telegram group stay as they are.
         </p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="kept" className={styles.section}>
-        <h2 id="kept">What Offboard keeps</h2>
+      <Section id="kept">
         <ul>
           <li>
             <strong>From LinkedIn, at each sign-in:</strong> your name, a link to your photo, your email address, whether
@@ -110,10 +148,9 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p>Offboard sends no email, and no page shows your email address.</p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="why" className={styles.section}>
-        <h2 id="why">Why it&apos;s kept</h2>
+      <Section id="why">
         <ul>
           <li>
             <strong>Running your membership:</strong> your account, sign-in, Profile, Matchdays and Games are what you
@@ -132,10 +169,9 @@ export default function PrivacyPage() {
             </ul>
           </li>
         </ul>
-      </section>
+      </Section>
 
-      <section aria-labelledby="others" className={styles.section}>
-        <h2 id="others">Who else handles it</h2>
+      <Section id="others">
         <ul>
           <li>
             <strong>Vercel</strong> hosts the site in Frankfurt and builds it in Washington, D.C., USA. The build connects
@@ -168,10 +204,9 @@ export default function PrivacyPage() {
           </ExternalLink>
           ) use the EU&apos;s Standard Contractual Clauses.
         </p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="how-long" className={styles.section}>
-        <h2 id="how-long">How long it&apos;s kept</h2>
+      <Section id="how-long">
         <ul>
           <li>Your account, Profile, Lichess connection, results and acceptances: while you&apos;re a Member.</li>
           <li>Each sign-in&apos;s record, with its IP address and browser: until you sign out of it or leave.</li>
@@ -190,10 +225,9 @@ export default function PrivacyPage() {
           </li>
           <li>Vercel&apos;s logs of requests and errors: 1 day.</li>
         </ul>
-      </section>
+      </Section>
 
-      <section aria-labelledby="rights" className={styles.section}>
-        <h2 id="rights">Your rights</h2>
+      <Section id="rights">
         <ul>
           <li>
             Change or clear what you added to your Profile at any time, on <Link href="/profile">Edit your Profile</Link>.
@@ -204,19 +238,17 @@ export default function PrivacyPage() {
             computer can read, ask them to correct it, delete it or limit its use, and object to its use.
           </li>
         </ul>
-      </section>
+      </Section>
 
-      <section aria-labelledby="complaints" className={styles.section}>
-        <h2 id="complaints">Complaints</h2>
+      <Section id="complaints">
         <p>
           Please write to the Organiser first. You can also complain to the data protection authority of the EU country you
           live in, or to Lithuania&apos;s State Data Protection Inspectorate (Valstybinė duomenų apsaugos inspekcija,{" "}
           <ExternalLink href="https://vdai.lrv.lt/en">vdai.lrv.lt</ExternalLink>).
         </p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="cookies" className={styles.section}>
-        <h2 id="cookies">Cookies</h2>
+      <Section id="cookies">
         <p>
           The site has no ads, analytics or tracking. Reading it sets no cookies. Only signing in and connecting Lichess
           do, and nothing else is stored in your browser.
@@ -236,18 +268,16 @@ export default function PrivacyPage() {
             Lichess, for up to 10 minutes.
           </li>
         </ul>
-      </section>
+      </Section>
 
-      <section aria-labelledby="fair-play" className={styles.section}>
-        <h2 id="fair-play">Fair play</h2>
+      <Section id="fair-play">
         <p>
           While Lichess has your account marked for breaking its terms, or closed, you&apos;re left off Leaderboards and
           Awards. This is the only thing the site decides about you automatically, and it has no legal or similar effect.
         </p>
-      </section>
+      </Section>
 
-      <section aria-labelledby="terms" className={styles.section}>
-        <h2 id="terms">Terms of membership</h2>
+      <Section id="terms">
         <ul>
           <li>
             <strong>Who may join:</strong> anyone 18 or over who works in tech in or around Vilnius. Each Member connects
@@ -286,10 +316,10 @@ export default function PrivacyPage() {
             <strong>Law:</strong> Lithuanian.
           </li>
         </ul>
-      </section>
+      </Section>
 
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/">Home</Link>
+      <nav aria-label="More" className={styles.home}>
+        <RuledLinks links={[["/", "Home"]]} />
       </nav>
     </main>
   );

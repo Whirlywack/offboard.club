@@ -114,6 +114,20 @@ describe("the privacy and terms page", () => {
     expect(section(html, "complaints")).toContain('href="https://vdai.lrv.lt/en"');
   });
 
+  // A reader on a phone finds what is kept, for how long, who sees it or how to leave without reading all that is above
+  // it (#82): the headings, in the page's words and order, each a link to its section, above the first of them.
+  it("lists its sections' headings before the first section, each leading to its section", () => {
+    const html = privacyPage();
+    const headings = [...html.matchAll(/<h2 id="([^"]+)">([^<]+)<\/h2>/g)].map(([, id, heading]) => [`#${id}`, heading]);
+    const list = html.match(/<nav aria-label="Privacy and terms"[^>]*>(.*?)<\/nav>/)!;
+    const links = [...list[1].matchAll(/<a href="([^"]+)"><span>([^<]+)<\/span>/g)].map(([, href, label]) => [href, label]);
+    expect(headings.map(([, heading]) => heading)).toEqual(
+      ["Who runs Offboard", "Who sees what", "Leaving", "What Offboard keeps", "Why it's kept", "Who else handles it", "How long it's kept", "Your rights", "Complaints", "Cookies", "Fair play", "Terms of membership"].map(markup),
+    );
+    expect(links).toEqual(headings);
+    expect(list.index).toBeLessThan(html.indexOf("<h2"));
+  });
+
   it("discloses the sign-in cookie and its 7 days, which use does not extend", () => {
     expect(section(privacyPage(), "cookies")).toContain(
       "<code>__Secure-better-auth.session_token</code>): keeps you signed in for 7 days. Signing out removes it.",

@@ -1,15 +1,217 @@
-/* The privacy and terms page: one column of sections, each a heading over prose and lists. */
+/*
+ * The privacy and terms page: a long text, set to be read. The title in the display serif, then the twelve headings as
+ * a list that leads to each section, then the sections in one column. On a desktop the list stands in a column of its
+ * own beside the text and stays in view as it scrolls.
+ *
+ * The page's markup is held word for word by app/privacy.test.ts, so nothing in a section takes a class: each piece is
+ * styled from the section it is in.
+ */
 
+.page {
+  padding: 28px var(--gutter) 72px;
+}
+
+/* "Privacy" on the first line and "and terms" on the second: the box is narrower than "Privacy and" and wider than
+   "and terms" */
+.head h1 {
+  max-width: 4.7em;
+  font-size: clamp(60px, 20vw, 88px);
+  font-optical-sizing: auto;
+  line-height: 0.9;
+  letter-spacing: -0.025em;
+}
+
+/* The First-Word Rule, with no markup to hang it on: the first line is the first word */
+.head h1::first-line {
+  font-style: italic;
+  letter-spacing: -0.03em;
+}
+
+.changed {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* The headings, one to a row between rules */
+.contents {
+  margin-top: 30px;
+}
+
+.contents ul {
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.contents li {
+  border-bottom: 1px solid var(--line);
+}
+
+/* On a phone, where the list is at the top, each row ends in the strip's arrow, pointing down the page to its section */
+.contents a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: var(--tap);
+  padding: 6px 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.contents svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .contents a:hover span {
+    text-decoration: underline;
+  }
+}
+
+/* A section: a rule, its heading in the serif at a size that keeps its hairlines, then the text */
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 14px;
+  margin-top: 64px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+/* The rule runs to the gutter; the text keeps to its measure */
+.section > * {
+  max-width: 36em;
+}
+
+/* The list of headings ends in a rule of its own */
+.contents + .section {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.section h2 {
+  margin-bottom: 6px;
+  font-size: 34px;
+  font-optical-sizing: auto;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  scroll-margin-top: 30px; /* the rule above it shows too */
 }
 
 .section ul,
 .section ol {
-  padding-left: 1.25em;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 10px;
+  padding-left: 1.15em;
+}
+
+.section ul {
+  list-style-type: "–\2002";
+}
+
+.section li::marker {
+  color: var(--muted);
+}
+
+.section li > ul,
+.section li > ol {
+  margin-block: 10px;
+}
+
+.section strong {
+  font-weight: 600;
+}
+
+/* A link in the text is a 44px target without moving the lines around it */
+.section a {
+  padding-block: 12px;
+}
+
+.section code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+.home {
+  margin-top: 72px;
+}
+
+@media (min-width: 900px) {
+  /* The title across the top; below it the headings in the left column and the text in the right */
+  .page {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+    column-gap: 4vw;
+    padding: 64px var(--gutter) 120px;
+  }
+
+  .head {
+    grid-column: 1 / -1;
+    padding-bottom: 80px;
+  }
+
+  .head h1 {
+    font-size: min(8.4vw, 140px);
+    line-height: 0.88;
+  }
+
+  .changed {
+    margin-top: 28px;
+    font-size: 16px;
+  }
+
+  /* Beside the twelve sections and the link home */
+  .contents {
+    grid-column: 1;
+    grid-row: 2 / span 13;
+    align-self: start;
+    margin-top: 0;
+  }
+
+  .contents a {
+    font-size: 15px;
+  }
+
+  /* Beside the text, sections lie above as well as below: no arrow */
+  .contents svg {
+    display: none;
+  }
+
+  .section,
+  .home {
+    grid-column: 2;
+  }
+
+  .section {
+    margin-top: 88px;
+    font-size: 18px;
+  }
+
+  /* The first section's rule lines up with the list's */
+  .contents + .section {
+    margin-top: 0;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  .section h2 {
+    font-size: min(3.7vw, 52px);
+  }
+}
+
+/* In view while the text scrolls past, where the window is tall enough to show the whole list */
+@media (min-width: 900px) and (min-height: 600px) {
+  .contents {
+    position: sticky;
+    top: 24px;
+  }
 }

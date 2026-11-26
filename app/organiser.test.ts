@@ -6,7 +6,20 @@ import { randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addPerson, db, jobFailures, matchdays, organiserLichess, people, resetDb, scheduledJobs, seasons, teamRemovals, tournamentCancellations } from "@/lib/fake-db";
+import {
+  addPerson,
+  db,
+  jobFailures,
+  matchdays,
+  organiserLichess,
+  people,
+  requestFailures,
+  resetDb,
+  scheduledJobs,
+  seasons,
+  teamRemovals,
+  tournamentCancellations,
+} from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { REVOKED_BY_MS } from "@/lib/connect-lichess";
@@ -562,6 +575,22 @@ describe("the scheduled jobs on the Organiser page", () => {
     expect(html).not.toContain("<dt>Since</dt>");
   });
 
+  it("shows beside the jobs the kind of request that failed last: its address's shape, its kind, when, and why", async () => {
+    const lastFailedRequest = async () => {
+      const html = await openPage();
+      return html.slice(html.indexOf("<h3>Last failed request</h3>"), html.indexOf("</section>", html.indexOf("<h3>Last failed request</h3>")));
+    };
+    expect(await lastFailedRequest()).toMatch(/>No request has failed\.<\/p><\/div>$/);
+    requestFailures.set("a", { route: "/profile", kind: "page", reason: "the database couldn't be reached", lastAt: new Date("2026-11-25T17:44:34Z") });
+    requestFailures.set("b", { route: "/recaps/[date]", kind: "server action", reason: "the code threw TypeError", lastAt: new Date("2026-11-25T17:50:15Z") });
+    const html = await lastFailedRequest();
+    expect(html).toContain("<dt>Address</dt><dd>/recaps/[date]</dd>");
+    expect(html).toContain("<dt>Kind</dt><dd>Server action</dd>");
+    expect(html).toContain('<dt>Last failed</dt><dd><time dateTime="2026-11-25T17:50:15.000Z">25 November 2026 at 19:50</time></dd>');
+    expect(html).toMatch(/>The code threw TypeError\.<\/p>/);
+    expect(html).not.toMatch(/role="alert"|\/profile|No request has failed/);
+  });
+
   it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
     vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
@@ -595,7 +624,7 @@ describe("the Organiser page as a whole", () => {
     teamRemovals.set("pretend--left", { lichessId: "pretend--left", at: new Date(), problem: "Lichess refused." });
     const html = await openPage();
     const parts = ["lichess", "cancellations", "removals", "schedule", "remove", "telegram", "jobs"].map((id) => `<h2 id="${id}">`);
-    const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure"].map((title) => `<h3>${title}</h3>`);
+    const jobs = ["Creating Matchdays", "Collecting results", "Posting to Telegram", "Last failure", "Last failed request"].map((title) => `<h3>${title}</h3>`);
     for (const part of [...parts, ...jobs]) expect([part, html.split(part).length - 1]).toEqual([part, 1]);
   });
 });

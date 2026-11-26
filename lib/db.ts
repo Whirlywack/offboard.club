@@ -28,8 +28,16 @@ class Pool extends pg.Pool {
   }
 }
 
+// pg 8 takes sslmode=prefer, require and verify-ca to mean verify-full, and says so in a warning on stderr, once in each
+// process that reads one, which Vercel logs at error level (#60). The address is given to pg asking for verify-full,
+// which is what it does now: pg-connection-string turns each of the four into the same `ssl: {}` and nothing else
+// (node_modules/pg-connection-string/index.js, parse), and pg copies `ssl` from it, never `sslmode`
+// (pg/lib/connection-parameters.js), so the server's certificate is checked as before, against the system's CAs and
+// the host's name. (With uselibpqcompat=true, which no address here has, the modes would mean libpq's instead.)
+const verifyFull = (address?: string) => address?.replace(/([?&]sslmode=)(?:prefer|require|verify-ca)(?=&|$)/g, "$1verify-full");
+
 // One pool per server instance; Neon's pooled connection string handles the rest.
-export const db = new Pool({ connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 10_000 });
+export const db = new Pool({ connectionString: verifyFull(process.env.DATABASE_URL), max: 5, connectionTimeoutMillis: 10_000 });
 
 // Vercel suspends an instance between requests, and the pool's idle timer does not run while it is suspended, so a
 // connection left idle could be closed by the database under it and handed to the next request dead. This keeps the

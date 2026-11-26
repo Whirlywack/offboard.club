@@ -20,7 +20,9 @@
 // Telegram; with `pnpm fake-telegram` running, the seed prints the `pnpm post-to-telegram` commands that post the next
 // Matchday's two reminders there, and in season-over `pnpm collect-results` posts the Recap of the Matchday it collects.
 // Both have Backing up run, which says backups aren't set up, as no local block has the store's token, and Alerting you
-// run twice, which in season-over sends the Organiser the failure privately, once, and in club has nothing to send.
+// run twice, which in season-over sends the Organiser privately, once each, the failure and a page that failed as the
+// database couldn't be reached, which the Organiser page shows as the last failed request, and in club has nothing to
+// send, as no request has failed.
 //
 // Season 2's first Matchday in season-over is on Lichess only: with LICHESS_URL set, the seed writes its tournament,
 // finished, to fake-lichess.json beside the database, where `pnpm fake-lichess` finds it, and `pnpm collect-results`
@@ -52,6 +54,7 @@ import { isOrganiser } from "@/lib/organiser";
 import { finishOrganiserConnection, organiserPermission, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { JOB as POST, postToTelegram, REMINDER_HOURS } from "@/lib/post-to-telegram";
 import { getRecap, recapDates } from "@/lib/recaps";
+import { failedRequestText, lastFailedRequest, noticeFailedRequest } from "@/lib/request-failures";
 import { skipMatchday, tournamentCancellations } from "@/lib/reschedule";
 import { addDays, firstSeasonStart, latestSunday, matchdayStart, MEMBERS_TO_START, signUpsNeeded, START_HOUR } from "@/lib/schedule";
 import { readSchedule, seasonDates, upcomingMatchday, type Schedule } from "@/lib/seasons";
@@ -304,7 +307,8 @@ async function seed(name: string) {
     await client.query("begin");
     await client.query(
       `truncate "game", "matchdayResult", "matchday", "skippedSunday", "season", "session", "account", "verification", "user",
-         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation", "telegramPost" cascade`,
+         "company", "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation", "telegramPost",
+         "requestFailure" cascade`,
     );
     await client.query(
       `insert into "company" ("domain", "name", "fetchedAt", "fetchAttempts") values
@@ -463,6 +467,12 @@ async function organiser(name: string) {
       if (name === "club" && lichess.team.members.has(lichessId(p))) throw new Error(`${p.id} left, but is still in the fake Lichess team.`);
     }
     await backUp(now);
+    // A Member's page that failed as the database couldn't be reached, as the sign-in library throws it then.
+    if (name === "season-over")
+      await noticeFailedRequest(new Error("Failed to get session", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) }), {
+        routePath: "/profile",
+        routeType: "render",
+      });
     for (let run = 0; run < 2; run++) await alertOrganiser(now);
   } finally {
     globalThis.fetch = realFetch;
@@ -596,18 +606,22 @@ async function check(name: string) {
       );
     }
   }
-  // The nightly backup and the alerts to the Organiser (#17).
+  // The nightly backup and the alerts to the Organiser (#17), and the failed requests (#60).
   if (name !== "empty") {
-    const [backingUp, alerting] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS)]);
+    const [backingUp, alerting, failedRequest] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS), lastFailedRequest()]);
     promises.push(["Backing up ran, and says backups aren't set up, as no local block has the store's token",
       backingUp?.outcome === "skipped" && backingUp.detail === backupProblem()]);
+    promises.push(name === "season-over"
+      ? ["the Organiser page's last failed request: a page that failed as the database couldn't be reached",
+          failedRequest?.route === "/profile" && failedRequest.kind === "page" && failedRequest.reason === "the database couldn't be reached"]
+      : ["no request has failed", failedRequest === null]);
     if (alertsProblem())
       promises.push(["Alerting you ran, and says alerts are off, as the environment hasn't the Telegram settings for them",
         alerting?.detail === alertsProblem() && alertsSent.length === 0]);
     else if (name === "season-over")
-      promises.push(["Alerting you sent the Organiser the failure of Creating Matchdays privately, once though it ran twice, and nothing to the group",
-        alertsSent.length === 1 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && alerting?.detail === "Nothing to tell you." &&
-          !telegramPosts.some((text) => text.startsWith("Creating Matchdays"))]);
+      promises.push(["Alerting you sent the Organiser privately the failure of Creating Matchdays and the failed request, each once though it ran twice, and nothing to the group",
+        alertsSent.length === 2 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && alertsSent[1] === failedRequestText(failedRequest!) &&
+          alerting?.detail === "Nothing to tell you." && !telegramPosts.some((text) => text.startsWith("Creating Matchdays") || text.startsWith("A page"))]);
     else promises.push(["Alerting you ran twice, and had nothing to tell the Organiser", alertsSent.length === 0 && alerting?.detail === "Nothing to tell you."]);
   }
   for (const [promise, kept] of promises) console.log(`${kept ? "✓" : "✗ MISSING:"} ${promise}`);

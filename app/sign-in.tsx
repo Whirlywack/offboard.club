@@ -6,11 +6,12 @@ import { signIn } from "./actions";
 import styles from "./home.module.css";
 import ui from "./ui.module.css";
 
-// `shown` is a problem to show before the button is pressed.
+// `shown` is a problem to show before the button is pressed. The home page's header button sends this form too (its id),
+// so that either button goes to LinkedIn the same way and a problem shows here, beside the note.
 export function SignIn({ problem: shown }: { problem: string }) {
   const [problem, action, pending] = useActionState(signIn, shown);
   return (
-    <form action={action} className={`${styles.signIn} ${ui.arrive}`}>
+    <form id="sign-in" action={action} className={styles.signIn}>
       <button disabled={pending} aria-describedby="linkedin-notice">
         {pending ? "Opening LinkedIn…" : "Sign in with LinkedIn"}
       </button>

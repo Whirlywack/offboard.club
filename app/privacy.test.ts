@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`redirect ${to}`);
   },
 }));
-vi.mock("next/font/google", () => ({ Newsreader: () => ({ variable: "newsreader" }) }));
+vi.mock("next/font/google", () => ({ Bodoni_Moda: () => ({ variable: "bodoni" }), Hanken_Grotesk: () => ({ variable: "hanken" }) }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const ORGANISER = "Person organiser";

@@ -1,129 +1,189 @@
-/* The home page, and the sign-in block it shows to visitors (sign-in.tsx). */
+/*
+ * The home page, as the approved mock-up has it (26 November 2026): four plates, grey, black, grey, black, each with
+ * the photograph that says what its section says. The phone is composed on its own terms first; the desktop below.
+ *
+ * The first screen is sized by the page's width, not the window's height: at 390 wide it is the mock-up's 390 x 844
+ * phone, and at 1440 its 1440 x 900 desktop. Each photograph's size is in px or vw, so its `sizes` can say it.
+ */
 
-.home {
-  gap: var(--space-8);
-}
+/* ---------- Plate 1: the queen ---------- */
 
-/* The opening: the pitch, then what is next and what you can do about it */
 .hero {
+  position: relative;
+  background: var(--ground);
+}
+
+.stage {
+  --stage: clamp(600px, 100vw * 740 / 390, 900px);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: var(--stage);
+  background: var(--ground);
+}
+
+/* The queen photograph is 1800px square; she is 923px of it, her axis at 50.5% across and her base at 78.83% down */
+.queen {
+  --qh: min(500px, var(--stage) * 0.66);
+  --side: calc(var(--qh) * 1800 / 923);
+  position: absolute;
+  z-index: 1;
+  width: var(--side);
+  max-width: none;
+  height: var(--side);
+  left: calc(62% - 0.505 * var(--side)); /* her axis at 62%, clear of the headline */
+  top: calc(100% - 34px - 0.7883 * var(--side)); /* her base 34px above the plate's foot */
+  mask-image:
+    linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%),
+    linear-gradient(transparent 0, #000 10%, #000 90%, transparent 100%);
+  mask-composite: intersect;
+}
+
+.hero .title {
+  position: relative;
+  z-index: 3;
+  padding: 18px var(--gutter) 0;
+  font-size: clamp(50px, 16vw, 76px);
+}
+
+.title em {
+  letter-spacing: -0.03em;
+}
+
+.desktopOnly {
+  display: none;
+}
+
+.credit {
+  position: absolute;
+  z-index: 3;
+  left: var(--gutter);
+  bottom: 14px;
+}
+
+/* The lone pawn: busy gets lonely. No stacking context here, so the pawn multiplies onto the ground itself. */
+.lonely {
+  position: relative;
+  padding: 20px var(--gutter) 0;
+  overflow-x: clip;
+}
+
+.pair {
+  position: relative;
+  min-height: 176px;
+}
+
+.lonely .lonelyLine {
+  position: relative;
+  z-index: 1;
+  width: 232px;
+  font-size: 30px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+}
+
+/* The pawn and its long shadow, backdrop divided out (730 x 450): at 0.4 on the phone, never past half its pixels on a
+   2x screen */
+.pawnLong {
+  --s: 0.4;
+  position: absolute;
+  width: calc(730px * var(--s));
+  max-width: none;
+  height: calc(450px * var(--s));
+  right: calc(-1 * var(--gutter) + 8px - (730px - 705px) * var(--s));
+  top: calc(-30px * var(--s) + 2px);
+  mix-blend-mode: multiply;
+}
+
+.intro {
+  margin-top: 12px;
+  max-width: 34em;
+}
+
+/* Season 1, the sixteen */
+.season {
+  position: relative;
+  z-index: 2;
   display: grid;
-  gap: var(--space-6);
-  padding-top: var(--space-3);
+  padding: 26px var(--gutter) 64px;
 }
 
-@media (min-width: 60rem) {
-  .hero {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-    align-items: end;
-    gap: var(--space-8);
-    padding-top: var(--space-7);
-  }
+.season .label {
+  margin-bottom: 10px;
 }
 
-.heroText {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+.season .left {
+  display: contents;
 }
 
-.title {
-  font-size: var(--text-3xl);
-  font-weight: 450;
-  letter-spacing: -0.025em;
+.season .starts {
+  order: 1;
+}
+
+.season .join {
+  order: 2;
+}
+
+.season .count {
+  font-size: clamp(30px, 8.9vw, 40px);
   line-height: 1;
-}
-
-.lede {
-  max-width: 32rem;
-  font-size: var(--text-lg);
-  line-height: var(--leading-snug);
-}
-
-@media (min-width: 60rem) {
-  .lede {
-    font-size: var(--text-xl);
-  }
-}
-
-.heroSide {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-/* What is next: the next Matchday, or how many sign-ups Season 1 still needs */
-.status {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  background: var(--raised);
-  box-shadow: var(--shadow-raised);
-}
-
-.statusLabel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.statusValue {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  line-height: var(--leading-snug);
-  font-variant-numeric: tabular-nums;
   text-wrap: balance;
 }
 
-.count {
-  font-variant-numeric: tabular-nums;
+.pawns {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  column-gap: clamp(4px, 1.6vw, 14px);
+  row-gap: 10px;
+  max-width: 560px;
+  margin-top: 18px;
+  list-style: none;
 }
 
-.statusNote {
+.pawns li {
+  aspect-ratio: 202 / 384;
+}
+
+.pawns img {
+  width: 100%;
+  height: 100%;
+}
+
+.starts {
+  margin-top: 14px;
+  max-width: 34em;
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
-/* A Member's way into the Matchday's tournament, once it is on Lichess: a full-size target at the end of the card */
-.statusLink {
-  margin-top: var(--space-1);
-  font-weight: 600;
+.join {
+  margin-top: 16px;
+  max-width: 460px;
 }
 
-.statusLink a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
-}
-
-/* Signed out: the button, and what signing in shares */
+/* Signed out: the button, and beside it what signing in stores (sign-in.tsx) */
 .signIn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
+  display: grid;
+  gap: 14px;
 }
 
 .signIn > button {
   width: 100%;
 }
 
-@media (min-width: 30rem) {
-  .signIn > button {
-    width: auto;
-  }
-}
-
 .notice {
   color: var(--muted);
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.notice a {
+  display: inline-block;
+  margin: -13px 0;
+  padding: 13px 0;
+  color: var(--ink);
+  white-space: nowrap;
 }
 
 /* Signed in: who you are and where to go */
@@ -160,36 +220,426 @@
 }
 
 .signOut button {
+  min-height: var(--tap);
   padding: 0 var(--space-2);
   background: transparent;
   color: var(--muted);
   font-size: var(--text-sm);
   font-weight: 500;
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
   text-underline-offset: 0.22em;
 }
 
-/* The sections below the opening */
-.section {
-  display: grid;
-  gap: var(--space-4);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--line);
+.signOut button:hover {
+  background: transparent;
 }
 
-@media (min-width: 60rem) {
-  .section {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2.6fr);
-    gap: var(--space-6);
-  }
+/* A Member's way into the Matchday's tournament, once it is on Lichess: a full-size target */
+.statusLink {
+  margin-top: 14px;
+  font-weight: 600;
 }
 
-.sectionText {
+.statusLink a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
+/* ---------- Plate 2: the chess, black ---------- */
+
+.chess {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 56px var(--gutter) 64px;
+}
+
+/* Paper on black by difference, so where the heading crosses the white king it turns dark */
+.chess .chessTitle {
+  position: relative;
+  z-index: 3;
+  font-size: clamp(96px, 30vw, 128px);
+  color: #faf5eb;
+  mix-blend-mode: difference;
+}
+
+.chessTitle span {
+  display: block;
+}
+
+.figure {
+  position: relative;
+  z-index: 1;
+  height: 262px;
+  margin-top: -84px;
+}
+
+/* The white king photograph is 1024px square, the king 460px of it: 230px tall on the phone, half its pixels on a 2x
+   screen */
+.king {
+  --kh: 230px;
+  --side: calc(var(--kh) * 1024 / 460);
+  position: absolute;
+  width: var(--side);
+  max-width: none;
+  height: var(--side);
+  left: calc(81% - 0.669 * var(--side));
+  top: calc(100% - 4px - 0.798 * var(--side));
+  mask-image: radial-gradient(closest-side, #000 72%, transparent 100%);
+}
+
+.chessText {
+  position: relative;
+  z-index: 2;
+  max-width: 30em;
+  margin-top: 28px;
+}
+
+/* ---------- Plate 3: meeting people, the knights ---------- */
+
+.meet {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 60px;
+}
+
+.meetStage {
+  position: relative;
+}
+
+/* The two knights and their shadow, cut out (720 x 330): at 0.5 on the phone, 1:1 on the desktop */
+.knights {
+  --s: 0.5;
+  position: absolute;
+  z-index: 1;
+  width: calc(720px * var(--s));
+  max-width: none;
+  height: calc(330px * var(--s));
+  left: calc(50% - 528.5px * var(--s));
+  top: calc(56px + 0.96 * clamp(64px, 22vw, 96px) - 30px * var(--s));
+  mix-blend-mode: multiply;
+}
+
+.meet .meetTitle {
+  position: relative;
+  z-index: 3;
+  padding: 44px var(--gutter) 0;
+  font-size: clamp(64px, 22vw, 96px);
+  line-height: 0.96;
+}
+
+.w1,
+.w2 {
+  display: block;
+}
+
+.w2 {
+  margin-top: calc(250px * 0.5 + 12px);
+  text-align: right;
+}
+
+.meetText {
+  position: relative;
+  z-index: 3;
+  max-width: 30em;
+  padding: 30px var(--gutter) 0;
+}
+
+/* ---------- Plate 4: Leaderboards and Recaps, black, closing on the fallen king ---------- */
+
+.boardsInner {
+  padding: 64px var(--gutter) 56px;
+}
+
+.boards .boardsTitle {
+  font-size: clamp(52px, 15.4vw, 72px);
+  line-height: 0.9;
+}
+
+.boardsTitle span {
+  display: block;
+}
+
+.boardsLede {
+  margin-top: 20px;
+  color: var(--muted);
+}
+
+.champion {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  max-width: var(--measure);
-  font-size: var(--text-lg);
-  line-height: var(--leading-snug);
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-top: 20px;
+}
+
+.champion strong {
+  font-weight: 600;
+}
+
+.boardsLinks {
+  margin-top: 36px;
+}
+
+/* The queen over the fallen king, cut out (720 x 430) */
+.closing {
+  position: relative;
+  height: 250px;
+  overflow: hidden;
+  background: var(--ground);
+}
+
+.fallen {
+  --s: 0.5;
+  position: absolute;
+  width: calc(720px * var(--s));
+  max-width: none;
+  height: calc(430px * var(--s));
+  left: calc(50% - 487.5px * var(--s));
+  bottom: calc(26px - 61px * var(--s));
+  mix-blend-mode: multiply;
+}
+
+/* =========================================================
+   The desktop, composed on its own terms
+   ========================================================= */
+@media (min-width: 900px) {
+  /* Plate 1: the headline left of the queen, which stands to the right at up to 760px */
+  .stage {
+    --stage: max(700px, 100vw * 780 / 1440);
+  }
+
+  .queen {
+    --qh: min(760px, var(--stage) * 0.9);
+    left: calc(71% - 0.505 * var(--side));
+    top: calc(100% - 46px - 0.7883 * var(--side));
+  }
+
+  .hero .title {
+    position: absolute;
+    top: 46%;
+    left: 0;
+    padding: 0 var(--gutter);
+    font-size: min(9.4vw, 160px);
+    line-height: 0.84;
+    transform: translateY(-50%);
+  }
+
+  .phoneOnly {
+    display: none;
+  }
+
+  .desktopOnly {
+    display: inline;
+  }
+
+  .credit {
+    right: var(--gutter);
+    bottom: 22px;
+    left: auto;
+  }
+
+  .lonely {
+    padding: 110px var(--gutter) 0;
+  }
+
+  .pair {
+    min-height: 0;
+  }
+
+  .lonely .lonelyLine {
+    width: min(10.5em, 58vw);
+    font-size: min(5.6vw, 88px);
+    letter-spacing: -0.02em;
+  }
+
+  .pawnLong {
+    --s: 1;
+    top: -8px;
+    right: calc(-1 * (730px - 705px));
+  }
+
+  .intro {
+    width: min(28em, 40vw);
+    margin-top: 36px;
+    font-size: 18px;
+  }
+
+  .season {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+    column-gap: 6vw;
+    align-items: end;
+    padding: 150px var(--gutter) 120px;
+  }
+
+  .season .left {
+    display: block;
+    align-self: start;
+  }
+
+  .season .starts,
+  .season .join {
+    order: 0;
+  }
+
+  .season .count {
+    font-size: min(5.8vw, 100px);
+    line-height: 0.92;
+  }
+
+  .pawns {
+    column-gap: 1.4vw;
+    row-gap: 22px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .starts {
+    margin-top: 26px;
+    font-size: 17px;
+  }
+
+  .join {
+    grid-column: 2;
+    max-width: none;
+    margin-top: 44px;
+  }
+
+  .signIn {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 28px;
+  }
+
+  .signIn > button {
+    width: auto;
+  }
+
+  .notice {
+    max-width: 34em;
+  }
+
+  /* Plate 2: the heading across the top, the king standing at the end of it */
+  .chess {
+    height: min(50vw, 820px);
+    min-height: 660px;
+    padding: 0;
+  }
+
+  .chess .chessTitle {
+    position: absolute;
+    top: 7vw;
+    left: var(--gutter);
+    font-size: min(17.2vw, 260px);
+    line-height: 0.82;
+  }
+
+  .chessTitle span {
+    display: inline;
+  }
+
+  .figure {
+    position: absolute;
+    inset: 0;
+    height: auto;
+    margin: 0;
+  }
+
+  .king {
+    --kh: min(460px, 32vw);
+    left: calc(80.5% - 0.669 * var(--side));
+    top: calc(7vw + 0.36 * min(17.2vw, 260px) - 0.349 * var(--side));
+  }
+
+  .chessText {
+    position: absolute;
+    bottom: 7vw;
+    left: var(--gutter);
+    width: min(28em, 36vw);
+    margin: 0;
+    font-size: 18px;
+  }
+
+  /* Plate 3: the two words face each other like the knights, which stand at their own size. "Meeting" is 3.4 times
+     its size wide, and is kept inside the gutter on a narrow desktop; from about 1300 wide it is the mock-up's. */
+  .meet {
+    --size: min(9.6vw, 150px, (50vw - 176px - var(--gutter)) / 3.4);
+    padding-bottom: 0;
+  }
+
+  .meetStage {
+    height: 600px;
+  }
+
+  .knights {
+    --s: 1;
+    top: 150px;
+  }
+
+  .meet .meetTitle {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    font-size: var(--size);
+    line-height: 1;
+  }
+
+  .w1,
+  .w2 {
+    position: absolute;
+    top: calc(150px + 64px);
+    margin: 0;
+  }
+
+  .w1 {
+    right: calc(50% + 176px);
+    text-align: right;
+  }
+
+  .w2 {
+    left: calc(50% + 176px);
+    text-align: left;
+  }
+
+  .meetText {
+    position: absolute;
+    top: calc(150px + 64px + 1.08 * var(--size));
+    left: calc(50% + 180px);
+    width: min(27em, 32vw, 50% - 180px - var(--gutter));
+    padding: 0;
+  }
+
+  /* Plate 4 */
+  .boardsInner {
+    display: grid;
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    column-gap: 6vw;
+    padding: 9vw var(--gutter) 8vw;
+  }
+
+  .boards .boardsTitle {
+    font-size: min(7.6vw, 132px);
+    line-height: 0.88;
+  }
+
+  .boardsLede {
+    margin-top: 28px;
+    font-size: 18px;
+  }
+
+  .boardsLinks {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: end;
+    margin-top: 0;
+  }
+
+  .closing {
+    height: 480px;
+  }
+
+  .fallen {
+    --s: 1;
+    bottom: calc(56px - 61px);
+  }
 }

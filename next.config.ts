@@ -10,6 +10,9 @@ const nextConfig = (phase: string): NextConfig => ({
   // A route whose file ends in .dev.ts is a route for `next dev` alone: a production build leaves it out entirely. The
   // switch between people in the local site (app/sign-in-as/route.dev.ts) is one.
   pageExtensions: phase === PHASE_DEVELOPMENT_SERVER ? ["dev.ts", "tsx", "ts", "jsx", "js"] : ["tsx", "ts", "jsx", "js"],
+  // Photographs are sent at quality 75, and those on a black backdrop at 90 (quality={90}): at 75 the film grain of a
+  // black backdrop breaks into blocks.
+  images: { qualities: [75, 90] },
 });
 
 export default nextConfig;

@@ -1,0 +1,99 @@
+/* The pages shown in place of one that is not there (not-found.tsx) or that failed (error.tsx): one grey plate, its
+   heading in the display serif, and the photograph that says what happened, beside the words on a desktop. */
+
+.plate {
+  position: relative;
+  display: grid;
+  align-content: start;
+  padding: 44px var(--gutter) 64px;
+  overflow: hidden;
+}
+
+.text {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  max-width: 34em;
+}
+
+.plate .title {
+  font-size: clamp(48px, 14vw, 64px);
+  line-height: 0.92;
+}
+
+.lede {
+  margin-top: 18px;
+  color: var(--muted);
+}
+
+.links {
+  margin-top: 32px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.reference {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* The outline of a pawn, a place nobody holds (416 x 782, traced again from the pawn's cut-out with an even stroke):
+   at half its pixels or less, so it stays sharp on a 2x screen */
+.empty {
+  width: 104px;
+  height: auto;
+  margin: 40px auto 0;
+}
+
+/* The queen over the fallen king, cut out (720 x 430), multiplied onto the ground: at half on a phone */
+.fallen {
+  width: 360px;
+  max-width: none;
+  height: auto;
+  margin: 24px 0 0 calc(50% - 244px);
+  mix-blend-mode: multiply;
+}
+
+@media (min-width: 900px) {
+  .plate {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: end;
+    column-gap: 6vw;
+    padding: 9vw var(--gutter) 8vw;
+  }
+
+  .plate .title {
+    font-size: min(7.6vw, 132px);
+    line-height: 0.88;
+  }
+
+  .lede {
+    margin-top: 28px;
+    font-size: 18px;
+  }
+
+  .links {
+    margin-top: 44px;
+  }
+
+  .actions {
+    margin-top: 44px;
+  }
+
+  .empty {
+    width: 208px;
+    margin: 0 auto;
+  }
+
+  .fallen {
+    width: min(720px, 40vw);
+    margin: 0 0 -4vw;
+    justify-self: end;
+  }
+}

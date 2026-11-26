@@ -97,7 +97,8 @@ describe("a production build", () => {
       for (const [path, init] of [["/no-such-page"], ["/sign-in-as"], ["/sign-in-as", { method: "POST", body: new URLSearchParams({ as: "org" }) }]] as const) {
         const response = await at(path, init);
         expect([path, response.status]).toEqual([path, 404]);
-        expect(await response.text()).toContain("Nothing at this address");
+        // The page's words, its heading's first word being in italic
+        expect((await response.text()).replace(/<[^>]+>/g, "")).toContain("Nothing at this address");
       }
     } finally {
       server.kill();

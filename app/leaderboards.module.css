@@ -125,29 +125,6 @@
   color: var(--muted);
 }
 
-/* On the home page: the two Leaderboards, and the champion of a Season that has just ended */
-.links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-5);
-}
-
-.links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
-}
-
-.homeChampion {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-
-.homeChampion strong {
-  font-weight: 600;
-}
-
 /* Rows settle in one after another, as a Recap's do */
 @keyframes settle {
   from {

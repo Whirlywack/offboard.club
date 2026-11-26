@@ -18,7 +18,7 @@ vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/server", () => ({ connection: async () => {} }));
-vi.mock("next/font/google", () => ({ Newsreader: () => ({ variable: "newsreader" }) }));
+vi.mock("next/font/google", () => ({ Bodoni_Moda: () => ({ variable: "bodoni" }), Hanken_Grotesk: () => ({ variable: "hanken" }) }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`redirect ${to}`);

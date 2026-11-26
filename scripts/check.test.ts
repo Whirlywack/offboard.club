@@ -137,12 +137,12 @@ describe.concurrent("a check", () => {
     expect(summary).toMatch(/^\npnpm check passed, in \d+ s\./);
     expect(summary).toContain("✓ migrations: none that has merged was edited");
     expect(summary).toContain("✓ tests: 1 files, 1 tests: 1 passed, 0 failed, 0 skipped; 0 of the files real-Postgres suites (0 tests)");
-    expect(summary).toContain("✓ seeds: club 3 of 3 states, season-over 3 of 3 states, empty 3 of 3 states");
+    expect(summary).toContain("✓ seeds: club 3 of 3 states, season-over 3 of 3 states, empty 3 of 3 states, scheduled 3 of 3 states");
     expect(summary).toMatch(/\nRan on Node\.js v\d+\.\d+\.\d+ and Postgres of an unknown version; CI runs Node\.js 26 and Postgres 18\.\n/);
     expect(summary).toContain(`\nChecked ${head} first, as committed. CI tests what is committed, and on a pull request that merged into main.\n`);
     expect(status).toBe(0);
     const ran = runs(log);
-    expect(ran.map((run) => run.name)).toEqual(["db:start", "db:start", "lint", "typecheck", "test", "build", "seed", "seed", "seed", "db:stop", "db:stop"]);
+    expect(ran.map((run) => run.name)).toEqual(["db:start", "db:start", "lint", "typecheck", "test", "build", "seed", "seed", "seed", "seed", "db:stop", "db:stop"]);
     const stopped = ran.filter((run) => run.name === "db:stop").map((run) => run.args.at(-1)!.split("/").pop());
     expect(stopped.sort()).toEqual(["db-seeded", "db-tests"]);
     const test = ran.find((run) => run.name === "test")!;
@@ -189,7 +189,7 @@ describe.concurrent("a check", () => {
     const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "lint,build,seed" });
     expect(stdout).toContain("\npnpm check failed: lint, build, seeds, in ");
     expect(stdout).toContain("✓ typecheck\n");
-    expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states");
+    expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states, scheduled 2 of 3 states");
     expect(status).toBe(1);
     expect(leftovers(root)).toEqual([]);
   }, 60_000);

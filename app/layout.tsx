@@ -1,20 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Newsreader } from "next/font/google";
+import { Bodoni_Moda, Hanken_Grotesk } from "next/font/google";
 import Link from "next/link";
+import { Suspense } from "react";
 import "./globals.css";
-import { LogoMark } from "./logo";
+import { NotOnHome } from "./not-on-home";
+import { Masthead } from "./site";
 import site from "./site.module.css";
+import ui from "./ui.module.css";
 import { organiserEmail } from "@/lib/contact";
 
-// Self-hosted by next/font at build time: the browser never asks Google for anything. Headings only, so the weight
-// axis alone: the optical-size axis more than doubled the files preloaded on every page (218 KB against 94 KB) for a
-// display cut that is only a touch finer, visible side by side at the largest heading. Latin Extended is kept because
-// headings show Members' names, and Lithuanian ones need ą, č, ė, š, ž.
-const newsreader = Newsreader({
-  subsets: ["latin", "latin-ext"],
-  variable: "--font-newsreader",
+// Both self-hosted by next/font at build time: the browser never asks Google for anything. The display serif keeps its
+// optical-size axis, which draws the hairlines finer as the type grows: the large headings are made of it. Only the
+// Latin files are preloaded: Latin Extended, which Lithuanian names need for ą, č, ė, š and ž, is fetched when a page
+// has one.
+const bodoni = Bodoni_Moda({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz"],
+  variable: "--font-bodoni",
   display: "swap",
 });
+const hanken = Hanken_Grotesk({ subsets: ["latin"], variable: "--font-hanken", display: "swap" });
 
 const title = "Offboard: Sunday chess for people in tech in Vilnius";
 const description =
@@ -28,47 +34,41 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: "light dark",
-  // The browser's own chrome cannot read CSS custom properties: these repeat --paper from globals.css, light and dark.
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f1ea" },
-    { media: "(prefers-color-scheme: dark)", color: "#121211" },
-  ],
+  colorScheme: "light",
+  themeColor: "#0d0b07", // --black in globals.css, which the browser's own chrome cannot read
 };
 
-// Every page puts its content in <main id="main">, which the skip link jumps to.
+// Every page puts its content in <main id="main">, which the skip link jumps to. The home page draws its own header;
+// the hook that tells which page this is waits for a page's address where that is not known ahead of a request, and the
+// header shows in the meantime.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   const contact = organiserEmail();
   return (
-    <html lang="en" className={newsreader.variable}>
+    <html lang="en" className={`${bodoni.variable} ${hanken.variable}`}>
       <body>
         <a className="skip-link" href="#main">
           Skip to content
         </a>
         <div className={site.shell}>
-          <header className={site.header}>
-            <Link href="/" className={site.brand}>
-              <LogoMark className={site.mark} />
-              Offboard
-            </Link>
-            <nav aria-label="Site" className={site.nav}>
-              <Link href="/seasons">Season</Link>
-              <Link href="/all-time">All-time</Link>
-              <Link href="/recaps">Recaps</Link>
-            </nav>
-          </header>
+          <Suspense fallback={<Masthead />}>
+            <NotOnHome>
+              <Masthead />
+            </NotOnHome>
+          </Suspense>
           {children}
-          <footer className={site.footer}>
+          <footer className={`${site.footer} ${ui.black}`}>
             <p>Offboard is a free chess Club for people who work in tech in and around Vilnius.</p>
             <p>Offboard isn&apos;t affiliated with Lichess or LinkedIn.</p>
-            <p className={site.contact}>
-              <Link href="/privacy">Privacy and terms</Link>
-            </p>
-            {contact && (
-              <p className={site.contact}>
-                <a href={`mailto:${contact}`}>Contact the Organiser</a>
-              </p>
-            )}
+            <ul>
+              <li>
+                <Link href="/privacy">Privacy and terms</Link>
+              </li>
+              {contact && (
+                <li>
+                  <a href={`mailto:${contact}`}>Contact the Organiser</a>
+                </li>
+              )}
+            </ul>
           </footer>
         </div>
       </body>

@@ -1,8 +1,96 @@
-/* Pieces shared by several pages. Tokens are in globals.css. */
+/* Pieces shared by several pages. Tokens are in globals.css; DESIGN.md says how each is used. */
 
-/* A page's <main>, on the same left edge as the header: one readable column, or the full width for the home page */
-.page,
-.wide {
+/* A black section: the colour tokens turned over, so text, rules, links, buttons and the focus ring inside it read on
+   black with nothing of their own */
+.black {
+  --ground: var(--black);
+  --ink: var(--paper);
+  --muted: var(--paper-muted);
+  --line: var(--paper-line);
+  --button: var(--paper);
+  --on-button: var(--black);
+  --button-hover: var(--paper-hover);
+  background: var(--black);
+  color: var(--paper);
+}
+
+/* Film grain over the flat ground, so the page and its photographs share one film. The element it is on must be
+   positioned; what is inside it and positioned paints over the grain. */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: url(./photos/grain.webp) 0 0 / 240px 240px;
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+}
+
+/* The display voice: the serif at a size that fills its section, its hairlines drawn for that size */
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-optical-sizing: auto;
+  letter-spacing: -0.025em;
+  line-height: 0.86;
+}
+
+/* A small label in tracked capitals */
+.caps {
+  font: 600 11px/1.2 var(--font-text);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+/* A list of places to go, one to a row between rules, each with an arrow that leans forward under the pointer */
+.ruled {
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.ruled li {
+  border-bottom: 1px solid var(--line);
+}
+
+.ruled a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 68px;
+  padding: 10px 0;
+  font: 400 25px/1.1 var(--font-display);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.ruled svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  transition: transform 250ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ruled a:hover span {
+    text-decoration: underline;
+  }
+
+  .ruled a:hover svg {
+    transform: translateX(5px);
+  }
+}
+
+@media (min-width: 900px) {
+  .ruled a {
+    min-height: 92px;
+    font-size: min(2.7vw, 40px);
+  }
+}
+
+/* A page's <main>, on the same left edge as the header: one readable column */
+.page {
   width: min(100% - 2 * var(--gutter), var(--page));
   margin-inline: auto;
   padding-block: var(--space-6) var(--space-9);
@@ -67,18 +155,20 @@
   box-shadow: var(--shadow-raised);
 }
 
-/* A link that does a button's job */
+/* A link that does a button's job, the same size and type as a <button> (globals.css), so the two sit side by side */
 .button,
 .quiet {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: var(--tap);
-  padding: var(--space-2) var(--space-5);
+  min-height: 54px;
+  padding: var(--space-2) 28px;
   border-radius: var(--radius-md);
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1;
+  letter-spacing: 0.01em;
   text-align: center;
   text-wrap: balance;
   text-decoration: none;
@@ -104,6 +194,10 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .button:hover {
+    background: var(--button-hover);
+  }
+
   .quiet:hover {
     background: color-mix(in srgb, var(--ink) 5%, transparent);
     box-shadow: inset 0 0 0 1px var(--ink);
@@ -112,7 +206,7 @@
 
 .button:active,
 .quiet:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: translateY(1px);
 }
 
 /* A row of actions, wrapping onto a second line on a phone */
@@ -123,20 +217,29 @@
   gap: var(--space-3);
 }
 
-/* Why something did not work: a faint red wash inside a hairline, never a coloured stripe */
+/* Why something did not work: on the ground itself, in the error's red after a red square, as the strip's square marks
+   what is happening now. No panel, no stripe. On the grey only: the red does not read on black. */
 .alert {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--error-wash);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 40%, transparent);
-  color: var(--ink);
+  position: relative;
+  padding-left: 17px;
+  color: var(--error);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   line-height: var(--leading-snug);
   animation: arrive-still 200ms ease both;
 }
 
-/* The marigold square: what is happening now */
+.alert::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--leading-snug) * 0.5em - 3.5px); /* on the middle of the first line */
+  left: 0;
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+}
+
+/* The ink square: what is happening now */
 .marker {
   flex: none;
   display: inline-block;
@@ -186,6 +289,10 @@
 
   .button:active,
   .quiet:active:not(:disabled) {
+    transform: none;
+  }
+
+  .ruled a:hover svg {
     transform: none;
   }
 }

@@ -1,8 +1,9 @@
 // The home page: its words as each reader meets it, and its description in search results and link previews; the next
 // Matchday, its time for everyone, and its Lichess tournament for Members once the site has created it; and who is
-// signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts). Everything else is the
-// app's own code.
-import type { ReactElement } from "react";
+// signed in, when that cannot be read; and the site's own header, which the home page draws for itself. Faked: the
+// session and the database (lib/fake-db.ts). Everything else is the app's own code.
+import { LayoutRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { createElement, type ContextType, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { prerenderToNodeStream } from "react-dom/static";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +12,7 @@ import { addPerson, db, fromDatabase, matchdays, people, requestFailures, resetD
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { metadata } from "./layout";
+import { NotOnHome } from "./not-on-home";
 import Home, { NextMatchday, SeasonChampions, You } from "./page";
 
 const { getSession, request } = vi.hoisted(() => ({ getSession: vi.fn(), request: { headers: new Headers() } }));
@@ -18,7 +20,7 @@ vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => request.headers }));
 vi.mock("next/server", () => ({ connection: async () => {} }));
-vi.mock("next/font/google", () => ({ Newsreader: () => ({ variable: "newsreader" }) }));
+vi.mock("next/font/google", () => ({ Bodoni_Moda: () => ({ variable: "bodoni" }), Hanken_Grotesk: () => ({ variable: "hanken" }) }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const DATE = "2026-11-29";
@@ -49,12 +51,10 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-// The whole page as its reader gets it once every streamed part has arrived, as the text they read, top to bottom.
+// The whole page as its reader gets it once every streamed part has arrived, as the text they read, top to bottom. Each
+// part is kept in its place, however large, where React would otherwise send a large one last for its script to move.
 async function page(query: Record<string, string> = {}) {
-  const { prelude } = await prerenderToNodeStream(Home({ params: Promise.resolve({}), searchParams: Promise.resolve(query) }));
-  let html = "";
-  for await (const chunk of prelude) html += chunk;
-  return html
+  return (await markup(query))
     .replace(/<script>[\s\S]*?<\/script>/g, "") // React's own, for a form sent before the page is interactive
     .replace(/<[^>]+>/g, " ")
     .replaceAll("&#x27;", "'")
@@ -62,14 +62,29 @@ async function page(query: Record<string, string> = {}) {
     .trim();
 }
 
-// The words of the home page's deck (#74). Initials stand in for a photo, and "(opens in a new tab)" is for screen
-// readers: neither is the deck's.
+// The same page as HTML.
+async function markup(query: Record<string, string> = {}) {
+  const home = Home({ params: Promise.resolve({}), searchParams: Promise.resolve(query) });
+  const { prelude } = await prerenderToNodeStream(home, { progressiveChunkSize: Number.POSITIVE_INFINITY });
+  let html = "";
+  for await (const chunk of prelude) html += chunk;
+  return html;
+}
+
+// The words of the home page's deck (#74), in the order of the approved mock-up (#77). Initials stand in for a photo, and
+// "(opens in a new tab)" is for screen readers: neither is the deck's.
 describe("the home page as each reader meets it", () => {
+  // The page's own header (#77): the strip, which says what the Season block says, then the name and the three links,
+  // and for a visitor a second way to sign in.
+  const head = (strip: string, { visitor }: { visitor: boolean }) =>
+    [strip, "Offboard Season All-time Recaps", visitor && "Sign in with LinkedIn"].filter(Boolean).join(" ");
   const TOP =
-    "Free chess Club · Vilnius Sunday chess for people in tech Working in tech keeps you busy, and busy gets lonely. We " +
+    "Sunday chess for people in tech Free chess Club · Vilnius Working in tech keeps you busy, and busy gets lonely. We " +
     "think that's worth fixing. So every Sunday evening we play chess online, five Games against other people in tech. " +
     "With luck some of us become friends, and end up across a real board.";
-  const SEASON_1 = "Season 1 15 more Members to go It starts once there are sixteen of us, on the first Sunday at least a week later.";
+  const TO_GO = "Season 1 15 more Members to go";
+  const SEASON_1 = `${TO_GO} It starts once there are sixteen of us, on the first Sunday at least a week later.`;
+  const NEXT = "Next Matchday Sunday 29 November at 20:00";
   const SIGN_IN =
     "Sign in with LinkedIn Signing in lets Offboard store your LinkedIn name, photo and email, updated each time you " +
     "sign in. Privacy and terms";
@@ -102,38 +117,39 @@ describe("the home page as each reader meets it", () => {
 
   it("is the deck's page for a first-time visitor before Season 1", async () => {
     seasons.clear();
-    expect(await page()).toBe(`${TOP} ${SEASON_1} ${SIGN_IN} ${below()}`);
+    expect(await page()).toBe(`${head(TO_GO, { visitor: true })} ${TOP} ${SEASON_1} ${SIGN_IN} ${below()}`);
   });
 
   it("gives a Member before Season 1 the same card, and their own links in place of the button", async () => {
     seasons.clear();
     signedIn = "member";
-    expect(await page()).toBe(`${TOP} ${SEASON_1} ${MEMBER} ${below()}`);
+    expect(await page()).toBe(`${head(TO_GO, { visitor: false })} ${TOP} ${SEASON_1} ${MEMBER} ${below()}`);
   });
 
   it("shows a visitor the next Matchday's time alone once a Season is scheduled", async () => {
-    expect(await page()).toBe(`${TOP} Next Matchday Sunday 29 November at 20:00 ${SIGN_IN} ${below()}`);
+    expect(await page()).toBe(`${head(NEXT, { visitor: true })} ${TOP} ${NEXT} ${SIGN_IN} ${below()}`);
   });
 
   it("gives someone part-way through signing up the way to finish, and no Profile or Telegram links", async () => {
     signedIn = "newcomer";
     expect(await page()).toBe(
-      `${TOP} Next Matchday Sunday 29 November at 20:00 PN Signed in as Person newcomer Sign out Finish signing up ${below()}`,
+      `${head(NEXT, { visitor: false })} ${TOP} ${NEXT} PN Signed in as Person newcomer Sign out Finish signing up ${below()}`,
     );
   });
 
   it("gives a Member the Matchday coming up on Lichess once its tournament exists", async () => {
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
     signedIn = "member";
-    expect(await page()).toBe(`${TOP} Next Matchday Sunday 29 November at 20:00 ${JOIN} ${MEMBER} ${below()}`);
+    expect(await page()).toBe(`${head(NEXT, { visitor: false })} ${TOP} ${NEXT} ${JOIN} ${MEMBER} ${below()}`);
   });
 
   it("gives a Member the Matchday under way, and until when Lichess lets them join", async () => {
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
     vi.setSystemTime(new Date(`${DATE}T20:40:00+02:00`));
     signedIn = "member";
+    const underWay = "Matchday under way Sunday 29 November at 20:00";
     expect(await page()).toBe(
-      `${TOP} Matchday under way Sunday 29 November at 20:00 Lichess lets you join until round 3 starts. ${JOIN} ${MEMBER} ${below()}`,
+      `${head(underWay, { visitor: false })} ${TOP} ${underWay} Lichess lets you join until round 3 starts. ${JOIN} ${MEMBER} ${below()}`,
     );
   });
 
@@ -141,9 +157,9 @@ describe("the home page as each reader meets it", () => {
     seasonOver(["member"]);
     const next = "Next Matchday Sunday 17 January at 20:00";
     const champion = "Person member is the Season 1 champion. ";
-    expect(await page()).toBe(`${TOP} ${next} ${SIGN_IN} ${below({ champion })}`);
+    expect(await page()).toBe(`${head(next, { visitor: true })} ${TOP} ${next} ${SIGN_IN} ${below({ champion })}`);
     signedIn = "member";
-    expect(await page()).toBe(`${TOP} ${next} ${MEMBER} ${below({ champion })}`);
+    expect(await page()).toBe(`${head(next, { visitor: false })} ${TOP} ${next} ${MEMBER} ${below({ champion })}`);
   });
 
   it("says that two share the title", async () => {
@@ -152,15 +168,17 @@ describe("the home page as each reader meets it", () => {
     expect(await page()).toContain("Both are public and show your name. Person member and Person other share the Season 1 title. This Season's Leaderboard");
   });
 
-  it("leaves out the card and the champion when the database is down, and says so to someone with a session", async () => {
+  it("leaves out the strip, the card and the champion when the database is down, and says so to someone with a session", async () => {
     seasonOver(["member"]);
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.query.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
-    expect(await page()).toBe(`${TOP} ${SIGN_IN} ${below()}`);
+    expect(await page()).toBe(`${head("", { visitor: true })} ${TOP} ${SIGN_IN} ${below()}`);
     request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
     getSession.mockRejectedValue(new Error("Failed to get session"));
-    expect(await page()).toBe(`${TOP} Your sign-in can't be checked right now. Please try again in a minute. ${below()}`);
+    expect(await page()).toBe(
+      `${head("", { visitor: false })} ${TOP} Your sign-in can't be checked right now. Please try again in a minute. ${below()}`,
+    );
     await settled();
   });
 
@@ -170,11 +188,87 @@ describe("the home page as each reader meets it", () => {
     );
   });
 
+  it("gives a visitor a second button in the header that sends the same sign-in form", async () => {
+    const html = await markup();
+    const form = /<form id="([^"]+)"/.exec(html)?.[1];
+    const sends = [...html.matchAll(/<button form="([^"]+)"[^>]*>Sign in with LinkedIn<\/button>/g)].map(([, id]) => id);
+    expect(form).toBe("sign-in");
+    expect(sends).toEqual([form]);
+  });
+
+  it("reads the strip as words, its label and what it says a space apart", async () => {
+    seasons.clear();
+    const strip = /<a href="#season"[^>]*>([\s\S]*?)<\/a>/.exec(await markup())![1];
+    expect(strip.replace(/<[^>]+>/g, "")).toBe(TO_GO);
+  });
+
   it("says the Telegram group is still to come while no invite link is set", async () => {
     vi.stubEnv("TELEGRAM_INVITE_LINK", "");
     expect(await page()).toBe(
-      `${TOP} Next Matchday Sunday 29 November at 20:00 ${SIGN_IN} ${below({ telegram: "A Telegram group to talk in is still to come." })}`,
+      `${head(NEXT, { visitor: true })} ${TOP} ${NEXT} ${SIGN_IN} ${below({ telegram: "A Telegram group to talk in is still to come." })}`,
     );
+  });
+});
+
+// The Season block's picture (#77). Until Season 1's first Matchday, sixteen pawns: one standing for each Member who has
+// joined and an outline for each place still open, all sixteen standing once it is scheduled. After that, the six
+// pieces of a Season.
+describe("the picture in the Season block", () => {
+  const pictures = (html: string) =>
+    [...html.matchAll(/ src="[^"]*%2F(pawn|pawn-empty|row)\.webp[^"]*"/g)].map(([, file]) => file);
+  const standing = (n: number) => [...Array(n).fill("pawn"), ...Array(16 - n).fill("pawn-empty")];
+
+  it("is a pawn standing for every Member who has joined, from none to sixteen, and outlines for the rest", async () => {
+    seasons.clear();
+    people.clear();
+    for (let joined = 0; joined < 16; joined++) {
+      expect(pictures(await nextMatchday())).toEqual(standing(joined));
+      addPerson(`joined-${joined}`);
+    }
+    const scheduled = await nextMatchday();
+    expect(scheduled).toContain("Next Matchday");
+    expect(pictures(scheduled)).toEqual(standing(16));
+  });
+
+  it("does not count anyone part-way through signing up", async () => {
+    seasons.clear();
+    expect(pictures(await nextMatchday())).toEqual(standing(1));
+  });
+
+  it("is the six pieces of a Season once Season 1's first Matchday is under way, and after it", async () => {
+    expect(pictures(await nextMatchday())).toEqual(standing(16));
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    vi.setSystemTime(new Date(`${DATE}T20:40:00+02:00`));
+    signedIn = "member";
+    expect(await nextMatchday()).toContain("Matchday under way");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
+    signedIn = null;
+    expect(await nextMatchday()).toContain("Sunday 6 December");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
+  });
+
+  it("is the six pieces before a later Season's first Matchday too", async () => {
+    for (const date of ["2026-11-29", "2026-12-06", "2026-12-13", "2026-12-20", "2026-12-27", "2027-01-03"])
+      matchdays.set(date, { date, lichessTournamentId: `T${date.replaceAll("-", "")}`, ingestedAt: new Date() });
+    vi.setSystemTime(new Date("2027-01-06T12:00:00Z"));
+    expect(await nextMatchday()).toContain("Sunday 17 January");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
+  });
+});
+
+// The root layout's header goes on every page but the home page, which draws its own with the strip above it (#77).
+describe("the site's header from the root layout", () => {
+  // What the layout's header shows as at an address, given the route below the root layout as Next.js hands it over:
+  // a segment for each folder, the page last.
+  const at = (...segments: string[]) => {
+    const below = segments.reduceRight<unknown[]>((inner, segment) => [segment, { children: inner }], ["__PAGE__", {}]);
+    const route = { parentTree: ["", { children: below }] } as unknown as ContextType<typeof LayoutRouterContext>;
+    return renderToStaticMarkup(createElement(LayoutRouterContext.Provider, { value: route }, createElement(NotOnHome, null, "header")));
+  };
+
+  it("is left out of the home page and shown on every other", () => {
+    expect(at()).toBe("");
+    for (const address of [["seasons"], ["recaps", "2026-11-15"], ["profiles", "ana"], ["/_not-found"]]) expect(at(...address)).toBe("header");
   });
 });
 
@@ -303,6 +397,14 @@ describe("the signed-in panel on the home page", () => {
     const html = await you();
     expect(html).toContain("Your sign-in can&#x27;t be checked right now. Please try again in a minute.");
     expect(html).not.toContain("Sign in with LinkedIn");
+  });
+
+  it("shows a Member their own panel when their session reads, with the session cookie everyone signed in has", async () => {
+    request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
+    signedIn = "member";
+    const html = await you();
+    expect(html).toContain("Signed in as");
+    expect(html).not.toContain("can&#x27;t be checked");
   });
 
   it("offers to sign in to a visitor with no session cookie, whether or not the database can be read", async () => {

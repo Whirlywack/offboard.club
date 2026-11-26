@@ -22,7 +22,7 @@ vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 const at = new Date("2026-11-24T18:00:00Z");
 const position = "Principalplatformreliabilityengineerfordevelopertoolingandinfrastructureatscales"; // 80 letters
 
-// The Profile as it streams in, with the styles it is shown with, and a wide monospace face in place of the serif.
+// The Profile as it streams in, with the styles it is shown with, and a wider face in place of the serif.
 async function page() {
   resetDb();
   addPerson("ana", { name: "Ana Petraitė", position, openTo: "A coffee", lichessBlitzRating: 1883 });
@@ -48,8 +48,9 @@ async function page() {
     styles("ui.module.css", "black"),
     styles("avatar.module.css", "avatar"),
     styles("profiles/[id]/profile.module.css", "person"),
-    // The faces next/font names (app/layout.tsx): a stand-in for the grotesque, and for the serif one wider than it.
-    ':root { --font-hanken: Arial, "Liberation Sans", sans-serif; --font-bodoni: "Courier New", "Liberation Mono", monospace; }',
+    // The faces next/font names (app/layout.tsx): a stand-in for the grotesque, and for the serif one whose four digits
+    // (0.636em each) are wider than a third of a 320 phone, as the serif's are not.
+    ':root { --font-hanken: Arial, "Liberation Sans", sans-serif; --font-bodoni: Verdana, "DejaVu Sans", sans-serif; }',
   ].join("\n");
   return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><main>${html}</main>`;
 }

@@ -354,6 +354,7 @@ describe("a Recap's Awards", () => {
       ]);
       expect(html).not.toMatch(theGame);
       expect(html).not.toContain("Replay the Game");
+      expect(html).toContain("Only signed-in Members can open Profiles.");
     };
     await withoutGame();
     signedInAs({ publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null }); // before the welcome step
@@ -365,6 +366,7 @@ describe("a Recap's Awards", () => {
 
     asMember();
     const html = await open(DATE);
+    expect(html).not.toContain("Only signed-in Members can open Profiles.");
     // Closed until asked for, and named for screen readers; the Game has a plain link too.
     expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the closest call<\/span><\/summary>/);
     expect(html).not.toMatch(/<details[^>]* open/);

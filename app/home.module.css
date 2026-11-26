@@ -6,6 +6,12 @@
  * phone, and at 1440 its 1440 x 900 desktop. Each photograph's size is in px or vw, so its `sizes` can say it.
  */
 
+/* Where the strip will be while it is on its way, so that nothing moves when it comes: the strip is 44px in every state */
+.stripSpace {
+  min-height: var(--strip);
+  background: var(--black);
+}
+
 /* ---------- Plate 1: the queen ---------- */
 
 .hero {
@@ -37,6 +43,17 @@
     linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%),
     linear-gradient(transparent 0, #000 10%, #000 90%, transparent 100%);
   mask-composite: intersect;
+}
+
+/* On a phone under 441px wide, the part of her photograph in sight, sent alone (page.tsx): 846 x 1512 from x 396 and
+   y 0 of the 1800px photograph, placed where that part falls. Of the photograph's fades only the top one reaches it. */
+@media (max-width: 440px) {
+  .queen {
+    width: calc(var(--side) * 846 / 1800);
+    height: calc(var(--side) * 1512 / 1800);
+    left: calc(62% - 0.505 * var(--side) + var(--side) * 396 / 1800);
+    mask-image: linear-gradient(transparent 0, #000 calc(100% * 180 / 1512));
+  }
 }
 
 .hero .title {
@@ -154,6 +171,7 @@
    photograph's darkness as its alpha, so it lands on the ground as a multiplied cut-out would) */
 .row {
   width: 100%;
+  max-width: 1300px;
   height: auto;
   margin-top: 18px;
 }
@@ -610,8 +628,14 @@
     width: auto;
   }
 
+  /* The note stays beside the button, and a problem takes the row under both */
   .notice {
+    grid-area: 1 / 2;
     max-width: 34em;
+  }
+
+  .signIn > [role="alert"] {
+    grid-column: 1 / -1;
   }
 
   /* Plate 2: the heading across the top, the king standing at the end of it */

@@ -13,10 +13,13 @@ else
 fi
 [ -n "${sha:-}" ] || { echo "No such pull request or branch on GitHub: $target"; exit 1; }
 
-# The run for exactly this commit: an older run for the branch is not an answer.
+# The run for exactly this commit: an older run for the branch is not an answer. While a pull request is open, its own
+# run ("CI") is the one main requires: the push run beside it ("CI before a pull request") only looks for the pull request.
+only=""
+[ "$(gh pr list --head "$branch" --state open --json number --jq length)" != 0 ] && only=' and .workflowName == "CI"'
 id=""
 for _ in $(seq 1 40); do
-  id=$(gh run list --branch "$branch" --limit 10 --json databaseId,headSha --jq "[.[] | select(.headSha == \"$sha\")] | first | .databaseId // empty")
+  id=$(gh run list --branch "$branch" --limit 10 --json databaseId,headSha,workflowName --jq "[.[] | select(.headSha == \"$sha\"$only)] | first | .databaseId // empty")
   [ -n "$id" ] && break
   sleep 6
 done

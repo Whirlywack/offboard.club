@@ -15,6 +15,8 @@
     "ingest": "tsx --env-file-if-exists=.env.local scripts/ingest.ts",
     "db:start": "node scripts/local-db.mjs start",
     "db:stop": "node scripts/local-db.mjs stop",
+    "local:list": "node scripts/local-db.mjs list",
+    "local:stop": "node scripts/local-db.mjs stop-all",
     "dev:local": "node scripts/local-db.mjs dev",
     "fake-lichess": "tsx --env-file-if-exists=.env.local scripts/fake-lichess.ts",
     "collect-results": "tsx --env-file-if-exists=.env.local scripts/collect-results.ts",
@@ -45,6 +47,13 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.1"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.x",
+      "onFail": "download"
+    }
   },
   "packageManager": "pnpm@11.0.8"
 }

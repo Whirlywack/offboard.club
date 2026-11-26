@@ -128,21 +128,6 @@
   opacity: 1;
 }
 
-/* Why something can't be saved, beside what it is about: in the error's colour, nothing round it */
-.problem {
-  color: var(--error);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-/* A link beside a button is a button's size */
-.formActions > a {
-  min-height: 54px;
-  padding: 0 28px;
-  font-size: 16px;
-}
-
 /* On a phone the buttons stack at full width, the first choice first, rather than wrapping unevenly */
 @media (max-width: 29.99rem) {
   .formActions > * {
@@ -176,14 +161,7 @@
   padding-block: 11px;
 }
 
-/* Its button a button's size, and on a phone the width of the column */
-.section button,
-.section a[class] {
-  min-height: 54px;
-  padding: 0 28px;
-  font-size: 16px;
-}
-
+/* On a phone its button is the width of the column */
 @media (max-width: 29.99rem) {
   .section button,
   .section a[class] {
@@ -207,12 +185,6 @@
 .consequences li {
   padding: 14px 0;
   border-top: 1px solid var(--line);
-}
-
-/* The Organiser's warning: what stops when they leave */
-.warning {
-  color: var(--error);
-  font-weight: 600;
 }
 
 .confirm > .formActions {

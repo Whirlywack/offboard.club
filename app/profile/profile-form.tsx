@@ -40,7 +40,7 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
   });
   const error = (field: Field) =>
     wrong === field && (
-      <p id={`${field}-error`} role="alert" className={styles.problem}>
+      <p id={`${field}-error`} role="alert" className={ui.alert}>
         {state?.problem}
       </p>
     );

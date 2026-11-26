@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Avatar } from "../../avatar";
 import { ExternalLink } from "../../external-link";
+import { RuledLinks } from "../../ruled-links";
 import ui from "../../ui.module.css";
 import { Attendance, Games } from "./history";
 import styles from "./profile.module.css";
@@ -20,8 +21,8 @@ export default function ProfilePage({ params, searchParams }: PageProps<"/profil
       <Suspense>
         <Profile params={params} searchParams={searchParams} />
       </Suspense>
-      <nav aria-label="More" className={`${ui.backLinks} ${styles.more}`}>
-        <Link href="/">Home</Link>
+      <nav aria-label="More" className={styles.more}>
+        <RuledLinks links={[["/", "Home"]]} />
       </nav>
     </main>
   );

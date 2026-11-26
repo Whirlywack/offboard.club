@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import styles from "../profile/profile.module.css";
+import { RuledLinks } from "../ruled-links";
 import ui from "../ui.module.css";
 
 export const metadata: Metadata = { title: "After you leave the Club" };
@@ -18,8 +18,8 @@ export default function LeftPage() {
       </div>
       <div className={styles.body}>
         <p>You&apos;re welcome back any time: just sign in with LinkedIn again.</p>
-        <nav aria-label="More" className={ui.backLinks}>
-          <Link href="/">Home</Link>
+        <nav aria-label="More">
+          <RuledLinks links={[["/", "Home"]]} />
         </nav>
       </div>
     </main>

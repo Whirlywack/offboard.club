@@ -48,7 +48,7 @@ async function Confirm() {
       </ul>
       <p>If the site can&apos;t remove you from the team, your Lichess username is kept until the Organiser does.</p>
       {isOrganiser(person) && (
-        <p className={styles.warning}>
+        <p className={ui.alert}>
           You&apos;re the Organiser. Once you leave, Matchdays stop being created and nobody is removed from the Lichess
           team until someone else is made Organiser.
         </p>

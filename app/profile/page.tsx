@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ConnectLichess } from "../connect-lichess";
 import { ExternalLink } from "../external-link";
+import { RuledLinks } from "../ruled-links";
 import ui from "../ui.module.css";
 import styles from "./profile.module.css";
 import { ProfileForm } from "./profile-form";
@@ -52,7 +53,7 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
           stay with you.
         </p>
         {problem && (
-          <p role="alert" className={styles.problem}>
+          <p role="alert" className={ui.alert}>
             {problem}
           </p>
         )}
@@ -68,9 +69,13 @@ async function Edit({ searchParams }: Pick<PageProps<"/profile">, "searchParams"
         </div>
       </section>
 
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href={`/profiles/${id}`}>See your Profile as Members see it</Link>
-        <Link href="/">Home</Link>
+      <nav aria-label="More">
+        <RuledLinks
+          links={[
+            [`/profiles/${id}`, "See your Profile as Members see it"],
+            ["/", "Home"],
+          ]}
+        />
       </nav>
     </div>
   );

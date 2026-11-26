@@ -10,12 +10,8 @@ export default function PageError({ error, retry }: { error: unknown; retry: () 
   return (
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
-        <p className={ui.eyebrow}>Error</p>
         <h1>This page didn&apos;t load</h1>
-        <p className={ui.lede}>
-          Something broke on Offboard&apos;s side. Trying again usually works; if it doesn&apos;t, give it a
-          few minutes.
-        </p>
+        <p className={ui.lede}>Something broke on our side. Try again now or in a few minutes.</p>
       </div>
       <div className={ui.actions}>
         <button onClick={() => retry()}>Try again</button>

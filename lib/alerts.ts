@@ -28,7 +28,7 @@ import { done, doneSince, failed, failingJobs, runJob, sentence, skipped, type J
 import { organiserPermission, type OrganiserPermission } from "./organiser-lichess";
 import { lostPost, JOB as POST } from "./post-to-telegram";
 import { failedRequestsSince, failedRequestText, reasonOf } from "./request-failures";
-import { ZONE } from "./schedule";
+import { vilniusDay } from "./schedule";
 import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, groupId, queuePost, sendMessage, stuckPosts, type Delivery } from "./telegram";
 
 export const JOB = "alert-organiser";
@@ -90,8 +90,6 @@ async function queueAlert(text: string, until: Date) {
   await queuePost({ key: `${ALERT}${createHash("sha256").update(words).digest("hex").slice(0, 32)}`, text: words, until });
 }
 
-const day = (at: Date) => at.toLocaleDateString("en-GB", { timeZone: ZONE, day: "numeric", month: "long", year: "numeric" });
-
 // The warning due about the permission at `now`, worth sending until the next is due; null if none is. The two before
 // it ends say the same, and each is queued once, as the first is forgotten when the second is due.
 function permissionAlert(permission: OrganiserPermission | null, now: Date): { text: string; until: Date } | null {
@@ -100,13 +98,13 @@ function permissionAlert(permission: OrganiserPermission | null, now: Date): { t
   const reconnect = "Connect Lichess again on the Organiser page";
   if (now.getTime() >= ends)
     return now.getTime() < ends + DAY
-      ? { text: `Your Lichess permission ended on ${day(permission.expiresAt)}, so Matchdays aren't being created. ${reconnect}.`, until: new Date(ends + DAY) }
+      ? { text: `Your Lichess permission expired on ${vilniusDay(permission.expiresAt)}, so Matchdays aren't being created. ${reconnect}.`, until: new Date(ends + DAY) }
       : null;
   const stage = WARN_DAYS.findLastIndex((days) => now.getTime() >= ends - days * DAY);
   if (stage < 0) return null;
   const next = WARN_DAYS[stage + 1];
   return {
-    text: `Your Lichess permission ends on ${day(permission.expiresAt)}. ${reconnect} before then.`,
+    text: `Your Lichess permission expires on ${vilniusDay(permission.expiresAt)}. ${reconnect} before then.`,
     until: new Date(next === undefined ? ends : ends - next * DAY),
   };
 }
@@ -129,7 +127,7 @@ async function alert(now: Date): Promise<JobRun> {
   for (const { text } of await stuckPosts(now, new Date(now.getTime() - DAY))) await queueAlert(`${JOB_TITLES[POST]}: ${lostPost(text)}`, aDay);
   const since = await doneSince(BACKUP);
   if (!backupProblem() && since && now.getTime() - since.getTime() > 2 * DAY)
-    await queueAlert(`Backing up: no backup of the database has been made since ${day(since)}.`, aDay);
+    await queueAlert(`Backing up: no backup of the database has been made since ${vilniusDay(since)}.`, aDay);
   const warning = permissionAlert(await organiserPermission(), now);
   if (warning) await queueAlert(warning.text, warning.until);
   // A kind of request that failed in the last day, worth sending until a day after it last failed as of now: it is
@@ -148,7 +146,7 @@ async function alert(now: Date): Promise<JobRun> {
 export async function alertWithoutDatabase(error: unknown) {
   const chat = organiserChat();
   if (!botSetUp() || !chat) return;
-  const text = `The site can't use its database: ${reasonOf(error)}. Pages that need it fail, and no alert can be read from it. You'll hear this every hour until it works again.`;
+  const text = `The site can't use its database: ${reasonOf(error)}. Pages that need it fail, and no other alert can be sent. You'll get this every hour until it works again.`;
   const sent = await sendMessage(chat, text);
   if (sent.posted !== true) console.error(`Telling the Organiser that the database can't be used failed: ${sentence(sent.problem)}.`);
 }
@@ -168,7 +166,7 @@ export async function sendTestMessage(to: "me" | "group"): Promise<{ text: strin
   const sent = await sendMessage(chat, to === "me" ? "A test message from Offboard: the bot's alerts reach you here." : "A test message from Offboard's bot: its posts reach this group.");
   if (sent.posted === true) return { text: `Telegram took it: check ${to === "me" ? "your chat with the bot" : "the group"}.`, problem: false };
   const hint = /Unauthorized|Not Found/.test(sent.problem)
-    ? " Check TELEGRAM_BOT_TOKEN: it is the whole token @BotFather gave."
+    ? " Check TELEGRAM_BOT_TOKEN: it must be the whole token @BotFather gave."
     : /chat not found|Forbidden/.test(sent.problem)
       ? to === "me"
         ? " Open the bot in Telegram and press Start, then check TELEGRAM_ORGANISER_CHAT_ID."

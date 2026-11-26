@@ -234,7 +234,7 @@ describe("a failure to collect", () => {
   // What went wrong, then what to do: runs look after the Matchday until the next Sunday's starts, a week on.
   const cannot = (why: string) => ({
     outcome: "failed",
-    detail: `Couldn't collect the results of ${DAY}: ${why} If it hasn't worked by Sunday 6 December at 20:00, run pnpm ingest ${TOURNAMENT}.`,
+    detail: `Couldn't collect the results of ${DAY}: ${why} The site keeps trying until Sunday 6 December at 20:00. If it hasn't worked by then, run pnpm ingest ${TOURNAMENT}.`,
     matchdayDate: DATE,
   });
 

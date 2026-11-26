@@ -17,11 +17,8 @@ export default function AllTimePage() {
   return (
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
-        <p className={ui.eyebrow}>Leaderboard</p>
         <h1>All-time Leaderboard</h1>
-        <p className={ui.lede}>
-          Members ranked by how many Matchdays they&apos;ve played. Win or lose, every Sunday you play counts.
-        </p>
+        <p className={ui.lede}>Members ranked by how many Matchdays they&apos;ve played.</p>
       </div>
       <Suspense>
         <AllTime />
@@ -49,7 +46,7 @@ async function AllTime() {
   if (rows === null)
     return <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>;
   if (rows.length === 0)
-    return <p className={`${board.empty} ${ui.arrive}`}>Nobody is on it yet. Everyone who plays the first Matchday will be.</p>;
+    return <p className={`${board.empty} ${ui.arrive}`}>Nobody is on it yet.</p>;
   return (
     <section aria-label="Leaderboard" className={board.board}>
       <table className={board.table}>
@@ -72,9 +69,6 @@ async function AllTime() {
           ))}
         </tbody>
       </table>
-      <p className={`${ui.small} ${ui.muted}`}>
-        Members who&apos;ve played the same number of Matchdays share a rank. Companies are where Members work now.
-      </p>
       {!member && <ProfilesNote />}
     </section>
   );

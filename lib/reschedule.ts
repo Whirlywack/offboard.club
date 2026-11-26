@@ -63,7 +63,7 @@ async function changeSchedule(now: Date, change: (store: Store) => Promise<Said 
       made.text,
       ...cancelled.map(({ date, problem }) =>
         problem
-          ? `The site couldn't cancel the tournament for ${sunday(date)} on Lichess: cancel it there by hand, as listed above.`
+          ? `The site couldn't cancel the tournament for ${sunday(date)}: cancel it on Lichess yourself, as listed under Cancel on Lichess.`
           : `The tournament for ${sunday(date)} is cancelled on Lichess.`,
       ),
     ].join(" "),

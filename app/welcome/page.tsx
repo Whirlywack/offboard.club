@@ -17,7 +17,6 @@ export default function Welcome() {
       <div className={ui.intro}>
         <SignUpSteps current={1} />
         <h1>Welcome to Offboard</h1>
-        <p className={ui.lede}>Two things to agree to, then connect Lichess and you&apos;re a Member.</p>
       </div>
       <Suspense>
         <Consent />
@@ -36,7 +35,7 @@ async function Consent() {
     <>
       <p>
         Offboard is run by one volunteer, {organiser ? `${organiser}, the Organiser` : "the Organiser"}, who is
-        responsible for what the site keeps about you. It&apos;s all in <Link href="/privacy">Privacy and terms</Link>.
+        responsible for what the site keeps about you. See <Link href="/privacy">Privacy and terms</Link>.
       </p>
       <ConsentForm name={session.user.name} />
       <p className={`${ui.small} ${ui.muted}`}>

@@ -20,7 +20,7 @@
     "footer": {
       "contents": [
         "'Offboard is a free chess Club for people who work in tech in and around Vilnius.'",
-        "'Games are played on Lichess. Offboard isn't affiliated with Lichess or LinkedIn.'",
+        "'Offboard isn't affiliated with Lichess or LinkedIn.'",
         "Link 'Privacy and terms' (/privacy).",
         "Link 'Contact the Organiser' (a mailto: link), shown only when the Organiser's contact address is set."
       ],
@@ -164,7 +164,7 @@
       "purpose": "Tells someone deciding whether to sign in, or a Member, what Offboard keeps about them, who sees it, how long it is kept, their rights, how to leave, and the terms of membership.",
       "should_be_able_to": "Learn that only their name and Company are public and that everything else is for Members, and how to leave.",
       "on_it_now": [
-        "Heading 'Privacy and terms', 'Last changed 25 November 2026'.",
+        "Heading 'Privacy and terms', 'Last changed 26 November 2026'.",
         "Twelve sections of running text with bulleted lists: Who runs Offboard (with the Organiser's email address when set); Who sees what; Leaving; What Offboard keeps; Why it's kept; Who else handles it (links to Vercel's and Databricks' data processing terms); How long it's kept; Your rights; Complaints (link to vdai.lrv.lt); Cookies; Fair play; Terms of membership.",
         "Back link 'Home'."
       ],
@@ -204,14 +204,14 @@
       "route": "/seasons",
       "name": "Season Leaderboard (current Season)",
       "group": "public",
-      "who": "Anyone. Members see the same page without the note 'Names open Profiles, which only signed-in Members can see.'",
+      "who": "Anyone. Members see the same page without the note 'Only signed-in Members can open Profiles.'",
       "purpose": "Shows how the current Season stands: who is ahead on their best four Matchdays, how far through its six Matchdays it is and, once it is over, its champion. The current Season is the latest one with a collected Matchday, until the next Season's first is collected.",
       "should_be_able_to": "See where each Member, and their Company, stands this Season.",
       "on_it_now": [
         "Eyebrow 'Season Leaderboard', heading 'Season N', one sentence on where the Season stands ('Matchday 3 of 6 is done. The next one is on Sunday, 29 November 2026.', or that it is over, or how Season 1 starts).",
-        "When the Season is over: a champion block, 'Season champion' (or 'Season champions'), the name(s) as links, and the score from their best four (or that they finished level).",
-        "'Leaderboard': a table Rank / Name (with Company and domain under the name) / Score / Played; or an empty box 'The Leaderboard fills in after the Season's first Matchday. Everyone who plays is on it.'",
-        "A note on how the Season score works and how ties are broken; for anyone but a Member, 'Names open Profiles, which only signed-in Members can see.'",
+        "When the Season is over: a champion block, 'Season champion' (or 'Season champions'), the name(s) as links, and their points (or that they finished level).",
+        "'Leaderboard': a table Rank / Name (with Company and domain under the name) / Score / Played; or an empty box 'It fills in after the first Matchday.'",
+        "A note on how the Season score works and how ties are broken; for anyone but a Member, 'Only signed-in Members can open Profiles.'",
         "'The six Matchdays': six tiles (Matchday n and its date); a played one links to its Recap, one never played says 'Not played'.",
         "'Seasons' row of links to every Season with a collected Matchday, the current one unlinked (shown when there is more than one).",
         "Back links: All-time Leaderboard, Recaps, Home."
@@ -245,7 +245,7 @@
           "label": "Before Season 1",
           "seed": "empty",
           "path": "/seasons",
-          "note": "'Season 1 starts once sixteen Members have joined...', empty Leaderboard box, no Matchday tiles."
+          "note": "'Its dates are set once there are sixteen of us.', empty Leaderboard box, no Matchday tiles."
         },
         {
           "name": "seasons-current-season-3",
@@ -258,7 +258,7 @@
           "label": "Season just over, its champion named",
           "seed": "season-over",
           "path": "/seasons",
-          "note": "Season 1: 'All six Matchdays are done, so this Season is over.' and the champion block."
+          "note": "Season 1: 'This Season is over.' and the champion block."
         },
         {
           "name": "seasons-database-down",
@@ -280,7 +280,7 @@
       "should_be_able_to": "See who won a past Season and how everyone finished.",
       "on_it_now": [
         "The same page as /seasons for that Season: eyebrow, 'Season N', where it stands, champion block when over, Leaderboard table, note, six Matchday tiles, row of Seasons, back links.",
-        "For a Season with no dates yet: eyebrow 'Season Leaderboard', heading 'That Season's dates aren't set yet', a sentence on when a Season gets a page, links This Season's Leaderboard / All-time Leaderboard / Home."
+        "For a Season with no dates yet: eyebrow 'Season Leaderboard', heading 'That Season's dates aren't set yet', links This Season's Leaderboard / All-time Leaderboard / Home."
       ],
       "leads_from": [
         "'Season N' links on Season pages.",
@@ -338,9 +338,9 @@
       "purpose": "Ranks every Member by how many Matchdays they have played, whatever they scored, so a regular can top it and a visitor can see the Club is active.",
       "should_be_able_to": "See who turns up most, and that the Club is active.",
       "on_it_now": [
-        "Eyebrow 'Leaderboard', heading 'All-time Leaderboard', one-sentence lede.",
-        "A table Rank / Name (Company and domain under it) / Played; or 'Nobody is on it yet. Everyone who plays the first Matchday will be.'",
-        "Note that equal counts share a rank and that Companies are where Members work now; for anyone but a Member, 'Names open Profiles, which only signed-in Members can see.'",
+        "Heading 'All-time Leaderboard', one-sentence lede.",
+        "A table Rank / Name (Company and domain under it) / Played; or 'Nobody is on it yet.'",
+        "For anyone but a Member, 'Only signed-in Members can open Profiles.'",
         "Back links: This Season's Leaderboard, Recaps, Home."
       ],
       "leads_from": [
@@ -384,8 +384,8 @@
       "purpose": "The list of every Matchday's Recap, newest first, so a visitor can get a feel for the Club and a Member can find a past Sunday.",
       "should_be_able_to": "Open a past Matchday's Recap.",
       "on_it_now": [
-        "Heading 'Recaps', one sentence ('Every Matchday gets a Recap with that night's Leaderboard and Awards. Newest first.').",
-        "A list of dates, each 'Sunday, 22 November 2026' as a link; or 'No Recaps yet. The first one appears here after the first Matchday.'",
+        "Heading 'Recaps', one sentence ('Each Matchday's Leaderboard and Awards.').",
+        "A list of dates, each 'Sunday, 22 November 2026' as a link; or 'No Recaps yet.'",
         "Back link: Home."
       ],
       "leads_from": [
@@ -441,8 +441,8 @@
       "on_it_now": [
         "Heading 'Recap of Sunday, 15 November 2026'; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
         "'Leaderboard': table Rank / Name / Company (with domain) / Points, in Lichess's final order; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
-        "'Awards' with 'Any Member can win one of these, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
-        "Members: under each Award a 'Replay the Game' button that opens Lichess's board in the page, with 'This is Lichess's own board, loaded from lichess.org.' and 'Open the Game on Lichess'; for an Award won against someone who has since left, 'Their opponent has since left the Club, so the Game isn't shown.' Visitors: 'Signed-in Members can replay each Game.' (or 'some of these Games').",
+        "'Awards' with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
+        "Members: under each Award a 'Replay the Game' button that opens Lichess's board in the page, with 'Open the Game on Lichess'; for an Award won against someone who has since left, 'Their opponent has since left the Club, so the Game isn't shown.' Visitors get nothing under the Awards.",
         "Back links: All Recaps, Home."
       ],
       "leads_from": [
@@ -535,7 +535,7 @@
           "label": "Visitor, the same Recap",
           "seed": "season-over",
           "path": "/recaps/{sunday-7}",
-          "note": "'Signed-in Members can replay some of these Games.'"
+          "note": "The Awards, with nothing under them."
         }
       ]
     },
@@ -550,12 +550,11 @@
       "on_it_now": [
         "Large photo (or initials on a grey square when there is none or it does not load), name as the heading, position under it.",
         "Facts list, each only when there is something: Company ('Pretend Robotics (example.com)'), Open to, LinkedIn ('LinkedIn profile'), Lichess (username, links to Lichess), Blitz rating, Matchdays played, Streak ('8 Matchdays in a row', from two in a row).",
-        "When nothing optional is filled in: 'Jonas hasn't added anything else yet.' (own: 'You haven't added where you work, your position or what you're open to yet.').",
+        "When nothing optional is filled in: 'Jonas hasn't added anything else yet.' (own: 'You haven't added anything else yet.').",
         "Own Profile only: 'Edit your Profile' button.",
         "'Games': on someone else's Profile, the viewer's head-to-head ('You and Kęstutis have played 9 Games. You won 2 and lost 7.'); then the Games newest first, grouped under each Matchday's date (a link to its Recap), each line 'Won against / Drew with / Lost to <name>' with a 'Lichess' link at the right. A Game against someone who has left reads 'a former member' with no link. 30 Games at first, then 'Show all N Games' (up to 300, then 'Showing the latest 300 of N Games. Older ones are on Lichess.').",
         "With no Games: 'Lukas hasn't played a Matchday yet.' / 'Your Games appear here after your first Matchday.' / 'No Games against other Members yet.'",
-        "'Only signed-in Members can see this Profile.'",
-        "Back link: Home."
+          "Back link: Home."
       ],
       "leads_from": [
         "Names on the Season, all-time and Recap Leaderboards, Award winners, Season champions.",
@@ -582,7 +581,7 @@
       ],
       "differs_from_spec": [
         "Ticket #5: 'A visitor who is not signed in cannot open any Profile and is sent to sign in.' A visitor is sent to the home page, after a 1-second refresh, with nothing saying why; the sign-in button is there.",
-        "Spec story 7 wants a visitor to understand that Profiles are for Members; the explanation is only the note under Leaderboards ('Names open Profiles, which only signed-in Members can see.').",
+        "Spec story 7 wants a visitor to understand that Profiles are for Members; the explanation is only the note under Leaderboards ('Only signed-in Members can open Profiles.').",
         "Ticket #6: the Company's logo should appear on the Profile; it is stored but not shown (ADR 0002).",
         "The head-to-head line is shown only when the two have played; there is none on one's own Profile."
       ],
@@ -659,10 +658,10 @@
       "purpose": "Where a Member changes or clears the optional parts of their Profile, switches to another Lichess account, or starts leaving the Club.",
       "should_be_able_to": "Change their Company, position, LinkedIn link or open-to line and save.",
       "on_it_now": [
-        "Heading 'Edit your Profile', lede (name and photo come from LinkedIn; every field optional; empty one and save to clear it).",
-        "A panel with four fields, each with a label and a hint: Company website, Position (up to 80 characters), LinkedIn profile link, Open to (up to 140 characters); 'Save changes'. A refused entry shows a red message above its field and keeps what was typed.",
+        "Heading 'Edit your Profile', lede (Members see the name and photo from LinkedIn and anything added here).",
+        "A panel with four fields, each with a label and all but LinkedIn profile link with a hint: Company website, Position (up to 80 characters), LinkedIn profile link, Open to (up to 140 characters); 'Save changes'. A refused entry shows a red message above its field and keeps what was typed.",
         "'Your Lichess account': 'You play as <username> on Lichess.', how switching works, a problem message after a failed switch, 'Switch Lichess account' button.",
-        "'Leave the Club': 'Deleting your account removes your Profile and results.', 'Delete your account' button.",
+        "'Leave the Club': 'Delete your account' button.",
         "Back links: 'See your Profile as Members see it', Home."
       ],
       "leads_from": [
@@ -817,7 +816,7 @@
       "should_be_able_to": "Tick both boxes and press 'Agree and continue'.",
       "on_it_now": [
         "Step indicator '1 Agree · 2 Lichess · 3 Profile (optional)', step 1 marked.",
-        "Heading 'Welcome to Offboard', lede 'Two things to agree to, then connect Lichess and you're a Member.'",
+        "Heading 'Welcome to Offboard'.",
         "'Offboard is run by one volunteer, <Organiser's name>, the Organiser...' with a link to Privacy and terms.",
         "Panel 'Your name in public': how they will appear, that being listed is part of membership, and a checkbox to accept.",
         "Panel 'House rules': the two rules as a numbered list and a checkbox 'I accept the house rules.'",
@@ -867,8 +866,8 @@
       "on_it_now": [
         "Step indicator, step 2 marked, step 1 done.",
         "Heading 'Connect your Lichess account', lede.",
-        "Two paragraphs: what Lichess will ask, the one permission, that each Lichess account belongs to one Member and can be switched later.",
-        "Panel: a red problem message when the last try failed; 'Connect Lichess' button; 'No Lichess account yet? Make one on Lichess (it's free), then come back here and connect it.'",
+        "One paragraph: what Lichess will ask, and the one permission, given back once the account is in the team.",
+        "Panel: a red problem message when the last try failed; 'Connect Lichess' button; 'No Lichess account yet? Make one on Lichess (it's free) and come back.'",
         "'Rather not join? Delete your account.'"
       ],
       "leads_from": [
@@ -917,8 +916,8 @@
       "should_be_able_to": "Join the Telegram group, and fill in or skip the Profile.",
       "on_it_now": [
         "Step indicator, step 3 'Profile (optional)' marked, steps 1 and 2 done.",
-        "Heading 'You're a Member', lede (every field optional, only Members see the Profile, change it later from the home page).",
-        "'Members talk in the Club's Telegram group, where the bot also posts the Matchday reminders and Recaps. Join the Telegram group' (when an invite link is set).",
+        "Heading 'You're a Member', lede 'If you like, tell other Members a little about yourself.'",
+        "'Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps. Join the Telegram group' (when an invite link is set).",
         "The same four-field form as /profile, with 'Save and continue' and 'Skip for now'."
       ],
       "leads_from": [
@@ -955,7 +954,7 @@
       "should_be_able_to": "Delete their account, or go back to the step they were on.",
       "on_it_now": [
         "Heading 'Delete your account', 'This can't be undone.'",
-        "A panel: 'When you delete your account, your name, photo, email address and anything you've agreed to are deleted.'",
+        "A panel: 'Your name, photo, email address and anything you've agreed to will be deleted.'",
         "Buttons 'Keep my account' (filled) and 'Delete my account' (outlined in red)."
       ],
       "leads_from": [
@@ -993,8 +992,8 @@
       "purpose": "The Organiser's one place to see whether the site is creating Matchdays, collecting results and posting to Telegram, and to act: skip a Sunday, set a Season's start, remove a Member, renew the Lichess permission, and clear up what the site could not do on Lichess.",
       "should_be_able_to": "See at a glance whether anything needs them, and act on it.",
       "on_it_now": [
-        "Eyebrow 'Only you can see this page', heading 'Organiser', lede.",
-        "A notice after removing a Member ('Removed. They're gone from every Leaderboard and Recap.') or a refusal.",
+        "Eyebrow 'Only you can see this page', heading 'Organiser'.",
+        "A notice after removing a Member ('Member removed.') or a refusal.",
         "'Next Matchday' card: the date, and whether it is on Lichess ('Open it on Lichess'), when it will be created, or a red alert saying what stops it.",
         "'Lichess permission': account, connected and expiry dates, an alert when expired or unreadable, how to connect, 'Connect Lichess' / 'Connect Lichess again'.",
         "'Cancel on Lichess' (only when there are some): Sundays no longer Matchdays whose tournaments the site could not cancel, each with why, 'Cancel it on Lichess' and 'Done'.",
@@ -1036,7 +1035,7 @@
           "seed": "empty",
           "as": "org",
           "path": "/organiser",
-          "note": "Added: what the Organiser sees on the live site today, if no job has run there. 'Not scheduled yet', 'Lichess isn't connected', every job 'Not run yet'."
+          "note": "Added: what the Organiser sees on the live site today, if no job has run there. 'Not scheduled yet', 'Not connected, so Matchdays aren't being created.', every job 'Not run yet'."
         },
         {
           "name": "organiser-season-under-way",
@@ -1126,7 +1125,7 @@
       "purpose": "Tells someone who followed a wrong link that nothing is there and offers a way back.",
       "should_be_able_to": "Get back to the home page or the Recaps.",
       "on_it_now": [
-        "Eyebrow 'Page not found', heading 'Nothing at this address', 'The link may have a typo in it, or the page may have moved.'",
+        "Heading 'Nothing at this address', 'The address may have a typo in it.'",
         "Links: Home, Recaps."
       ],
       "leads_from": [
@@ -1161,7 +1160,7 @@
       "purpose": "Says the page did not load, that it is Offboard's fault, and offers to try again.",
       "should_be_able_to": "Try again, or go home.",
       "on_it_now": [
-        "Eyebrow 'Error', heading 'This page didn't load', 'Something broke on Offboard's side. Trying again usually works; if it doesn't, give it a few minutes.'",
+        "Heading 'This page didn't load', 'Something broke on our side. Try again now or in a few minutes.'",
         "Buttons 'Try again' (filled) and 'Home' (outlined).",
         "'Error reference: <number>' in small muted text."
       ],

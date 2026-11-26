@@ -33,6 +33,10 @@ export const isSeasonAddress = (segment: string) => /^[1-9]\d*$/.test(segment) &
 export const vilniusDate = (instant: Date) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(instant);
 
+// The same day as a person writes it, with its year: "22 November 2026".
+export const vilniusDay = (instant: Date) =>
+  instant.toLocaleDateString("en-GB", { timeZone: ZONE, day: "numeric", month: "long", year: "numeric" });
+
 // The instant a Matchday starts: 20:00 Vilnius time on that day, whatever the clocks are doing.
 export function matchdayStart(date: string): Date {
   const wall = toMs(date) + START_HOUR * 3_600_000; // 20:00 as if Vilnius were UTC

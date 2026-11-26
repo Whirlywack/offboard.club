@@ -14,10 +14,7 @@ export default function GlobalError({ retry }: { error: unknown; retry: () => vo
           <div className={ui.intro}>
             <p className={ui.eyebrow}>Offboard</p>
             <h1>This page didn&apos;t load</h1>
-            <p className={ui.lede}>
-              Something broke on Offboard&apos;s side. Trying again usually works; if it doesn&apos;t, give it
-              a few minutes.
-            </p>
+            <p className={ui.lede}>Something broke on our side. Try again now or in a few minutes.</p>
           </div>
           <div className={ui.actions}>
             <button onClick={() => retry()}>Try again</button>

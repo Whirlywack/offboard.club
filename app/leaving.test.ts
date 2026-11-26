@@ -192,8 +192,19 @@ afterEach(() => {
 describe("deleting your own account", () => {
   it("is offered on the Profile edit page, which leads to a confirmation step and deletes nothing", async () => {
     const edit = await editPage();
-    expect(edit).toContain('<h2 id="leave">Leave the Club</h2>');
-    expect(edit).toMatch(/<a[^>]* href="\/profile\/leave">Delete your account<\/a>/);
+    expect(edit).toMatch(/<h2 id="leave">Leave the Club<\/h2><div[^>]*><a[^>]* href="\/profile\/leave">Delete your account<\/a>/);
+    // The rest of the page, in the words of the signing-up deck (#74).
+    expect(renderToStaticMarkup(EditProfile(none))).toMatch(
+      />Other Members see your name and photo from LinkedIn, plus anything you add here\.<\/p>/,
+    );
+    expect(text(edit)).toContain(
+      "The website of the company you work for. Its name, taken from the site, shows with your name on Leaderboards and in Recaps. Freelance or between jobs? Leave it empty.",
+    );
+    expect(text(edit)).toContain("Position Up to 80 characters.");
+    expect(edit).not.toContain("linkedInUrl-hint");
+    expect(text(edit)).toContain(
+      "To play with a different account, sign in to Lichess with it first, then switch here. Your results and Games stay with you.",
+    );
     const confirm = await leavePage();
     // Keeping the account comes first, then deleting it, both inside the form that deletes.
     expect(confirm).toMatch(/<form[^>]*>.*<a[^>]* href="\/profile">Keep my account<\/a><button[^>]*>Delete my account<\/button><\/div><\/form>/);
@@ -201,7 +212,7 @@ describe("deleting your own account", () => {
     expect(text(confirm)).toContain("You disappear from every Leaderboard and Recap, including past ones.");
     expect(text(confirm)).toContain("Other Members keep their Games against you, with you shown as “a former member”.");
     expect(text(confirm)).toContain("Your Lichess account is disconnected, and the site asks Lichess to remove it from the Club's team.");
-    expect(text(confirm)).toContain("If the site can't remove you from the team, your Lichess username is kept until the Organiser has done it by hand.");
+    expect(text(confirm)).toContain("If the site can't remove you from the team, your Lichess username is kept until the Organiser does.");
     expect(text(confirm)).not.toContain("Nothing changes on Lichess");
     expect(people.has("ana")).toBe(true);
     expect(lichess.calls).toEqual([]);
@@ -275,7 +286,7 @@ describe("deleting your account part-way through signing up", () => {
     const confirm = await confirmPage();
     // The Member's choice, keeping first, which goes back to the step they are on.
     expect(confirm).toMatch(new RegExp(`<form[^>]*>.*<a[^>]* href="${back}">Keep my account</a><button[^>]*>Delete my account</button></div></form>`));
-    expect(text(confirm)).toContain("When you delete your account, your name, photo, email address and anything you've agreed to are deleted.");
+    expect(text(confirm)).toContain("Your name, photo, email address and anything you've agreed to will be deleted.");
     // Nothing a Member would lose, as they have none of it.
     for (const untrue of ["Profile", "Leaderboard", "Recap", "Lichess", "Games", "Organiser"]) expect(text(confirm)).not.toContain(untrue);
     // Its button deletes through the action for someone part-way, which a Member's page does not use.
@@ -349,21 +360,21 @@ describe("the Club's Lichess team", () => {
 
   // Each way removing them from the team can fail, set up, and what the Organiser is told about it.
   const failures: [string, () => void, string][] = [
-    ["the Organiser has not connected Lichess", () => organiserLichess.clear(), "The Organiser has not connected their Lichess account on the Organiser page."],
+    ["the Organiser has not connected Lichess", () => organiserLichess.clear(), "Lichess isn't connected. Connect it on the Organiser page."],
     [
       "the Organiser's permission has expired",
       () => void (organiserLichess.get("singleton")!.expiresAt = new Date("2026-11-09T12:00:00Z")),
-      "The Organiser's Lichess permission expired on 2026-11-09; the Organiser must connect Lichess again on the Organiser page.",
+      "Your Lichess permission expired on 9 November 2026. Connect Lichess again on the Organiser page.",
     ],
     [
       "the permission was revoked on Lichess",
       () => void (lichess.tokens.get(token)!.revoked = true),
-      "Lichess refused the Organiser's permission, which may have been revoked on Lichess; the Organiser must connect Lichess again on the Organiser page.",
+      "Lichess refused your permission, which may have been revoked there. Connect Lichess again on the Organiser page.",
     ],
     [
       "the Organiser's account leads the team without its permission to remove members",
       () => lichess.team.withoutRemoving.add("boss"),
-      "Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions. The likely cause: boss leads the Club's team but without the team's permission to remove members, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it.",
+      "Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions. Probably boss leads the Club's team without the team's permission to remove members. A team admin can grant it in the team's leader settings on Lichess, or you can connect a leader who has it.",
     ],
     [
       "the Organiser's permission lacks team:lead",
@@ -373,7 +384,7 @@ describe("the Club's Lichess team", () => {
     [
       "the Organiser's account no longer leads the team",
       () => lichess.team.leaders.delete("boss"),
-      "Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions. The likely cause: boss leads the Club's team but without the team's permission to remove members, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it.",
+      "Lichess answered POST /api/team/{teamId}/kick/{userId} with 400: Insufficient team permissions. Probably boss leads the Club's team without the team's permission to remove members. A team admin can grant it in the team's leader settings on Lichess, or you can connect a leader who has it.",
     ],
     ["Lichess has no such team", () => vi.stubEnv("LICHESS_TEAM_ID", "another-team"), "Lichess answered POST /api/team/{teamId}/kick/{userId} with 404: Not found."],
     [

@@ -170,7 +170,7 @@ describe("who the Organiser is", () => {
     const html = await openPage();
     expect(html).toMatch(/^<main id="main"/);
     expect(html).toContain("<h1>Organiser</h1>");
-    expect(html).toContain("Lichess isn&#x27;t connected, so Matchdays aren&#x27;t being created on Lichess.");
+    expect(html).toContain("Not connected, so Matchdays aren&#x27;t being created.");
     expect(html).toContain("<button>Connect Lichess</button>");
     expect(html).toContain("No job has failed.");
   });
@@ -267,7 +267,7 @@ describe("connecting the Organiser's Lichess account", () => {
     // Readable with the key, and only with it.
     expect(await organiserToken(new Date())).toEqual({ token, lichessId: "boss" });
     vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
-    expect(await organiserToken(new Date())).toEqual({ problem: expect.stringContaining("cannot be read") });
+    expect(await organiserToken(new Date())).toEqual({ problem: expect.stringContaining("can't be read") });
     expect(jar.values.size).toBe(0);
   });
 
@@ -277,8 +277,8 @@ describe("connecting the Organiser's Lichess account", () => {
     const html = await openPage({ lichess: "connected" });
     expect(html).toContain('<a href="https://lichess.org/@/boss" target="_blank" rel="noopener noreferrer">boss<span class="visually-hidden"> (opens in a new tab)</span></a>');
     expect(html).toMatch(/<dt>Expires<\/dt><dd><time dateTime="[^"]+">\d{1,2} \w+ \d{4}<\/time><\/dd>/);
-    expect(html).toContain("Connect again before it expires: a Lichess permission lasts a year and can&#x27;t be extended.");
-    expect(html).toMatch(/<p role="status"[^>]*>Lichess is connected\./);
+    expect(html).not.toContain("can&#x27;t be read");
+    expect(html).toMatch(/<p role="status"[^>]*>Lichess is connected\.<\/p>/);
     expect(html).toContain("<button>Connect Lichess again</button>");
     expect(html).not.toContain(token);
     expect(html).not.toContain(organiserLichess.get("singleton")!.token);
@@ -291,7 +291,7 @@ describe("connecting the Organiser's Lichess account", () => {
     signedIn = "member";
     expect(await organiserPermission()).toBeNull();
     const html = await openPage();
-    expect(html).toContain("Lichess isn&#x27;t connected, so Matchdays aren&#x27;t being created on Lichess.");
+    expect(html).toContain("Not connected, so Matchdays aren&#x27;t being created.");
     expect(html).not.toContain("lichess.org/@/boss");
     expect(html).toContain("<button>Connect Lichess</button>");
   });
@@ -301,7 +301,7 @@ describe("connecting the Organiser's Lichess account", () => {
     organiserLichess.get("singleton")!.expiresAt = new Date(Date.now() - 1000);
     const html = await openPage();
     expect(html).toMatch(/<dt>Expired<\/dt>/);
-    expect(html).toMatch(alertSaying("It has expired, so Matchdays aren't being created until you connect again."));
+    expect(html).toMatch(alertSaying("Matchdays aren't being created until you connect again."));
     expect(html).not.toContain("Connect again before it expires");
   });
 
@@ -310,7 +310,7 @@ describe("connecting the Organiser's Lichess account", () => {
     organiserLichess.get("singleton")!.expiresAt = new Date(Date.now() - 1000);
     vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
     const html = await openPage();
-    expect(html).toMatch(alertSaying("It has expired"));
+    expect(html).toMatch(alertSaying("Matchdays aren't being created until you connect again."));
     expect(html).not.toContain("can&#x27;t be read");
     expect(html).not.toContain("account/security");
   });
@@ -322,10 +322,10 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(html).not.toContain("Connect again before it expires");
     expect(html).toMatch(/<dt>Valid until<\/dt>/);
     expect(html).toContain("can&#x27;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&#x27;t being created.");
-    expect(html).toMatch(/<div role="alert"[^>]*><p>This permission can&#x27;t be read/);
+    expect(html).toMatch(/<div role="alert"[^>]*><p>This permission can&#x27;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&#x27;t being created\. To end it and connect again:<\/p>/);
     expect(html).toContain("<li>Sign in to Lichess as boss.</li>");
     expect(html).toContain('Open <a href="https://lichess.org/account/security" target="_blank" rel="noopener noreferrer">Security');
-    expect(html).toContain("revoking after you connect would revoke the new permission too.");
+    expect(html).toContain("revoking afterwards would end the new permission too.");
   });
 
   it("says the old permission was left valid when it could not be read at reconnecting, and keeps the new one", async () => {
@@ -337,7 +337,7 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(apiCalls()).not.toContain("DELETE /api/token");
     expect(liveTokens()).toContain(old); // still valid on Lichess: only the Organiser can revoke it now
     expect(await organiserToken(new Date())).toMatchObject({ lichessId: "deputy" });
-    expect(await openPage({ lichess: "stranded" })).toContain("so it wasn&#x27;t revoked. It stays valid on Lichess until it expires.");
+    expect(await openPage({ lichess: "stranded" })).toContain("so it wasn&#x27;t revoked. To end it, sign in to Lichess as the account that gave it");
   });
 
   it("connects a leader Lichess shows publicly, even one without the team's permission for tournaments", async () => {
@@ -346,7 +346,6 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(await connectAs("boss")).toBe("/organiser?lichess=connected");
     const html = await openPage();
     expect(html).toContain("a leader of the Club&#x27;s team with its “Tournaments” and “Remove” permissions.");
-    expect(html).toContain("Managing the team is how the site removes people from it when they leave the Club.");
     expect(html).not.toContain("can be removed from the team");
   });
 
@@ -356,7 +355,7 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(liveTokens()).toEqual([]);
     expect(organiserLichess.size).toBe(0);
     expect(await openPage({ lichess: "leader" })).toMatch(
-      alertSaying("That Lichess account isn't shown as a leader of the Club's Lichess team, so it can't create Matchdays and hasn't been connected."),
+      alertSaying("That Lichess account isn't a leader of the Club's Lichess team, so it wasn't connected."),
     );
   });
 
@@ -409,6 +408,7 @@ describe("connecting the Organiser's Lichess account", () => {
     vi.stubEnv("LICHESS_TEAM_ID", "");
     expect(await redirectedTo(() => connectOrganiserLichess())).toBe("/organiser?lichess=unset");
     expect(jar.sets).toEqual([]);
+    expect(await openPage({ lichess: "unset" })).toMatch(alertSaying("Lichess can't be connected until LICHESS_TEAM_ID and LICHESS_TOKEN_KEY are set."));
   });
 
   it.each([
@@ -637,7 +637,7 @@ describe("the scheduled jobs on the Organiser page", () => {
   it("says plainly that backups aren't set up, and that alerts are off and which settings they lack, never showing one", async () => {
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "");
     vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "");
-    const off = "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.";
+    const off = "Backups are off: BLOB_READ_WRITE_TOKEN isn't set.";
     let html = await openPage();
     expect(html).toMatch(alertSaying(off));
     // Once, though the last run said the same.
@@ -654,7 +654,7 @@ describe("the scheduled jobs on the Organiser page", () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
     vi.stubEnv("TELEGRAM_ORGANISER_CHAT_ID", "123456789");
     html = await openPage();
-    expect(html).not.toContain("Backups aren't set up");
+    expect(html).not.toMatch(alertSaying(off));
     expect(html).not.toContain("Alerts are off");
     for (const value of ["vercel_blob_rw_pretendstore_a-pretend-blob-token", "a-pretend-telegram-token", "123456789"]) expect(html).not.toContain(value);
   });
@@ -696,7 +696,7 @@ describe("a test message from the Organiser page", () => {
     const section = html.slice(html.indexOf('<h2 id="telegram">'), html.indexOf("</section>", html.indexOf('<h2 id="telegram">')));
     expect(section).toMatch(/<button [^>]*value="me" name="to">Send a test message to me<\/button>/);
     expect(section).toMatch(/<button [^>]*value="group" name="to">Send a test message to the group<\/button>/);
-    expect(section).toContain("Everyone in the group sees the one sent to the group.");
+    expect(section).toContain("Everyone in the group sees the test message sent to it.");
   });
 
   it("sends one message, at once, to the Organiser's own chat or to the group, and says Telegram took it", async () => {
@@ -712,7 +712,7 @@ describe("a test message from the Organiser page", () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "not-the-bots-token");
     const wrong = await press("me");
     expect(wrong).toEqual({
-      text: "Nothing was sent: Telegram refused it: Unauthorized. Check TELEGRAM_BOT_TOKEN: it is the whole token @BotFather gave.",
+      text: "Nothing was sent: Telegram refused it: Unauthorized. Check TELEGRAM_BOT_TOKEN: it must be the whole token @BotFather gave.",
       problem: true,
     });
     vi.stubEnv("TELEGRAM_BOT_TOKEN", TOKEN);
@@ -789,7 +789,7 @@ describe("Telegram on the Organiser page", () => {
   it("says what the bot does once every setting is in place, and shows none of them", async () => {
     for (const [name, value] of Object.entries(set)) vi.stubEnv(name, value);
     const html = await telegram();
-    expect(html).toContain("The bot posts reminders, Recaps and notices to the group");
+    expect(html).toContain("<p>The bot posts reminders, Recaps and notices to the group.</p>");
     expect(html).not.toContain('role="alert"');
     for (const value of Object.values(set)) expect(html).not.toContain(value);
   });
@@ -820,7 +820,7 @@ describe("the Matchdays whose results are not in, on the Organiser page", () => 
     played("2026-10-11", "EightWk1"); // the eighth Sunday, counting this one
     played("2026-10-04", "NineWks1"); // the ninth: too long ago
     expect(items(await part())).toEqual([
-      "Sunday 29 November Collecting results checks it until Sunday 6 December at 20:00.",
+      "Sunday 29 November Checked until Sunday 6 December at 20:00.",
       "Sunday 8 November No longer checked. If Lichess still has its tournament, run pnpm ingest LeftOut1.",
       "Sunday 11 October No longer checked. If Lichess still has its tournament, run pnpm ingest EightWk1.",
     ]);
@@ -866,7 +866,7 @@ describe("the next Matchday on the Organiser page", () => {
     at("2026-11-20T12:00:00Z");
     const html = await panel();
     expect(html).toContain('<time dateTime="2026-11-29T18:00:00.000Z">Sunday 29 November at 20:00</time>');
-    expect(html).toContain('The site creates it on Lichess on <time dateTime="2026-11-23T18:00:00.000Z">Monday 23 November</time>, six days ahead.');
+    expect(html).toContain('It&#x27;s due on Lichess on <time dateTime="2026-11-23T18:00:00.000Z">Monday 23 November</time>.');
     expect(html).not.toContain('role="alert"');
   });
 
@@ -874,15 +874,15 @@ describe("the next Matchday on the Organiser page", () => {
     at("2026-11-23T19:59:00Z");
     expect(await panel()).toContain("It&#x27;s due on Lichess now. The next hourly run should create it.");
     at("2026-11-23T20:01:00Z");
-    expect(await panel()).toMatch(alertSaying("It should be on Lichess by now, but isn't. Check the scheduled jobs below."));
+    expect(await panel()).toMatch(alertSaying("It should be on Lichess by now. See Creating Matchdays below."));
   });
 
   it("promises no creation while nothing is connected, but names the day it is due", async () => {
     organiserLichess.clear();
     at("2026-11-20T12:00:00Z");
     const html = await panel();
-    expect(html).toMatch(/<p role="alert"[^>]*>The site should create it on Lichess on <time dateTime="2026-11-23T18:00:00.000Z">Monday 23 November<\/time>, but can&#x27;t until the problem below is fixed\.<\/p>/);
-    expect(html).not.toContain("The site creates it on Lichess on");
+    expect(html).toMatch(/<p role="alert"[^>]*>It&#x27;s due on Lichess on <time dateTime="2026-11-23T18:00:00.000Z">Monday 23 November<\/time>, but can&#x27;t be created until you fix the problem below\.<\/p>/);
+    expect(html).not.toMatch(/<p class="[^"]+">It&#x27;s due on Lichess on/);
   });
 
   it.each([
@@ -893,7 +893,7 @@ describe("the next Matchday on the Organiser page", () => {
     problem();
     at("2026-11-23T19:00:00Z");
     const html = await panel();
-    expect(html).toMatch(alertSaying("It's due on Lichess now, but the site can't create it until the problem below is fixed."));
+    expect(html).toMatch(alertSaying("It's due on Lichess now, but can't be created until you fix the problem below."));
     expect(html).not.toContain("The next hourly run should create it.");
   });
 
@@ -901,7 +901,7 @@ describe("the next Matchday on the Organiser page", () => {
     organiserLichess.clear();
     vi.stubEnv("CRON_SECRET", "");
     at("2026-11-24T12:00:00Z");
-    expect(await panel()).toMatch(alertSaying("It's due on Lichess now, but the site can't create it until the problems below are fixed."));
+    expect(await panel()).toMatch(alertSaying("It's due on Lichess now, but can't be created until you fix the problems below."));
   });
 
   it("moves on to the next Matchday once one starts, while Members can still join that one from the home page", async () => {
@@ -916,7 +916,6 @@ describe("the next Matchday on the Organiser page", () => {
     at("2026-11-25T12:00:00Z");
     matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
     const html = await panel();
-    expect(html).toContain("It&#x27;s on Lichess, and Members can join it from the home page.");
     expect(html).toContain('<a href="https://lichess.org/swiss/AbCd1234" target="_blank" rel="noopener noreferrer">Open it on Lichess');
     expect(html).not.toContain('role="alert"');
   });

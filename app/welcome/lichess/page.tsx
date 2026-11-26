@@ -18,17 +18,12 @@ export default function ConnectStep({ searchParams }: PageProps<"/welcome/liches
       <div className={ui.intro}>
         <SignUpSteps current={2} />
         <h1>Connect your Lichess account</h1>
-        <p className={ui.lede}>Matchdays are played on Lichess, so connect the account you&apos;ll play with.</p>
+        <p className={ui.lede}>Use the account you&apos;ll play Matchdays with.</p>
       </div>
       <div className={ui.prose}>
         <p>
-          Lichess will ask you to approve Offboard. Once you do, Offboard adds your account to the Club&apos;s private
-          Lichess team, so there&apos;s no password to type. It asks Lichess for one permission only, to join a team on
-          Lichess, and gives it back as soon as you&apos;re in.
-        </p>
-        <p>
-          Each Lichess account can belong to one Member. You can switch to a different account later from your Profile,
-          and your results stay with you.
+          Lichess will ask you to approve Offboard. Offboard asks only for permission to join a team, adds your account to
+          the Club&apos;s private team, then gives the permission back.
         </p>
       </div>
       <Suspense>
@@ -53,8 +48,8 @@ async function Step({ searchParams }: Pick<PageProps<"/welcome/lichess">, "searc
         )}
         <ConnectLichess label="Connect Lichess" />
         <p className={`${ui.small} ${ui.muted}`}>
-          No Lichess account yet? <a href="https://lichess.org/signup">Make one on Lichess</a> (it&apos;s free), then
-          come back here and connect it.
+          No Lichess account yet? <a href="https://lichess.org/signup">Make one on Lichess</a> (it&apos;s free) and come
+          back.
         </p>
       </div>
       <p className={`${ui.small} ${ui.muted}`}>

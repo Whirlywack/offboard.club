@@ -59,7 +59,7 @@ describe("the Telegram group's invite link", () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
     vi.stubEnv("TELEGRAM_GROUP_ID", "@pretend_group");
     html = await render(AfterSignUp);
-    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts the Matchday reminders and Recaps. <a");
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts Matchday reminders and Recaps. <a");
   });
 
   it("is given to nobody else: not a visitor, nor anyone part-way through signing up", async () => {

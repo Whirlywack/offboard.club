@@ -62,9 +62,7 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
         <h2 id="leaderboard">Leaderboard</h2>
         {leaderboard.length === 0 ? (
           <p className={`${board.empty} ${ui.arrive}`}>
-            {done === 0
-              ? "The Leaderboard fills in after the Season's first Matchday. Everyone who plays is on it."
-              : "Nobody is on this Season's Leaderboard."}
+            {done === 0 ? "It fills in after the first Matchday." : "Nobody is on this Season's Leaderboard."}
           </p>
         ) : (
           <table className={board.table}>
@@ -93,8 +91,8 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
           </table>
         )}
         <p className={`${ui.small} ${ui.muted}`}>
-          Your Season score adds up your best four Matchdays, so missing two Sundays costs you nothing. When two scores
-          are level, whoever played more Matchdays goes higher; if that&apos;s level too, they share the rank.
+          Your score adds up your best four Matchdays. A tie goes to whoever played more Matchdays; if that&apos;s level
+          too, they share the rank.
         </p>
         {!member && leaderboard.length > 0 && <ProfilesNote />}
       </section>
@@ -156,10 +154,10 @@ const inWords = ["no", "one", "two", "three", "four", "five", "six"];
 // Where the Season stands, in a sentence. A Season can end with fewer than six Matchdays played, when one was never
 // ingested (lib/leaderboards.ts).
 function progress({ number, matchdays, over }: Season, done: number, now: Date): string {
-  if (!matchdays) return "Season 1 starts once sixteen Members have joined, on the first Sunday at least a week later.";
+  if (!matchdays) return "Its dates are set once there are sixteen of us.";
   if (over) {
     const played = matchdays.filter((m) => m.ingested).length;
-    if (played === SEASON_LENGTH) return "All six Matchdays are done, so this Season is over.";
+    if (played === SEASON_LENGTH) return "This Season is over.";
     return played === 0
       ? "This Season is over. None of its Matchdays was played."
       : `This Season is over, with ${inWords[played]} of its six Matchdays played.`;
@@ -192,8 +190,8 @@ function Champions({ champions, score }: { champions: Member[]; score: number })
       </p>
       <p className={styles.championNote}>
         {shared
-          ? `They finished level on ${score} points and on Matchdays played, so they share the title.`
-          : `${score} points from their best four Matchdays.`}
+          ? `They finished level on ${score} points and on Matchdays played.`
+          : `${score} points.`}
       </p>
     </section>
   );

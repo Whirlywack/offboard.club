@@ -19,6 +19,7 @@ const SECRET = "a-cron-secret-of-forty-characters-123456";
 
 // Season 1 starts on Sunday 29 November 2026; its first Matchday starts at 20:00 Vilnius time, 18:00 UTC.
 const DATE = "2026-11-29";
+const SUNDAY = "Sunday 29 November"; // as the job's sentences write it
 const START = new Date("2026-11-29T18:00:00Z");
 const SIX_DAYS = 6 * 86_400_000;
 const at = (iso: string) => new Date(iso);
@@ -103,7 +104,7 @@ describe("creating the upcoming Matchday's tournament", () => {
   it("creates a Swiss on the Club's team with exactly the Matchday's settings, as the Organiser", async () => {
     const run = await runAt(DUE);
     const id = matchdays.get(DATE)?.lichessTournamentId;
-    expect(run).toEqual({ outcome: "done", detail: `Created tournament ${id} on Lichess for the Matchday of ${DATE}.`, matchdayDate: DATE });
+    expect(run).toEqual({ outcome: "done", detail: `Created tournament ${id} on Lichess for the Matchday of ${SUNDAY}.`, matchdayDate: DATE });
     expect(id).toMatch(/^[A-Za-z0-9]{8}$/);
     expect(requests()).toEqual([`GET /api/team/${TEAM}/swiss`, `POST /api/swiss/new/${TEAM}`]);
     const [create] = creations();
@@ -143,7 +144,7 @@ describe("creating the upcoming Matchday's tournament", () => {
     const early = await runAt(new Date(START.getTime() - SIX_DAYS - 1));
     expect(early).toEqual({
       outcome: "skipped",
-      detail: `The next Matchday, ${DATE}, is more than 6 days away; its tournament is created once it is 6 days away.`,
+      detail: `The next Matchday, ${SUNDAY}, is more than 6 days away.`,
       matchdayDate: DATE,
     });
     expect(lichess.calls).toEqual([]);
@@ -161,7 +162,7 @@ describe("creating the upcoming Matchday's tournament", () => {
   it("does nothing when no Season is scheduled, and says so", async () => {
     seasons.clear();
     const run = await runAt(DUE);
-    expect(run).toEqual({ outcome: "skipped", detail: "No Matchday is scheduled, so there is nothing to create.", matchdayDate: null });
+    expect(run).toEqual({ outcome: "skipped", detail: "No Matchday is scheduled.", matchdayDate: null });
     expect(lichess.calls).toEqual([]);
     expect(matchdays.size).toBe(0);
     expect(jobFailures.size).toBe(0);
@@ -185,7 +186,7 @@ describe("creating the upcoming Matchday's tournament", () => {
     lichess.calls.length = 0;
     expect(await runAt(new Date(DUE.getTime() + 3_600_000))).toEqual({
       outcome: "skipped",
-      detail: `The Matchday of ${DATE} already has its tournament, ${id}.`,
+      detail: `The Matchday of ${SUNDAY} already has its tournament, ${id}.`,
       matchdayDate: DATE,
     });
     expect(lichess.calls).toEqual([]);
@@ -218,7 +219,7 @@ describe("recovering from a run that created the tournament without recording it
     const [made] = created();
     expect(first).toEqual({
       outcome: "failed",
-      detail: `Tournament ${made.id} was created on Lichess for the Matchday of ${DATE} but could not be recorded (Connection terminated unexpectedly); the next run records it.`,
+      detail: `Tournament ${made.id} was created on Lichess for the Matchday of ${SUNDAY} but could not be recorded (Connection terminated unexpectedly); the next run records it.`,
       matchdayDate: DATE,
     });
     expect(matchdays.size).toBe(0);
@@ -227,7 +228,7 @@ describe("recovering from a run that created the tournament without recording it
     const second = await runAt(new Date(DUE.getTime() + 3_600_000));
     expect(second).toEqual({
       outcome: "done",
-      detail: `Recorded tournament ${made.id}, which an earlier run created on Lichess without recording it, as the Matchday of ${DATE}.`,
+      detail: `Recorded tournament ${made.id}, which an earlier run created on Lichess without recording it, as the Matchday of ${SUNDAY}.`,
       matchdayDate: DATE,
     });
     expect(requests()).toEqual([`GET /api/team/${TEAM}/swiss`]);
@@ -242,7 +243,7 @@ describe("recovering from a run that created the tournament without recording it
       return response;
     });
     const first = await runAt(DUE);
-    expect(first).toEqual({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: Lichess couldn't be reached.`, matchdayDate: DATE });
+    expect(first).toEqual({ outcome: "failed", detail: `Couldn't create the tournament for ${SUNDAY}: Lichess couldn't be reached.`, matchdayDate: DATE });
     expect(created()).toHaveLength(1);
 
     vi.stubGlobal("fetch", lichess.fetch);
@@ -268,7 +269,7 @@ describe("recovering from a run that created the tournament without recording it
     const run = await runAt(DUE);
     expect(run).toEqual({
       outcome: "failed",
-      detail: `Tournament EaRLieR1 is on Lichess for the Matchday of ${DATE}, but was not recorded: that Matchday already has another tournament, or this one is another Matchday's.`,
+      detail: `Tournament EaRLieR1 is on Lichess for the Matchday of ${SUNDAY}, but was not recorded: that Matchday already has another tournament, or this one is another Matchday's.`,
       matchdayDate: DATE,
     });
     expect(matchdays.has(DATE)).toBe(false);
@@ -282,7 +283,7 @@ describe("recovering from a run that created the tournament without recording it
     const run = await runAt(DUE);
     expect(run.outcome).toBe("failed");
     expect(run.detail).toBe(
-      `The Matchday of ${DATE} could not be created: the Club's team already has a tournament named "Offboard Matchday ${DATE}" that does not start at 20:00 Vilnius time that day, so none was created. Check it on Lichess.`,
+      `Couldn't create the tournament for ${SUNDAY}: the Club's team already has a tournament named "Offboard Matchday ${DATE}" that does not start at 20:00 Vilnius time that day, so none was created. Check it on Lichess.`,
     );
     expect(creations()).toEqual([]);
     expect(matchdays.size).toBe(0);
@@ -297,18 +298,18 @@ describe("recovering from a run that created the tournament without recording it
 });
 
 describe("the Organiser's permission", () => {
-  const cannot = (why: string) => ({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: ${why}`, matchdayDate: DATE });
+  const cannot = (why: string) => ({ outcome: "failed", detail: `Couldn't create the tournament for ${SUNDAY}: ${why}`, matchdayDate: DATE });
 
   it("is needed: without it nothing is created, and the failure is recorded", async () => {
     organiserLichess.clear();
-    expect(await runAt(DUE)).toEqual(cannot("The Organiser has not connected their Lichess account on the Organiser page."));
+    expect(await runAt(DUE)).toEqual(cannot("Lichess isn't connected. Connect it on the Organiser page."));
     expect(lichess.calls).toEqual([]);
   });
 
   it("must not have expired", async () => {
     organiserLichess.get("singleton")!.expiresAt = new Date(DUE.getTime() - 1);
     const run = await runAt(DUE);
-    expect(run).toEqual(cannot(`The Organiser's Lichess permission expired on 2026-11-24; the Organiser must connect Lichess again on the Organiser page.`));
+    expect(run).toEqual(cannot("Your Lichess permission expired on 24 November 2026. Connect Lichess again on the Organiser page."));
     expect(lichess.calls).toEqual([]);
   });
 
@@ -319,14 +320,14 @@ describe("the Organiser's permission", () => {
 
   it("must be the current Organiser's", async () => {
     vi.stubEnv("ORGANISER_USER_ID", "someone-else");
-    expect((await runAt(DUE)).detail).toContain("The Organiser has not connected their Lichess account");
+    expect((await runAt(DUE)).detail).toContain("Lichess isn't connected. Connect it on the Organiser page.");
     expect(lichess.calls).toEqual([]);
   });
 
   it("cannot be used without its key, or once what is stored has been changed", async () => {
     vi.stubEnv("LICHESS_TOKEN_KEY", randomBytes(32).toString("base64"));
     const unreadable = cannot(
-      "The Organiser's stored Lichess permission cannot be read (LICHESS_TOKEN_KEY has changed, or what is stored was altered); the Organiser must connect Lichess again on the Organiser page, after revoking the old permission by hand on Lichess (https://lichess.org/account/security, signed in as boss).",
+      "Your Lichess permission can't be read: LICHESS_TOKEN_KEY has changed, or what is stored was altered. Sign in to Lichess as boss, revoke Offboard at https://lichess.org/account/security, then connect Lichess again on the Organiser page.",
     );
     expect(await runAt(DUE)).toEqual(unreadable);
     vi.stubEnv("LICHESS_TOKEN_KEY", KEY);
@@ -337,14 +338,14 @@ describe("the Organiser's permission", () => {
     row.token = [version, iv, bytes.toString("base64url"), tag].join(".");
     expect(await runAt(DUE)).toEqual(unreadable);
     vi.stubEnv("LICHESS_TOKEN_KEY", "");
-    expect((await runAt(DUE)).detail).toContain("LICHESS_TOKEN_KEY is not set");
+    expect((await runAt(DUE)).detail).toContain("LICHESS_TOKEN_KEY isn't set");
     expect(lichess.calls).toEqual([]);
   });
 
   it("is reported plainly when Lichess refuses it", async () => {
     lichess.tokens.get(token)!.revoked = true;
     expect(await runAt(DUE)).toEqual(
-      cannot("Lichess refused the Organiser's permission, which may have been revoked on Lichess; the Organiser must connect Lichess again on the Organiser page."),
+      cannot("Lichess refused your permission, which may have been revoked there. Connect Lichess again on the Organiser page."),
     );
     expect(matchdays.size).toBe(0);
   });
@@ -352,7 +353,7 @@ describe("the Organiser's permission", () => {
   // The site checks only that the account is among the team's leaders Lichess shows; Lichess also wants the team's
   // permission for tournaments, and refuses creation without it as it refuses someone who is no leader at all.
   const notGranted = cannot(
-    "Lichess answered POST /api/swiss/new/{teamId} with 404: You're not a leader of that team. The likely cause: boss leads the Club's team but without the team's permission to manage tournaments, which Lichess requires. A team admin can grant it in the team's leader settings on Lichess, or the Organiser can connect a leader who has it.",
+    "Lichess answered POST /api/swiss/new/{teamId} with 404: You're not a leader of that team. Probably boss leads the Club's team without the team's permission to manage tournaments. A team admin can grant it in the team's leader settings on Lichess, or you can connect a leader who has it.",
   );
 
   it("must be a leader's with the team's permission for tournaments, which the failure names as the likely cause", async () => {
@@ -377,7 +378,7 @@ describe("failures", () => {
     vi.stubEnv("LICHESS_TEAM_ID", "");
     await runAt(DUE);
     expect([...jobFailures.values()]).toEqual([
-      { id: 1, job: JOB, at: expect.any(Date), matchdayDate: DATE, problem: expect.stringContaining("has not connected their Lichess account") },
+      { id: 1, job: JOB, at: expect.any(Date), matchdayDate: DATE, problem: expect.stringContaining("Lichess isn't connected") },
       { id: 2, job: JOB, at: expect.any(Date), matchdayDate: DATE, problem: expect.stringContaining("LICHESS_TEAM_ID is not set") },
     ]);
     expect(await lastFailure()).toEqual({ job: JOB, at: expect.any(Date), matchdayDate: DATE, problem: expect.stringContaining("LICHESS_TEAM_ID is not set") });
@@ -394,13 +395,13 @@ describe("failures", () => {
     organiserLichess.clear();
     for (let hour = 0; hour < 3; hour++) await runAt(new Date(DUE.getTime() + hour * 3_600_000));
     expect(jobFailures.size).toBe(1);
-    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: expect.stringContaining("has not connected") });
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: expect.stringContaining("Lichess isn't connected") });
 
     vi.stubEnv("LICHESS_TEAM_ID", "");
     await runAt(DUE);
     await runAt(DUE);
     expect([...jobFailures.values()].map((f) => f.problem)).toEqual([
-      expect.stringContaining("has not connected their Lichess account"),
+      expect.stringContaining("Lichess isn't connected"),
       expect.stringContaining("LICHESS_TEAM_ID is not set"),
     ]);
 
@@ -423,7 +424,7 @@ describe("failures", () => {
 });
 
 describe("the run's time", () => {
-  const cannot = (why: string) => ({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: ${why}`, matchdayDate: DATE });
+  const cannot = (why: string) => ({ outcome: "failed", detail: `Couldn't create the tournament for ${SUNDAY}: ${why}`, matchdayDate: DATE });
 
   // A run at `at`, DUE unless told otherwise. A tournament is kept to cancel by hand for the week off, 10 January, still to come, which the run asks
   // Lichess again to cancel. The run's first statement, its hold on the job, waits `hold` ms, and the one that records

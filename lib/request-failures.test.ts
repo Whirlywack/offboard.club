@@ -370,7 +370,7 @@ describe("the Organiser's alerts of failed requests", () => {
 
 describe("a database that can't be used", () => {
   const SAID =
-    "The site can't use its database: the database couldn't be reached. Pages that need it fail, and no alert can be read from it. You'll hear this every hour until it works again.";
+    "The site can't use its database: the database couldn't be reached. Pages that need it fail, and no other alert can be sent. You'll get this every hour until it works again.";
   // Every statement fails as pg fails when it cannot connect, naming the database's host as a real one would.
   const unreachable = () => {
     const named = fromDatabase(Object.assign(new Error(`getaddrinfo ENOTFOUND ${DATABASE}`), { code: "ENOTFOUND", hostname: DATABASE }));

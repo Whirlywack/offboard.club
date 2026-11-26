@@ -31,7 +31,8 @@ function CompanyName({ company }: { company: NonNullable<Member["company"]> }) {
   );
 }
 
-// Under a Leaderboard with names on it, for anyone who is not a Member.
+// Under a Leaderboard with names on it, for anyone who is not a Member: on the Season and all-time Leaderboards and
+// under a Recap's.
 export function ProfilesNote() {
-  return <p className={`${ui.small} ${ui.muted}`}>Names open Profiles, which only signed-in Members can see.</p>;
+  return <p className={`${ui.small} ${ui.muted}`}>Only signed-in Members can open Profiles.</p>;
 }

@@ -60,7 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
           <footer className={site.footer}>
             <p>Offboard is a free chess Club for people who work in tech in and around Vilnius.</p>
-            <p>Games are played on Lichess. Offboard isn&apos;t affiliated with Lichess or LinkedIn.</p>
+            <p>Offboard isn&apos;t affiliated with Lichess or LinkedIn.</p>
             <p className={site.contact}>
               <Link href="/privacy">Privacy and terms</Link>
             </p>

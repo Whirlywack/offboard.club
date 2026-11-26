@@ -353,7 +353,7 @@ describe("a Recap's Awards", () => {
         { title: "Closest call", winner: "Ben Kazlauskas", feat: "Won with 1:00 left on the clock.", game: null },
       ]);
       expect(html).not.toMatch(theGame);
-      expect(html).toContain("Signed-in Members can replay each Game.");
+      expect(html).not.toContain("Replay the Game");
     };
     await withoutGame();
     signedInAs({ publicDisplayConsentAt: null, houseRulesAcceptedAt: null, lichessId: null }); // before the welcome step
@@ -365,11 +365,13 @@ describe("a Recap's Awards", () => {
 
     asMember();
     const html = await open(DATE);
-    expect(html).not.toContain("Signed-in Members can replay each Game.");
     // Closed until asked for, and named for screen readers; the Game has a plain link too.
     expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the closest call<\/span><\/summary>/);
     expect(html).not.toMatch(/<details[^>]* open/);
     expect(awardsIn(html)?.[0].game).toBe("https://lichess.org/CLOSE001/black");
+    expect(html).toContain("Any Member can win one, whatever their rating.");
+    // Under the board, the link alone.
+    expect(html).toMatch(/<p class="[^"]+"><a href="https:\/\/lichess.org\/CLOSE001\/black" target="_blank"/);
     expect(html).toContain('href="https://lichess.org/CLOSE001/black" target="_blank" rel="noopener noreferrer"');
     // Lichess's board is not in the page until it is opened, so reading the Recap asks nothing of Lichess.
     expect(html).not.toContain("<iframe");
@@ -382,7 +384,7 @@ describe("a Recap's Awards", () => {
     played("CORAWINS", "cora", "ana", { whiteRating: 1450, blackRating: 1500, winnerClockCentis: 4_000 });
 
     let html = await open(DATE);
-    expect(html).toContain("Signed-in Members can replay some of these Games.");
+    expect(html).not.toContain("Replay the Game");
     expect(html).not.toMatch(/BENMATES|CORAWINS/);
 
     asMember();
@@ -397,12 +399,12 @@ describe("a Recap's Awards", () => {
     expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the biggest upset<\/span>/);
     expect(html).not.toContain("of the fastest checkmate</span>");
 
-    // With only that Award, a visitor is not told of Games to replay.
+    // With only that Award, a visitor gets both Awards and no Game.
     games.delete("CORAWINS");
     getSession.mockResolvedValue(null);
     html = await open(DATE);
     expect(awardsIn(html)?.map((a) => a.title)).toEqual(["Closest call", "Fastest checkmate"]);
-    expect(html).not.toContain("Signed-in Members can replay");
+    expect(html).not.toContain("Replay the Game");
   });
 
   it("puts the Game on Lichess's own board, sandboxed, lazy, titled and sending no referrer", async () => {
@@ -429,8 +431,9 @@ describe("the list of Recaps", () => {
   });
 
   it("says so when there are none yet, and when the database cannot be read, whose failure it records", async () => {
+    expect(renderToStaticMarkup(RecapsPage())).toMatch(/>Each Matchday&#x27;s Leaderboard and Awards\.<\/p>/);
     resetDb();
-    expect(await list()).toContain("No Recaps yet");
+    expect(await list()).toMatch(/>No Recaps yet\.<\/p>$/);
     const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
     db.query.mockRejectedValueOnce(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));

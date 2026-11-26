@@ -186,11 +186,11 @@ describe("switching to another Lichess account", () => {
 
   // Each way removing the old account can fail, set up, and what the Organiser is told about it.
   const failures: [string, () => void, string][] = [
-    ["no Organiser permission is stored at all", () => organiserLichess.clear(), "The Organiser has not connected their Lichess account on the Organiser page."],
+    ["no Organiser permission is stored at all", () => organiserLichess.clear(), "Lichess isn't connected. Connect it on the Organiser page."],
     [
       "the permission was revoked on Lichess",
       () => void (lichess.tokens.get(token)!.revoked = true),
-      "Lichess refused the Organiser's permission, which may have been revoked on Lichess; the Organiser must connect Lichess again on the Organiser page.",
+      "Lichess refused your permission, which may have been revoked there. Connect Lichess again on the Organiser page.",
     ],
     [
       "Lichess is down",
@@ -207,6 +207,9 @@ describe("switching to another Lichess account", () => {
     expect(inTeam("ana-new")).toBe(true);
     expect([...teamRemovals.values()]).toEqual([{ lichessId: "lichess-ana", at: NOW, problem: why }]);
     expect(await listedForOrganiser()).toEqual(["lichess-ana"]);
+    expect(text((await organiserSection("removals"))!)).toContain(
+      "The site couldn't remove these accounts from the Club's Lichess team. Remove each on Lichess, then press Done.",
+    );
   });
 
   it("does not keep the Member waiting on a slow Lichess, and gives up on removing the old account after 25 s", async () => {
@@ -391,7 +394,7 @@ describe("switching to another Lichess account", () => {
     expect(await listedForOrganiser()).toBeNull();
     expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
     expect(text((await organiserSection("rejoin"))!)).toBe(
-      "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to press Switch Lichess account on their Profile and choose lichess-ana again on Lichess. Done : Ana Petraitė has been asked",
+      "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to press Switch Lichess account on Edit your Profile, and choose lichess-ana again on Lichess. Then press Done. Done : Ana Petraitė has been asked",
     );
     // She does so, "switching" to the account she has: it is in the team again, and nobody is named.
     expect(await switchTo("lichess-ana")).toBe("/profiles/ana");

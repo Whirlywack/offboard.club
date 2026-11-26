@@ -24,12 +24,11 @@ export function ConsentForm({ name }: { name: string }) {
       <fieldset className={styles.agreement}>
         <legend>Your name in public</legend>
         <p>
-          You&apos;ll appear as {name}, with your Company if you add one. Only signed-in Members see your photo and Profile,
-          and your email is never shown.
+          You&apos;ll appear as {name}. Only signed-in Members see your photo and Profile, and your email is never shown.
         </p>
         <p>
-          Being listed is part of being a Member, so if you&apos;d rather not be, please don&apos;t join. To leave later,
-          delete your account on Edit your Profile. That takes you off every Leaderboard, Recap and Award.
+          Being listed is part of being a Member. To leave later, delete your account on Edit your Profile. That takes
+          you off every Leaderboard, Recap and Award.
         </p>
         <label className={styles.check}>
           <input
@@ -50,7 +49,6 @@ export function ConsentForm({ name }: { name: string }) {
 
       <fieldset className={styles.agreement}>
         <legend>House rules</legend>
-        <p>Two rules, so Sundays stay fair and nobody gets sold to.</p>
         <ol className={styles.rules}>
           {HOUSE_RULES.map((rule) => (
             <li key={rule}>{rule}</li>

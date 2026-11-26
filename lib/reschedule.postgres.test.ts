@@ -159,7 +159,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
         lichessTournamentId: "PgScnd01",
         date: "2026-12-20",
         problem:
-          "Lichess answered POST /api/swiss/{id}/terminate with 401: This user cannot edit this swiss. The likely cause: it was created with another Lichess account than boss, and only the account that created a tournament can cancel it.",
+          "Lichess answered POST /api/swiss/{id}/terminate with 401: This user cannot edit this swiss. Probably a Lichess account other than boss created it, and only that account can cancel it.",
       },
     ]);
   });

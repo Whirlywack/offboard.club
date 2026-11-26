@@ -84,7 +84,10 @@ async function collect(now: Date): Promise<JobRun> {
   const refusal = (why: string) => failed(`Couldn't collect the results of ${sunday}: ${sentence(why)}.`, date);
   const lastTry = moment(lastTryAt(date));
   const cannot = (why: string) =>
-    failed(`Couldn't collect the results of ${sunday}: ${sentence(why)}. If it hasn't worked by ${lastTry}, run pnpm ingest ${id}.`, date);
+    failed(
+      `Couldn't collect the results of ${sunday}: ${sentence(why)}. The site keeps trying until ${lastTry}. If it hasn't worked by then, run pnpm ingest ${id}.`,
+      date,
+    );
   const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 60_000} minutes`);
   try {
     const swiss = await getSwiss(id, deadline.signal);

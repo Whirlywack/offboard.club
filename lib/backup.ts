@@ -178,7 +178,7 @@ function inOrder(tables: string[], references: { table: string; references: stri
 const storeToken = () => process.env.BLOB_READ_WRITE_TOKEN || null;
 
 // Why nothing is backed up, as a sentence for the Organiser page; null when backups are set up.
-export const backupProblem = () => (storeToken() ? null : "Backups aren't set up: BLOB_READ_WRITE_TOKEN isn't set, so the database isn't backed up.");
+export const backupProblem = () => (storeToken() ? null : "Backups are off: BLOB_READ_WRITE_TOKEN isn't set.");
 
 // Where a dump made at `now` goes: by its UTC date and time, as backups/2026-11-29T01-07-12Z.json.gz.
 const PREFIX = "backups/";

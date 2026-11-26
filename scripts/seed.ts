@@ -603,7 +603,7 @@ async function check(name: string) {
   // The nightly backup and the alerts to the Organiser (#17), and the failed requests (#60).
   if (name !== "empty") {
     const [backingUp, alerting, failedRequest] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS), lastFailedRequest()]);
-    promises.push(["Backing up ran, and says backups aren't set up, as no local block has the store's token",
+    promises.push(["Backing up ran, and says backups are off, as no local block has the store's token",
       backingUp?.outcome === "skipped" && backingUp.detail === backupProblem()]);
     promises.push(name === "season-over"
       ? ["the Organiser page's last failed request: a page that failed as the database refused a statement",
@@ -614,7 +614,7 @@ async function check(name: string) {
         alerting?.detail === alertsProblem() && alertsSent.length === 0]);
     else if (name === "season-over")
       promises.push(["Alerting you sent the Organiser privately the failure of Creating Matchdays and the failed request, each once though it ran twice, and nothing to the group",
-        alertsSent.length === 2 && alertsSent[0].startsWith("Creating Matchdays: The Matchday of ") && !!failedRequest && alertsSent[1] === failedRequestText(failedRequest) &&
+        alertsSent.length === 2 && alertsSent[0].startsWith("Creating Matchdays: Couldn't create the tournament for ") && !!failedRequest && alertsSent[1] === failedRequestText(failedRequest) &&
           alerting?.detail === "Nothing to tell you." && !telegramPosts.some((text) => text.startsWith("Creating Matchdays") || text.startsWith("A page"))]);
     else promises.push(["Alerting you ran twice, and had nothing to tell the Organiser", alertsSent.length === 0 && alerting?.detail === "Nothing to tell you."]);
   }

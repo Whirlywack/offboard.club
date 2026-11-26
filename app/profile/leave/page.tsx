@@ -44,10 +44,7 @@ async function Confirm() {
         <li>Your Lichess account is disconnected, and the site asks Lichess to remove it from the Club&apos;s team.</li>
         <li>Other Members keep their Games against you, with you shown as &ldquo;a&nbsp;former member&rdquo;.</li>
       </ul>
-      <p>
-        If the site can&apos;t remove you from the team, your Lichess username is kept until the Organiser has done it
-        by hand.
-      </p>
+      <p>If the site can&apos;t remove you from the team, your Lichess username is kept until the Organiser does.</p>
       {isOrganiser(person) && (
         <p className={ui.alert}>
           You&apos;re the Organiser. Once you leave, Matchdays stop being created and nobody is removed from the Lichess

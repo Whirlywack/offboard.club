@@ -37,7 +37,7 @@ async function Confirm() {
   if (agreed && !mustConnectLichess(session.user)) redirect("/profile/leave");
   return (
     <form action={deleteSignUp} className={`${ui.panel} ${styles.confirm} ${ui.arrive}`}>
-      <p>When you delete your account, your name, photo, email address and anything you&apos;ve agreed to are deleted.</p>
+      <p>Your name, photo, email address and anything you&apos;ve agreed to will be deleted.</p>
       <LeaveActions keep={agreed ? "/welcome/lichess" : "/welcome"} />
     </form>
   );

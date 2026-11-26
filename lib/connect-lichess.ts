@@ -127,14 +127,15 @@ export function returnedFrom(
 
 // --- Coming back from Lichess ---
 
-// Each way a connection can fail, as the plain message the person sees. Only these codes travel in a URL.
+// Each way a connection can fail, as the plain message the person sees. Only these codes travel in a URL. The Organiser
+// is told "expired" and "failed" in the same words (lib/organiser-lichess.ts).
 export const PROBLEMS = {
   denied: "You didn't approve Offboard on Lichess, so nothing has changed. Try again whenever you're ready.",
-  expired: "That attempt timed out, or was started in another browser. Please start again from this page.",
+  expired: "That attempt timed out, or was started in another browser. Please try again.",
   // No message for a closed account: Lichess refuses a closed account's token, so that ends as "failed".
   marked: "Lichess has marked that account for breaking its terms of service, so it can't be connected.",
   taken:
-    "That Lichess account is already connected to another Member, and each account can belong to only one. If you have another Lichess account, sign in to Lichess with it and try again.",
+    "That Lichess account is already connected to another Member. If you have another, sign in to Lichess with it and try again.",
   team: "Lichess wouldn't add that account to the Club's Lichess team, so it isn't connected. Please try again later.",
   failed: "Something went wrong while talking to Lichess, so nothing has changed. Please try again in a few minutes.",
 } as const;

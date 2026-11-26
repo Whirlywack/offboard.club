@@ -223,13 +223,22 @@ describe("the connect step", () => {
     signedInAs("welcomed", "welcomed");
     const html = await open();
     expect(html).toContain("<button>Connect Lichess</button>");
-    expect(html).toContain('href="https://lichess.org/signup"');
+    expect(html).toContain('href="https://lichess.org/signup">Make one on Lichess</a> (it&#x27;s free) and come back.</p>');
     expect(html).not.toContain('role="alert"');
+    // What the step says first, in the words of the signing-up deck (#74).
+    const shell = renderToStaticMarkup(ConnectStep({ params: Promise.resolve({}), searchParams: Promise.resolve({}) }));
+    expect(shell).toContain(">Use the account you&#x27;ll play Matchdays with.</p>");
+    expect(shell).toContain(
+      "<p>Lichess will ask you to approve Offboard. Offboard asks only for permission to join a team, adds your account to the Club&#x27;s private team, then gives the permission back.</p></div>",
+    );
   });
 
   it("says plainly why the last attempt failed, and ignores anything else in the address", async () => {
     signedInAs("welcomed", "welcomed");
-    expect(await open({ lichess: "taken" })).toContain("already connected to another Member");
+    expect(await open({ lichess: "taken" })).toContain(
+      "That Lichess account is already connected to another Member. If you have another, sign in to Lichess with it and try again.",
+    );
+    expect(await open({ lichess: "expired" })).toContain("That attempt timed out, or was started in another browser. Please try again.");
     expect(await open({ lichess: "<script>alert(1)</script>" })).not.toContain('role="alert"');
     expect(await open({ lichess: "toString" })).not.toContain('role="alert"');
   });

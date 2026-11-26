@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ExternalLink } from "../../external-link";
+import { ProfilesNote } from "../../leaderboard";
 import ui from "../../ui.module.css";
 import { Awards } from "../awards";
 import { longDate } from "../dates";
@@ -122,9 +123,7 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
             </tbody>
           </table>
         )}
-        {!member && recap.leaderboard.length > 0 && (
-          <p className={`${ui.small} ${ui.muted}`}>Names open Profiles, which only signed-in Members can see.</p>
-        )}
+        {!member && recap.leaderboard.length > 0 && <ProfilesNote />}
       </section>
       <Awards awards={recap.awards} showGames={AWARD_GAMES_ARE_PUBLIC || member} />
     </article>

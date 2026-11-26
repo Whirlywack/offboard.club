@@ -6,11 +6,8 @@ export default function NoProfile() {
   return (
     <main id="main" className={ui.page}>
       <div className={ui.intro}>
-        <p className={ui.eyebrow}>Member Profile</p>
         <h1>No Profile at this address</h1>
-        <p className={ui.lede}>
-          Nobody has a Profile here. If someone sent you this link, they may not have finished signing up yet.
-        </p>
+        <p className={ui.lede}>The person may still be signing up, or may have left the Club.</p>
       </div>
       <nav aria-label="More" className={ui.backLinks}>
         <Link href="/recaps">Recaps</Link>

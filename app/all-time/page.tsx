@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { MemberCell, ProfilesNote } from "../leaderboard";
+import { MemberCell, MoreLinks, ProfilesNote } from "../leaderboard";
 import board from "../leaderboards.module.css";
 import ui from "../ui.module.css";
+import styles from "./all-time.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { getAllTime } from "@/lib/leaderboards";
 import { noticeLater } from "@/lib/request-failures";
@@ -12,25 +12,29 @@ import { noticeLater } from "@/lib/request-failures";
 export const metadata: Metadata = { title: "All-time Leaderboard" };
 
 // The all-time Leaderboard: every Member ranked by Matchdays played, whatever they scored. Public, like every
-// Leaderboard: names and Companies only.
+// Leaderboard: names and Companies only. The Season page's plainer sibling: its heading in large type alone, then the
+// same table.
 export default function AllTimePage() {
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
-        <h1>All-time Leaderboard</h1>
-        <p className={ui.lede}>Members ranked by how many Matchdays they&apos;ve played.</p>
+    <main id="main">
+      <div className={styles.head}>
+        <h1 className={ui.display}>
+          <em>All-time</em> Leaderboard
+        </h1>
+        <p className={styles.lede}>Members ranked by how many Matchdays they&apos;ve played.</p>
       </div>
       <Suspense>
         <AllTime />
       </Suspense>
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/seasons">This Season&apos;s Leaderboard</Link>
-        <Link href="/recaps">Recaps</Link>
-        <Link href="/">Home</Link>
-      </nav>
     </main>
   );
 }
+
+const MORE: [string, string][] = [
+  ["/seasons", "This Season's Leaderboard"],
+  ["/recaps", "Recaps"],
+  ["/", "Home"],
+];
 
 // Said plainly, and logged, if the database cannot be read.
 async function AllTime() {
@@ -44,32 +48,40 @@ async function AllTime() {
     viewerIsMember("/all-time"),
   ]);
   if (rows === null)
-    return <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>;
-  if (rows.length === 0)
-    return <p className={`${board.empty} ${ui.arrive}`}>Nobody is on it yet.</p>;
+    return (
+      <div className={board.down}>
+        <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>
+        <MoreLinks links={MORE} />
+      </div>
+    );
   return (
     <section aria-label="Leaderboard" className={board.board}>
-      <table className={board.table}>
-        <thead>
-          <tr>
-            <th scope="col">Rank</th>
-            <th scope="col">Name</th>
-            <th scope="col" className={board.number}>
-              Played
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.memberId}>
-              <td>{row.rank}</td>
-              <MemberCell member={row} />
-              <td className={`${board.number} ${board.score}`}>{row.played}</td>
+      {rows.length === 0 ? (
+        <p className={board.empty}>Nobody is on it yet.</p>
+      ) : (
+        <table className={board.table}>
+          <thead>
+            <tr>
+              <th scope="col">Rank</th>
+              <th scope="col">Name</th>
+              <th scope="col" className={board.score}>
+                Played
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {!member && <ProfilesNote />}
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.memberId}>
+                <td>{row.rank}</td>
+                <MemberCell member={row} />
+                <td className={board.score}>{row.played}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {!member && rows.length > 0 && <ProfilesNote />}
+      <MoreLinks links={MORE} />
     </section>
   );
 }

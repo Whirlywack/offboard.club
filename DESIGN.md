@@ -309,3 +309,25 @@ The three steps after signing in (agree, connect Lichess, the optional Profile) 
 - **The box that accepts** (`.check`): the whole row is the label, inside a 1px rule in ink with 16px of padding, its words at 600. The box is a 28px square with a 1.5px ink border, filled with ink and a paper tick when ticked, its border 2.5px under the pointer. Refused, the row and the box take `--error`, and the refusal (`ui.alert`) follows it. In forced colours the browser draws its own box.
 - **The action** is a full-width button on a phone and its own width on a desktop. A note beside it is 15px in `--muted`; a link in a line of text has 12px of padding above and below, a 44px target that moves no line. Leaving instead ("Rather not join?") comes last, under a rule in `--line`.
 - **Deleting part-way** (`app/welcome/leave`) is a page for a task, laid out and chosen as Leave the Club is (above): its heading, "This can't be undone." in the serif, then what is deleted and the choice, with no picture and no grain.
+## Leaderboards
+
+The Season Leaderboard (`app/seasons/`), the all-time Leaderboard (`app/all-time/`), and the table a Recap shares with them. Built from the approved mock-up of the Season Leaderboard.
+
+### Leaderboard table
+- **Where:** `app/leaderboard.tsx` (`MemberCell`, `CompanyName`, `ScoreCell`) with `board.table` in `app/leaderboards.module.css`; a Recap's table uses the same class.
+- **Style:** no lines but rules: 1px of ink under the column heads, a 1px `--line` under each row. Heads in capitals, 600 11px, 0.1em, muted, the numbers' heads on the right. Rank 15px muted in a 42px column (64px on a desktop); the name 17px 500 (18px), not underlined until the pointer is on it, its whole cell the link's target; the Company 13.5px muted under the name on a phone, after it on its line on a desktop (14px), its domain kept whole. The figure a Leaderboard is ranked by (`board.score`) 19px 600 (21px) in a 60px column (120px); a secondary count (`board.number`) 15px muted (16px) in 58px (110px). A whole score keeps 0.74em on its right, the width of ".5", so scores line up on the point (`ScoreCell`).
+- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px. The Season and all-time tables take their columns from their heads (`table-layout: fixed`), so a name breaks between words, and inside one only when the word is longer than its column; a Recap's table, laid out by what is in it, breaks a name inside a word only below 360px wide.
+- **Empty:** a muted line between the head's ink rule and a row's rule.
+
+### Leaderboard plate
+- `board.board`: on a phone the heading (display, 44px), the table, the notes in 15px muted, then the links. On a desktop two columns, 3fr and 9fr with 4vw between: the heading (`min(3.7vw, 60px)`), the notes and the links on the left, the table on the right, its top level with the heading.
+- **Links at the foot** (`MoreLinks`): 16px 500 with a 16px arrow that leans 4px forward under the pointer, each a 44px target; in a row on a phone, a column on a desktop.
+
+### Season heading plate
+- A grey plate with grain: "*Season*" and its number in the display serif, the number at `clamp(190px, 58vw, 260px)` beside the word on a phone (under it when it does not fit) and `min(30vw, 420px)` under it on a desktop. Under them on a phone, and to their right on a desktop, the six pieces tallest to shortest (`app/photos/row.webp`, the black cut-out, the pieces 1120 of its 1300px), as wide as the gutters allow on a phone and running to the right gutter on a desktop, never wider than its pixels. The number stands on the pieces' floor.
+- Where the Season stands is a label and a 19px line, under the pieces on a phone and above the short pieces at the right on a desktop. Once the Season is over, its champion follows: a label, the names in the serif (`clamp(30px, 8.9vw, 40px)`, `min(3.3vw, 48px)`), the points in 15px muted; on a desktop on a line of its own under a rule, the names under the pieces.
+- The all-time Leaderboard's heading is the same without the number and the pieces: "*All-time* Leaderboard" over its line, which sits at the right on a desktop.
+- A Season too far off to have dates is a page with nothing to show (`app/fallback.module.css`), its label under the heading, with the pawn in outline.
+
+### The six Matchdays
+- A black plate after the Leaderboard, its heading on the left on a desktop. Six cells between `--line` rules, three to a row on a phone, six on a desktop: "Matchday" as a label over its number in the serif (58px, `min(7vw, 104px)`), the date at the foot. A Matchday with a Recap is a link to it, in paper, with an arrow; one to come, or that went by without results ("Not played"), is muted, its number drawn in a 1px outline. Under them the other Seasons, the one shown underlined 2px. A rule closes the plate above the footer.

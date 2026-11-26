@@ -4,14 +4,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ExternalLink } from "../../external-link";
-import { ProfilesNote } from "../../leaderboard";
+import { CompanyName, ProfilesNote, ScoreCell } from "../../leaderboard";
+import board from "../../leaderboards.module.css";
 import ui from "../../ui.module.css";
 import { Awards } from "../awards";
 import { longDate } from "../dates";
 import styles from "../recaps.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { AWARD_GAMES_ARE_PUBLIC } from "@/lib/awards";
-import { companyLabel } from "@/lib/companies";
 import { seasonOfMatchday } from "@/lib/leaderboards";
 import { lichessSwissUrl } from "@/lib/lichess";
 import { getRecap } from "@/lib/recaps";
@@ -41,19 +41,6 @@ export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
         <Link href="/">Home</Link>
       </nav>
     </main>
-  );
-}
-
-// The Company as companyLabel names it, "Vinted (vinted.com)", with the domain in its own span so that a narrow
-// screen can put it on a line of its own.
-function CompanyName({ company }: { company: Parameters<typeof companyLabel>[0] }) {
-  const label = companyLabel(company);
-  const domainAt = label.lastIndexOf(" (");
-  if (domainAt < 0) return label;
-  return (
-    <>
-      {label.slice(0, domainAt)} <span className={styles.domain}>{label.slice(domainAt + 1)}</span>
-    </>
   );
 }
 
@@ -100,13 +87,15 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
         {recap.leaderboard.length === 0 ? (
           <p className={styles.empty}>Nobody is on this Matchday&apos;s Leaderboard.</p>
         ) : (
-          <table className={styles.table}>
+          <table className={board.table}>
             <thead>
               <tr>
                 <th scope="col">Rank</th>
                 <th scope="col">Name</th>
                 <th scope="col">Company</th>
-                <th scope="col">Points</th>
+                <th scope="col" className={board.score}>
+                  Points
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -117,7 +106,7 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
                     <Link href={`/profiles/${row.memberId}`}>{row.name}</Link>
                   </th>
                   <td>{row.company && <CompanyName company={row.company} />}</td>
-                  <td>{row.points}</td>
+                  <ScoreCell value={row.points} />
                 </tr>
               ))}
             </tbody>

@@ -76,7 +76,7 @@ async function streamed(suspense: ReactElement) {
   return renderToStaticMarkup((await (inner.type as (props: unknown) => Promise<ReactNode>)(inner.props)) as ReactElement);
 }
 // The page's child at `at`, which is its <Suspense>.
-const child = (page: ReactElement, at: number) => (page.props as { children: ReactElement[] }).children[at];
+const child = (page: ReactElement, at: number) => [(page.props as { children: ReactElement | ReactElement[] }).children].flat()[at];
 const none = { params: Promise.resolve({}), searchParams: Promise.resolve({}) };
 
 const editPage = () => streamed(child(EditProfile(none), 1));

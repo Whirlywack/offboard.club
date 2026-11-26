@@ -46,13 +46,13 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     await backdate("/profile", "2026-01-01T00:00:00Z");
     await page("/profile");
     await page("/welcome");
-    await noticeFailedRequest(new TypeError("Oops"), { routePath: "/profile", routeType: "action" });
+    await noticeFailedRequest(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }), { routePath: "/profile", routeType: "action" }, "POST");
     await page("/profile", new RangeError("Oops"));
     const [{ now }] = await select(`select now()`);
     expect(await select(`select "route", "kind", "reason", "lastAt" from "requestFailure" order by "route", "kind", "reason"`)).toEqual([
       { route: "/profile", kind: "page", reason: "the code threw RangeError", lastAt: now },
       { route: "/profile", kind: "page", reason: "the code threw TypeError", lastAt: now },
-      { route: "/profile", kind: "server action", reason: "the code threw TypeError", lastAt: now },
+      { route: "/profile", kind: "server action", reason: "the database couldn't be reached", lastAt: now },
       { route: "/welcome", kind: "page", reason: "the code threw TypeError", lastAt: now },
     ]);
   });

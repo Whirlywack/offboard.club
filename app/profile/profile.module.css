@@ -24,7 +24,7 @@
 
 /* At this line-height a descender (0.26em in this serif) never meets an ascender (0.76em) under it */
 .title {
-  font-size: clamp(44px, 12vw, 60px);
+  font-size: min(12vw, 60px); /* "Edit your Profile" needs 7.14em, which 12vw holds on one line from 224 wide */
   line-height: 1.04;
 }
 

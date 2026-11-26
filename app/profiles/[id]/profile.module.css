@@ -48,6 +48,7 @@
   color: var(--muted);
   font-size: 18px;
   line-height: 1.35;
+  overflow-wrap: break-word;
 }
 
 .about {
@@ -124,10 +125,12 @@
   min-height: 2.4em;
 }
 
+/* A number is never split over two lines: a four-digit one needs 2.31em, which a third of a 320 phone holds at 11.2vw */
 .figure dd {
-  font: 500 42px/1 var(--font-display);
+  font: 500 min(42px, 11.2vw) / 1 var(--font-display);
   font-variant-numeric: lining-nums tabular-nums;
   letter-spacing: -0.02em;
+  overflow-wrap: normal;
 }
 
 /* "Matchdays in a row", under the Streak's number */

@@ -40,7 +40,7 @@ async function Confirm() {
   return (
     <form action={leaveClub} className={`${styles.body} ${styles.confirm}`}>
       <p>When you delete your account:</p>
-      <ul className={styles.consequences}>
+      <ul className={styles.consequences} role="list">
         <li>Your name, photo, email address and Profile are deleted.</li>
         <li>You disappear from every Leaderboard and Recap, including past ones.</li>
         <li>Your Lichess account is disconnected, and the site asks Lichess to remove it from the Club&apos;s team.</li>

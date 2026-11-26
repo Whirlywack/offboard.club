@@ -12,19 +12,22 @@
 //                                           only a proposal, which misses any guard it does not recognise
 //
 // Line numbers are the file's as it is now. Each change gets one verdict:
-//   RED       tests that pass without the change failed with it, and are named: each failing test is run again on the
-//             code as it is, and one that fails there too says nothing of the change
+//   RED       tests failed with the change, failed again when run alone with it (not by timing out), and pass
+//             without it; they are named
 //   GREEN     every test that ran passed, and none was skipped where the real-Postgres suites ran
 //   BROKEN    the change does not parse, TypeScript refuses it, a file no longer loads, or a changed migration does not
 //             apply: CI would refuse it before any test, so no test judged it
-//   UNJUDGED  the tests cannot say: the failures were there without the change, or were timeouts, or vitest failed
-//             outside any test, or no test ran, or a real-Postgres test was skipped
+//   UNJUDGED  the tests cannot say: a failure did not come again with the change, or came without it too, or was a
+//             timeout; vitest failed outside any test; no test ran; a real-Postgres test was skipped; or db:start
+//             failed before it could migrate a changed migration
 //   NOT MADE  the place is not in the file as named
 // Each says which tests it rests on. The whole suite runs, stopped at its first failure, once it has passed without the
 // change; with the real-Postgres suites too, on a throwaway database from `pnpm db:start`, when asked, when the file
 // holds SQL, or when it has a <name>.postgres.test.ts beside it. A change inside SQL is judged by them alone, as
 // lib/fake-db.ts refuses any statement it was not written with, and a change to a migration by them alone on a database
-// migrated afresh with it. Exits 0 only if every place named went red; never when it proposed the places.
+// migrated afresh with it. Exits 0 only if every place named went red; never when it proposed the places. What it
+// cannot judge: a change to a migration is run with on a fresh database and without on the shared one, which other
+// changes' tests have used, so a test that behaves otherwise on a fresh database can go red with no guard.
 //
 // Everything happens in a copy of the checkout in a temporary folder, with its own pnpm install, so a reviewer who may
 // not edit the worktree can run it, and the worktree is as it was however the run ends (scripts/check.mjs). Neither
@@ -36,8 +39,9 @@ import ts from "typescript";
 import { cleanUp, copyCheckout, environmentProblem, git, readJson, relative, root, run, scratch, startDatabase, stopDatabase, tail } from "./check.mjs";
 
 const USAGE = "Usage: pnpm guards [--pg] [--tests <file>] [<file>[:<line>[-<last>]] [--replace <text> <with>] [+ <place>]] ...";
-// What lib/fake-db.ts throws on a statement it does not know.
+// What lib/fake-db.ts throws on a statement it does not know, and what vitest says of a test that ran out of time.
 export const FAKE_REFUSES = "The fake database does not know this statement";
+const TIMED_OUT = /Test timed out in \d+ms/;
 const say = (line) => console.log(line);
 
 // The options, and the changes named: each a list of edits made together.
@@ -211,7 +215,7 @@ export function verdict(report, code, postgres) {
     for (const test of file.assertionResults.filter((test) => test.status === "failed")) {
       const message = test.failureMessages.join("\n");
       if (message.includes(FAKE_REFUSES)) refused++;
-      else if (/Test timed out in \d+ms/.test(message)) timedOut.push(`${relative(file.name)} > ${test.fullName}`);
+      else if (TIMED_OUT.test(message)) timedOut.push(`${relative(file.name)} > ${test.fullName}`);
       // vitest's --testNamePattern matches the names of its describe blocks and its own, joined by " > ".
       else failed.push({ file: relative(file.name), name: test.fullName, path: [...(test.ancestorTitles ?? []), test.title ?? test.fullName].join(" > ") });
     }
@@ -234,15 +238,18 @@ export function verdict(report, code, postgres) {
 // A red run judged again by the tests that failed, run alone with the change once more (`again`) and without it
 // (`without`), their JSON reports: red if some failed both times with it and pass without it, naming them; unjudged
 // if none did, as a failure that does not come again was chance, and one that comes without the change says nothing.
+// A timeout on the second run is not a failure that came again: load alone can make one.
 export function confirmed(red, again, without) {
-  const names = (report, status) =>
-    new Set((report?.testResults ?? []).flatMap((file) => file.assertionResults.filter((test) => test.status === status).map((test) => `${relative(file.name)} > ${test.fullName}`)));
-  const [failedAgain, passedWithout] = [names(again, "failed"), names(without, "passed")];
+  const names = (report, keep) =>
+    new Set((report?.testResults ?? []).flatMap((file) => file.assertionResults.filter(keep).map((test) => `${relative(file.name)} > ${test.fullName}`)));
+  const failedAgain = names(again, (test) => test.status === "failed" && !TIMED_OUT.test(test.failureMessages.join("\n")));
+  const passedWithout = names(without, (test) => test.status === "passed");
   const failed = red.failed.map(({ file, name }) => `${file} > ${name}`);
   const noticed = failed.filter((name) => failedAgain.has(name) && passedWithout.has(name));
   if (noticed.length) return { kind: "red", why: `${noticed.length} failed with the change, again, and pass without it, first: ${noticed.slice(0, 2).join("; ")}` };
   const first = failed.slice(0, 2).join("; ");
-  if (!failed.some((name) => failedAgain.has(name))) return { kind: "unjudged", why: `what failed with the change passed when run with it again, so it failed by chance: ${first}` };
+  if (!failed.some((name) => failedAgain.has(name)))
+    return { kind: "unjudged", why: `what failed with the change did not fail again with it (a timeout does not count), so it failed by chance: ${first}` };
   return { kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${first}` };
 }
 
@@ -363,11 +370,13 @@ async function guards(args) {
         else if (refused) result = { kind: "broken", why: `TypeScript refuses the change, as CI's typecheck would: ${refused.trim()}` };
         else if (plan.migration) {
           on = "the real-Postgres suites alone, on a database migrated afresh with the change";
-          fresh = await startDatabase(folder, `change-${n + 1}`, log);
+          // db:start's output goes to a log of its own, so that what it said can be told from what other steps did.
+          const started = join(folder, `db-change-${n + 1}.log`);
+          fresh = await startDatabase(folder, `change-${n + 1}`, started);
+          const said = readFileSync(started, "utf8").split("\n").map((line) => line.trim()).filter((line) => line && !/^[$>]|ELIFECYCLE/.test(line)).at(-1);
           // Broken only if the server came up and the migrations failed on it; any other failure of db:start says nothing.
-          const said = readFileSync(log, "utf8").trim().split("\n").filter((line) => !line.includes("ELIFECYCLE")).at(-1)?.trim();
           if (!fresh.url && fresh.running) result = { kind: "broken", why: "the changed migrations do not apply to an empty database" };
-          else if (!fresh.url) result = { kind: "unjudged", why: `pnpm db:start failed before it could migrate: ${said}` };
+          else if (!fresh.url) result = { kind: "unjudged", why: `pnpm db:start failed before it could migrate: ${said ?? "it said nothing"}` };
           else {
             url = fresh.url;
             const { report: r, code } = await tests(postgresTests, fresh.url);

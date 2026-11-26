@@ -219,7 +219,10 @@ describe("a run of the tests", () => {
     expect(confirmed(red, one, neither)).toEqual({ kind: "red", why: "1 failed with the change, again, and pass without it, first: app/a.test.ts > it works" });
     const names = "app/a.test.ts > refuses a stranger; app/a.test.ts > it works";
     expect(confirmed(red, both, both)).toEqual({ kind: "unjudged", why: `what failed with the change fails without it too, so it says nothing of the change: ${names}` });
-    expect(confirmed(red, neither, neither)).toEqual({ kind: "unjudged", why: `what failed with the change passed when run with it again, so it failed by chance: ${names}` });
+    expect(confirmed(red, neither, neither)).toEqual({ kind: "unjudged", why: `what failed with the change did not fail again with it (a timeout does not count), so it failed by chance: ${names}` });
+    // A failure, then a timeout on the second run, perhaps of a busy machine: the failure did not come again.
+    const outOfTime = report([{ tests: [{ ...slow, fullName: "refuses a stranger" }, { ...slow, fullName: "it works" }] }]);
+    expect(confirmed(red, outOfTime, neither)).toEqual({ kind: "unjudged", why: `what failed with the change did not fail again with it (a timeout does not count), so it failed by chance: ${names}` });
     expect(confirmed(red, null, null).kind).toBe("unjudged");
   });
 });
@@ -249,6 +252,7 @@ const FAKE = [
   'const migration = readFileSync("migrations/001_a.sql", "utf8");',
   'if (name === "db:start") {',
   '  if (process.env.FAKE_FAIL === "db:start" || migration.includes("noports")) { console.log("No set of free ports was found."); process.exit(1); }',
+  '  if (migration.includes("silent")) process.exit(1);',
   "  mkdirSync(dir, { recursive: true });",
   '  writeFileSync(dir + "/offboard.env", "DATABASE_URL=postgres://offboard@127.0.0.1:1/" + dir.split("/").pop() + "\\n");',
   '  writeFileSync(dir + "/postmaster.pid", "1\\n");',
@@ -391,7 +395,7 @@ describe.concurrent("a run of pnpm guards", () => {
     const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const { status, stdout } = await guards(["notes.md:2", "--tests", "app/a.test.ts"], { FAKE_FAIL: "second" });
     expect(stdout).toContain(
-      "UNJUDGED  notes.md:2\n         - A line nothing reads.\n         what failed with the change passed when run with it again, so it failed by chance: app/a.test.ts > refuses a stranger, on the tests named (app/a.test.ts)\n",
+      "UNJUDGED  notes.md:2\n         - A line nothing reads.\n         what failed with the change did not fail again with it (a timeout does not count), so it failed by chance: app/a.test.ts > refuses a stranger, on the tests named (app/a.test.ts)\n",
     );
     expect(stdout).toContain("0 of 1 changes went red.\n");
     expect(status).toBe(1);
@@ -415,7 +419,8 @@ describe.concurrent("a run of pnpm guards", () => {
   it("judges a change to a migration on a database migrated afresh with it, and one that does not apply as broken", async ({ onTestFinished }) => {
     const { guards, runs, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const places = ["migrations/001_a.sql", "--replace", "check (x > 0)", "check (true)", "migrations/001_a.sql:1", "--replace", "int", "broken"];
-    const { status, stdout } = await guards([...places, "migrations/001_a.sql:1", "--replace", "int", "noports"]);
+    const silent = ["migrations/001_a.sql:1", "--replace", "int", "silent"];
+    const { status, stdout } = await guards([...places, "migrations/001_a.sql:1", "--replace", "int", "noports", ...silent]);
     expect(stdout).toContain(
       "RED       migrations/001_a.sql --replace 'check (x > 0)' 'check (true)'\n         - create table t (x int check (x > 0));\n         + create table t (x int check (true));\n         1 failed with the change, again, and pass without it, first: lib/a.postgres.test.ts > refuses a negative x, on the real-Postgres suites alone, on a database migrated afresh with the change\n",
     );
@@ -425,9 +430,12 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(stdout).toContain(
       "UNJUDGED  migrations/001_a.sql:1 --replace int noports\n         - create table t (x int check (x > 0));\n         + create table t (x noports check (x > 0));\n         pnpm db:start failed before it could migrate: No set of free ports was found., on the real-Postgres suites alone, on a database migrated afresh with the change\n",
     );
+    // What db:start said, from its own output: here nothing, not the line another step printed before it.
+    expect(stdout).toContain("UNJUDGED  migrations/001_a.sql:1 --replace int silent\n");
+    expect(stdout).toContain("         pnpm db:start failed before it could migrate: it said nothing, on the real-Postgres suites alone");
     expect(status).toBe(1);
     const databases = runs().filter((run) => run.name === "db:start").map((run) => run.args.at(-1)!.split("/").pop());
-    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2", "db-change-3"]);
+    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2", "db-change-3", "db-change-4"]);
     // The change is judged on its own database, twice; the test that noticed it, then on the one migrated without it.
     const urls = runs().filter((run) => run.name === "test").map((run) => run.url?.split("/").pop());
     expect(urls).toEqual(["db-tests", "db-change-1", "db-change-1", "db-tests"]);

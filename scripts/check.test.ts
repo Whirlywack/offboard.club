@@ -265,13 +265,18 @@ describe.concurrent("a check", () => {
 });
 
 describe("a test's own folder", () => {
-  it("is short, and takes away those left by a test process that has gone", () => {
-    const gone = mkdtempSync("/tmp/ob-test-999999-");
+  it("is short, and takes away those left by a test process that has gone, and no other", () => {
+    const gone = mkdtempSync("/tmp/offboard-test-999999-");
+    // A number no process can have: kill refuses it, which says nothing of whether the folder's process has gone.
+    const huge = mkdtempSync("/tmp/offboard-test-99999999999-");
+    onTestFinished(() => rmSync(huge, { recursive: true, force: true }));
     const mine = shortFolder();
     onTestFinished(() => rmSync(mine, { recursive: true, force: true }));
-    expect(mine.length).toBeLessThan(40);
+    expect(mine).toMatch(new RegExp(`^/private/tmp/offboard-test-${process.pid}-`));
+    expect(mine.length).toBeLessThan(48);
     expect(existsSync(mine)).toBe(true);
     expect(existsSync(gone)).toBe(false);
+    expect(existsSync(huge)).toBe(true);
   });
 });
 

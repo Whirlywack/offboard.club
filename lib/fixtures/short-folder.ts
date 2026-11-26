@@ -7,17 +7,19 @@ import { join } from "node:path";
 // is removed by the next test that asks for a folder, once the process that made it has gone.
 export function shortFolder(): string {
   for (const name of readdirSync("/tmp")) {
-    const pid = Number(/^ob-test-(\d+)-/.exec(name)?.[1]);
-    if (pid && !alive(pid)) rmSync(join("/tmp", name), { recursive: true, force: true });
+    const pid = Number(/^offboard-test-(\d+)-/.exec(name)?.[1]);
+    if (pid && gone(pid)) rmSync(join("/tmp", name), { recursive: true, force: true });
   }
-  return realpathSync(mkdtempSync(`/tmp/ob-test-${process.pid}-`));
+  return realpathSync(mkdtempSync(`/tmp/offboard-test-${process.pid}-`));
 }
 
-function alive(pid: number) {
+// Whether no process `pid` is running: only the system's "no such process" says so, and anything else, such as a
+// number too large to be a process's, keeps the folder.
+function gone(pid: number) {
   try {
     process.kill(pid, 0);
-    return true;
+    return false;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
   }
 }

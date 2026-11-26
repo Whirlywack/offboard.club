@@ -1,0 +1,33 @@
+# CI on a push to a ticket branch, so that its builder sees it before a pull request exists: ci.yml's job, reported as
+# "ci / checks". Once the branch has a pull request open, the pull request's own run of ci.yml checks each push and is
+# the `checks` that main requires, so this workflow stops after asking whether there is one: one push, one run.
+# Its result never has the name `checks`, so it can never stand in for a pull request's.
+name: CI before a pull request
+
+on:
+  push:
+    branches: ["ticket-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  pull-request:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      open: ${{ steps.find.outputs.open }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # On its own line, so that a failed lookup fails the step rather than reading as none open.
+        run: |
+          open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number --jq length)
+          echo "open=$open" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: pull-request
+    if: needs.pull-request.outputs.open == '0'
+    uses: ./.github/workflows/ci.yml

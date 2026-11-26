@@ -14,7 +14,7 @@
 // Member switched from, from the team is refused, and the Organiser page lists that account to remove by hand.
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { notLocal } from "./local-db.mjs";
+import { notLocal, recorder } from "./local-db.mjs";
 import { db } from "@/lib/db";
 import { createFakeLichess, type FakeAccount, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 
@@ -89,6 +89,7 @@ async function answer(request: import("node:http").IncomingMessage, url: URL): P
   return lichess.handle(new Request(url, { method: request.method, headers: headers as [string, string][], body }));
 }
 
+const record = recorder(); // for pnpm local:list and pnpm local:stop, found before listening
 createServer(async (request, reply) => {
   const url = new URL(request.url ?? "/", address);
   // A request the fake cannot make sense of, such as a redirect_uri that is not an address, is answered, not fatal.
@@ -103,4 +104,7 @@ createServer(async (request, reply) => {
     console.error(`The fake Lichess could not listen at ${address.origin}: ${error.message}`);
     process.exit(1);
   })
-  .listen(Number(address.port), "127.0.0.1", () => console.log(`The fake Lichess is at ${address.origin}.`));
+  .listen(Number(address.port), "127.0.0.1", () => {
+    record("fake Lichess", Number(address.port));
+    console.log(`The fake Lichess is at ${address.origin}.`);
+  });

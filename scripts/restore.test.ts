@@ -1,11 +1,18 @@
 // `pnpm restore <file>` (scripts/restore.ts) refusing, before it connects to anything, what it cannot restore: no file,
 // more than one, no database, and a file that is not a dump. lib/backup.postgres.test.ts restores real dumps.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+
+// Every temporary folder a test makes, removed once the tests have run, failed or not, and then checked to be gone.
+const temporary: string[] = [];
+afterAll(() => {
+  for (const dir of temporary) rmSync(dir, { recursive: true, force: true });
+  expect(temporary.filter((dir) => existsSync(dir))).toEqual([]);
+});
 
 // Nothing listens here, so a run that got as far as connecting would fail otherwise.
 const NOWHERE = "postgres://offboard@127.0.0.1:1/offboard";
@@ -24,6 +31,7 @@ describe("pnpm restore", () => {
 
   it("refuses a file that isn't a dump the backup job made, restoring nothing", () => {
     const dir = mkdtempSync(join(tmpdir(), "offboard-restore-"));
+    temporary.push(dir);
     writeFileSync(join(dir, "other.json.gz"), gzipSync(JSON.stringify({ tables: {} })));
     expect(restore([join(dir, "other.json.gz")])).toEqual([1, "", "Nothing was restored: That file isn't a dump the backup job made."]);
   }, 30_000);

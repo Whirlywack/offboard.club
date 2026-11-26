@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # By ticket-push.yml, for a push to a ticket branch that has no pull request open yet.
+  workflow_call:
 
 permissions:
   contents: read
@@ -17,6 +19,9 @@ jobs:
         image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
+          # Made as the live database is: text sorted by code point (the builtin C.UTF-8), not by the image's en_US.
+          # The container keeps UTC. scripts/local-db.postgres.test.ts checks both, here and against db:start's.
+          POSTGRES_INITDB_ARGS: --locale-provider=builtin --builtin-locale=C.UTF-8 --locale=C.UTF-8
         ports:
           - 5432:5432
         options: >-
@@ -37,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 26 # the Vercel project's Node.js version
+          node-version-file: package.json # devEngines.runtime: the Node.js pnpm runs every script on, and the Vercel project's
           package-manager-cache: false # pnpm/action-setup caches the store
 
       - run: pnpm install --frozen-lockfile

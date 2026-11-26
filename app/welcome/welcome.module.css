@@ -4,12 +4,20 @@
  * stack; on a desktop the heading stands on the left and what there is to do on the right, up to the gutter.
  */
 
+/* One column, no wider than the screen whatever is in it */
 .page {
   position: relative; /* for the grain */
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   row-gap: 28px;
   padding: 20px var(--gutter) 72px;
+}
+
+/* A name, the person's or the Organiser's, breaks rather than run past the edge, however long a word it is */
+.text,
+.consent {
+  overflow-wrap: anywhere;
 }
 
 /* What is inside paints over the grain, the steps and the heading too when the desktop lays them out apart */
@@ -95,7 +103,7 @@
 /* ---------- What there is to do ---------- */
 
 .text,
-.body p {
+.body > p {
   max-width: 34em;
 }
 
@@ -126,7 +134,7 @@
 }
 
 /* A refusal is as wide as the action it is about */
-.body [role="alert"] {
+.body > [role="alert"] {
   max-width: none;
 }
 
@@ -252,9 +260,8 @@
   gap: 24px;
 }
 
-/* Keeping and deleting the same height as each other */
-.confirm a,
-.confirm button {
+/* Keeping as tall as deleting, which is a button */
+.confirm a {
   min-height: 54px;
 }
 
@@ -326,7 +333,12 @@
     font-size: 18px;
   }
 
-  .consent > button,
+  /* Its own width: in the column the agreements stack in, the button would otherwise stretch across it */
+  .consent > button {
+    align-self: start;
+    width: auto;
+  }
+
   .connect button {
     width: auto;
   }

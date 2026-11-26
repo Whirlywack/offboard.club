@@ -294,9 +294,10 @@ describe("fetchCompanyMeta", () => {
     expect([...name]).toHaveLength(80);
   });
 
-  // One pass takes about four times as long for four times the page; a pass that went back over it for each character
-  // would take sixteen (lib/fixtures/growth.ts). 200 KB is as much as is read, and lets such a pass end, and fail, in
-  // seconds. Each page is `before`, then `unit` `count` times, then `after`.
+  // One pass takes about eight times as long for eight times the page; a pass that went back over it for each
+  // character would take sixty-four (lib/fixtures/growth.ts). Both sizes fit in half the 200 KB that is read, so that
+  // both are read whole the same way (at the limit, reading sometimes stops early), and let such a pass end, and fail,
+  // in seconds. Each page is `before`, then `unit` `count` times, then `after`.
   it.each([
     ["repeated meta prefixes", "", `<meta name="og:site_name" `, 8_000, ""],
     ["repeated link prefixes", "", `<link rel="icon" `, 12_000, ""],
@@ -315,7 +316,8 @@ describe("fetchCompanyMeta", () => {
     };
     expect(make(count).length).toBeGreaterThanOrEqual(200_000);
     expect([...(await read(make(count))).name].length).toBeLessThanOrEqual(80);
-    expect(await growth(read, make, count / 4)).toBeLessThan(9);
+    const sixteenth = Math.floor((200_000 - Buffer.byteLength(before + after)) / Buffer.byteLength(unit) / 16);
+    expect(await growth(read, make, sixteenth)).toBeLessThan(24);
   });
 
   it("stops reading the body after the first 200 KB", async () => {

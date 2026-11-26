@@ -30,7 +30,7 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     await client.connect();
     try {
       for (const [id, person, agreed, lichess] of [["org", "Rasa Arbiter", true, true], ["ana", "Ana Fianchetto", true, true],
-        ["step1", "Milda Opening", false, false], ["step2", "Tadas Development", true, false]] as const)
+        ["step1", "Milda Opening", false, false], ["step2", "Tadas Development", true, false], ["bold", 'Bea "<b>Bold</b>" & Co', true, true]] as const)
         await client.query(
           `insert into "user" (id, name, email, "emailVerified", "publicDisplayConsentAt", "houseRulesAcceptedAt", "lichessId", "lichessUsername")
            values ($1, $2, $3, true, $4, $4, $5, $5)`,
@@ -103,6 +103,10 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
       expect(order.map((part) => html.indexOf(part)).every((at, i, all) => at >= 0 && (i === 0 || at > all[i - 1]))).toBe(true);
       expect(html).toContain('<button name="as" value="step1">Milda Opening</button> <code>step1</code>, has not agreed yet');
       expect(html).toContain('<button name="as" value="step2">Tadas Development</button> <code>step2</code>, has agreed, no Lichess yet');
+      // A name is text, whatever it holds.
+      expect(html).toContain('<button name="as" value="bold">Bea &quot;&lt;b&gt;Bold&lt;/b&gt;&quot; &amp; Co</button>');
+      expect(html).not.toContain("<b>");
+      expect(html).toContain("signs you out of the site at localhost:3000 too. Switch in a private window or another browser profile.");
     } finally {
       await db.end();
     }

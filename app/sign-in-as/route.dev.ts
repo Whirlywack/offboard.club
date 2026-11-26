@@ -51,6 +51,7 @@ export async function GET() {
 <main>
 <h1>Sign in as anyone</h1>
 <p>On this local site only. Each button signs this browser in as that person, or out, and goes to the home page.</p>
+<p>Your browser shares this sign-in with every site on localhost, whatever its port, so a click here signs you out of the site at localhost:3000 too. Switch in a private window or another browser profile.</p>
 <form method="post">
 <p><button name="as" value="">A visitor</button>, signed out</p>
 ${groups.map(([title, items]) => (items.length ? `<h2>${title}</h2>\n<ul>\n${items.join("\n")}\n</ul>` : "")).join("\n")}

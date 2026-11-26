@@ -28,7 +28,7 @@ import { cleanUp, copyCheckout, git, root, run, SCENARIOS, scratch, start, tail 
 import { addDays, latestSunday, matchdayStart } from "@/lib/schedule";
 
 type Step = { fill?: string; value?: string; click?: string; waitFor?: string };
-export type State = {
+type State = {
   name: string;
   label: string;
   seed: string;
@@ -39,7 +39,7 @@ export type State = {
   minutesIntoLatestMatchday?: number;
   note?: string;
 };
-export type InventoryPage = {
+type InventoryPage = {
   id: string;
   route: string;
   name: string;
@@ -136,10 +136,17 @@ async function photograph(browser: Browser, site: string, cookies: Record<string
   for (const size of Object.keys(SIZES)) await image(browser, new URL(site).origin, cookies[state.as ?? ""], state, size);
 }
 
-async function image(browser: Browser, origin: string, cookie: Cookie | undefined, state: State, size: string) {
+// A browser of `size`, a phone or a desktop, in which every request to anywhere but `origin` is answered with a blank
+// page and reaches nothing.
+export async function browserFor(browser: Browser, origin: string, size: string) {
   const context = await browser.newContext({ ...SIZES[size], colorScheme: "light", locale: "en-GB", timezoneId: "Europe/Vilnius" });
+  await context.route((url) => url.origin !== origin, (route) => route.fulfill({ status: 200, contentType: "text/html", body: STAND_IN }));
+  return context;
+}
+
+async function image(browser: Browser, origin: string, cookie: Cookie | undefined, state: State, size: string) {
+  const context = await browserFor(browser, origin, size);
   try {
-    await context.route((url) => url.origin !== origin, (route) => route.fulfill({ status: 200, contentType: "text/html", body: STAND_IN }));
     if (state.as) await context.addCookies([cookie!]);
     const page = await context.newPage();
     await page.goto(origin + address(state.path, new Date()), { waitUntil: "domcontentloaded", timeout: 120_000 });

@@ -1,18 +1,18 @@
 {
   "shared": {
     "how_captured": "`pnpm capture` (scripts/capture.ts), in a copy of the checkout with a throwaway Postgres and a local site of its own (`pnpm dev:local`, every setting pretend), seeded with each state's `seed` and signed in as its `as` with `pnpm seed:cookies`. Google Chrome through Playwright, light colour scheme, Europe/Vilnius time zone, en-GB. Phone: 390 x 844, device scale factor 3, mobile and touch, as an iPhone of that width renders a page (PNG 1170 px wide). Desktop: 1280 x 800, scale 1. Full-page screenshots taken after every streamed part had arrived, fonts had loaded and animations had finished. Next.js's development badge is hidden; nothing else is changed. Requests to anywhere but the local site are answered with a blank stand-in page, so an opened Award board shows an empty frame. A path's {sunday} is the latest Sunday whose Matchday has started, and {sunday-N} the Sunday N weeks before it, as the seed dates every scenario from the day it runs. A state with `databaseStopped` is taken with the local database stopped; one with `minutesIntoLatestMatchday` with the local site's clock moved to that many minutes after the latest Matchday's start, as a Matchday starts only on Sunday at 20:00 and no seed can put one under way at another time. The notes and the descriptions were written from the screenshots of 25 November 2026, and their dates are that day's. Settings that are set locally but may not be on the live site change some pages: the Telegram invite link (home page, /welcome/profile), the Organiser's contact address (footer, /privacy) and the scheduled jobs (/organiser).",
-    "page_frame": "Every page is one column inside a frame: header, the page's <main>, footer. The paper background (#f4f1ea), ink text (#111), one marigold accent (#e4a23a) used only for the small rotated square that marks 'what is happening now', Newsreader (serif) for headings and the system sans-serif for text, body text 17 px. The content is at most 1088 px wide (68rem) with a side gutter of 21 px on a 390 px phone and 96 px each side at 1280. Most pages keep their text in a narrower column on the left at desktop width (608 px); the home page uses the full width. A dark colour scheme exists (prefers-color-scheme: dark) and was not captured.",
+    "page_frame": "Every page is a header, the page's <main> and a black footer, in the look of DESIGN.md (#77): the grey ground (#d0cfcb) with film grain, ink text (#141310), black sections (#0d0b07) with paper text (#edeae4), Bodoni Moda for headings and Hanken Grotesk for text, body text 17 px. The header, the footer and the home page share a side gutter of 16 px on a phone and clamp(40px, 3.9vw, 64px) from 900 px. Pages not yet redesigned keep their content in a centred column at most 1088 px wide (68rem), which does not share the header's left edge on a desktop. There is no dark colour scheme.",
     "header": {
       "contents": [
         "Skip link 'Skip to content', off screen until it has keyboard focus.",
-        "Left: the logo mark (a 28 x 28 px dark tile) and the word 'Offboard' in the heading face, one link to /.",
-        "Right: navigation 'Season' (/seasons), 'All-time' (/all-time), 'Recaps' (/recaps), 15 px text, underlined.",
-        "A thin rule under it."
+        "Left: the word 'Offboard' in the display serif, one link to /.",
+        "Right: navigation 'Season' (/seasons), 'All-time' (/all-time), 'Recaps' (/recaps), 15 px, underlined under the pointer.",
+        "On the home page only: a black strip above it that repeats what the Season block says and leads down to it, and on a desktop, for a visitor, 'Sign in with LinkedIn' after the links."
       ],
-      "phone": "One row 69 px tall: 'Offboard' link 128 x 44 px at the left, the three links (52, 55 and 51 px wide, each 44 px tall) at the right with no side padding. Below 480 px wide the header is allowed to wrap; at 390 px it stays on one row. It scrolls away with the page (not fixed).",
-      "desktop": "Same single row across 1088 px: 'Offboard' at the left edge of the content, the three links (68, 71 and 67 px wide, 44 px tall) at the right edge.",
+      "phone": "One row 60 px tall on the grey: 'Offboard' 114 x 44 px at the left, the three links (67, 70 and 58 px wide, each 44 px tall) at the right. Under 360 px the name and the links shrink to stay on one row. It scrolls away with the page (not fixed).",
+      "desktop": "From 900 px, one row 76 px tall at the gutter: 'Offboard' at the left, the three links (and the home page's button) at the right.",
       "absent": [
-        "No sign-in or sign-out, no link to a Member's own Profile, and no link to the Organiser page: those exist only on the home page (sign-in, sign-out, Profile) or nowhere (Organiser).",
+        "No sign-out, no link to a Member's own Profile, and no link to the Organiser page: sign-out and the Profile link are on the home page only, sign-in in the header on the home page only, and nothing links to the Organiser page.",
         "No marking of the current section: the link to the page being viewed looks like the others."
       ]
     },
@@ -24,12 +24,12 @@
         "Link 'Privacy and terms' (/privacy).",
         "Link 'Contact the Organiser' (a mailto: link), shown only when the Organiser's contact address is set."
       ],
-      "phone": "Muted 13 px text, everything stacked in one column under a rule: the two sentences (each wraps to two lines), then each link on its own 44 px row. 254 px tall on a 390 px phone.",
-      "desktop": "From 768 px wide, one row under a rule: the two sentences side by side (389 and 385 px wide), the two links at the right, 125 px tall in all."
+      "phone": "Black, 14 px: the two sentences in muted paper, stacked, then the two links in paper, underlined, side by side, each 44 px tall.",
+      "desktop": "From 900 px, three columns: the two sentences, then the two links at the right."
     },
     "phone_facts_every_page": [
       "No page or state scrolls sideways at 390 px: document.documentElement.scrollWidth was 390 and clientWidth 390 in all 59 states, and no element reaches past either edge.",
-      "The smallest text anywhere is 13 px; nothing is smaller. The footer is 13 px on every page.",
+      "The smallest text is the 11 px label in tracked capitals, on the home page (#77); on the other pages 13 px. The footer is 14 px on every page.",
       "Header and footer links are all at least 44 px tall."
     ]
   },
@@ -39,26 +39,29 @@
       "route": "/",
       "name": "Home",
       "group": "public",
-      "who": "Anyone. A visitor gets the pitch, the next Matchday (or the Season 1 countdown) and 'Sign in with LinkedIn'. Someone part-way through signing up gets 'Signed in as' and 'Finish signing up'. A Member gets 'Your Profile', 'Edit your Profile', the Telegram group's invite link and, once the tournament exists on Lichess, the link to the Matchday. The Organiser gets exactly what a Member gets.",
+      "who": "Anyone. A visitor gets the pitch, the next Matchday (or the Season 1 countdown) and 'Sign in with LinkedIn', a second time in the header on a desktop. Someone part-way through signing up gets 'Signed in as' and 'Finish signing up'. A Member gets 'Your Profile', 'Edit your Profile', the Telegram group's invite link and, once the tournament exists on Lichess, the link to the Matchday. The Organiser gets exactly what a Member gets.",
       "purpose": "For a visitor: read in a few sentences what Offboard is, see when the next Matchday is (or how many more sign-ups Season 1 is waiting for) and decide whether to join. For a Member: the way to this Sunday's Matchday on Lichess, to their own Profile and to the Telegram group.",
       "should_be_able_to": "A visitor: decide it is for them and press 'Sign in with LinkedIn'. A Member: open this Sunday's Matchday on Lichess.",
       "on_it_now": [
-        "Eyebrow 'Free chess Club · Vilnius', heading 'Sunday chess for people in tech', a four-sentence lede (working in tech is busy and lonely; every Sunday evening we play chess online; with luck some of us become friends).",
-        "Status card (to the right of the heading at desktop width, under the lede on a phone), one of: 'Season 1 · N more Members to go' and how Season 1 starts; 'Next Matchday · Sunday 29 November at 20:00'; for a Member, 'Matchday under way' with 'Lichess lets you join until round 3 starts.' until 90 minutes after 20:00. A Member also gets 'Join this Matchday on Lichess' once the tournament exists.",
-        "Under the card, for a visitor: the 'Sign in with LinkedIn' button and a note that signing in lets Offboard store the LinkedIn name, photo and email, with a 'Privacy and terms' link. For anyone signed in: photo or initials, 'Signed in as <name>', 'Sign out'; then 'Finish signing up' (part-way) or 'Your Profile' (filled button), 'Edit your Profile' (outlined) and 'Telegram group' (Member).",
-        "'The chess': one paragraph (20:00 Vilnius time on Lichess, 5 minutes a side plus 3 seconds a move, any level, best four of six Matchdays).",
-        "'Meeting people': one paragraph: what a Profile can say, the Telegram group ('A Telegram group to talk in is still to come.' when no invite link is set), and no selling or recruiting unless a Profile invites it.",
-        "'Leaderboards and Recaps': 'Both are public and show your name.'; from a Season's sixth Matchday until the next Season's first, a marked line '<name> is the Season N champion.' (or '<names> share the Season N title.'); links 'This Season's Leaderboard', 'All-time Leaderboard' and 'Recaps'.",
-        "At desktop width each section after the first is a row: heading on the left third, text on the right."
+        "The black strip: the Season block's label and what it says ('Season 1 · 2 more Members to go', 'Next Matchday · Sunday 29 November at 20:00', 'Matchday under way · ...'), one link down to the block. On a phone a Matchday's time goes under its label. None with the database down.",
+        "The header: 'Offboard', the three links and, for a visitor on a desktop, 'Sign in with LinkedIn', which sends the form in the Season block.",
+        "The queen plate: 'Sunday chess for people in tech' in the display serif, left of the queen photograph on a desktop and above it on a phone, and the credit 'Free chess Club · Vilnius' at its foot. The first screen is sized by the page's width.",
+        "'Working in tech keeps you busy, and busy gets lonely.' in the serif beside the lone pawn and its long shadow, then the rest of the opening paragraph.",
+        "The Season block, one of: 'Season 1 · N more Members to go', how Season 1 starts, and sixteen pawns, one standing for each Member and an outline for each place still open; once Season 1 is scheduled and until its first Matchday, 'Next Matchday' with all sixteen standing; after it, 'Next Matchday' (for a Member, 'Matchday under way' and 'Lichess lets you join until round 3 starts.' until 90 minutes after 20:00) with the six pieces of a Season, tallest to shortest. A Member also gets 'Join this Matchday on Lichess', an ink button, once the tournament exists. Left out with the database down.",
+        "Under it, for a visitor: 'Sign in with LinkedIn' and the note that signing in lets Offboard store the LinkedIn name, photo and email, with a 'Privacy and terms' link. For anyone signed in, after a rule: the photo in greyscale (or initials), 'Signed in as' and the name in the serif, 'Sign out'; then 'Finish signing up' (part-way), or 'Your Profile' and 'Edit your Profile' side by side and 'Telegram group' (Member). With the database down and a session cookie: 'Your sign-in can't be checked right now. Please try again in a minute.'",
+        "'The chess' on black: the heading across the top with the white king at its end, the paragraph under it.",
+        "'Meeting people' on the grey: the two words either side of two knights facing each other, the paragraph under 'people'.",
+        "'Leaderboards and Recaps' on black: 'Both are public and show your name.'; from a Season's sixth Matchday until the next Season's first, '<name> is the Season N champion.' (or '<names> share the Season N title.') in the serif after a small square; the three links as a ruled list with arrows. Then the queen over the fallen king, on the grey, and the footer."
       ],
       "leads_from": [
-        "The 'Offboard' logo link in the header of every page, and 'Home' in the back links of most pages.",
+        "The 'Offboard' wordmark in the header of every page, and 'Home' in the back links of most pages.",
         "LinkedIn sign-in, for a returning person (a new person goes to /welcome).",
         "'Sign out'; 'Save and continue' and 'Skip for now' on /welcome/profile; 'Home' on /left.",
         "Redirects: a visitor opening any signed-in page (/profiles/<id>, /profile, /profile/leave, /welcome...) is sent here after a 1-second refresh; a Member opening /welcome or /welcome/lichess, and someone who has agreed but not connected Lichess opening /welcome, are sent here."
       ],
       "leads_to": [
-        "'Sign in with LinkedIn' → linkedin.com → /welcome (new) or / (returning).",
+        "The strip → the Season block, further down the page.",
+        "'Sign in with LinkedIn' (in the Season block, and in the header on a desktop) → linkedin.com → /welcome (new) or / (returning).",
         "'Privacy and terms' → /privacy.",
         "'Join this Matchday on Lichess' → the tournament on lichess.org (new tab), Members only.",
         "'Finish signing up' → /welcome or /welcome/lichess, whichever step is next.",
@@ -67,13 +70,13 @@
         "Champion line 'Season N' → /seasons/N; 'This Season's Leaderboard' → /seasons; 'All-time Leaderboard' → /all-time; 'Recaps' → /recaps."
       ],
       "phone_facts": [
-        "No sideways scroll in any state (scrollWidth 390, clientWidth 390).",
-        "1,751 to 1,935 px tall on a phone (2.1 to 2.3 screens of 844 px); 1,656 px with the database down (measured 26 November 2026).",
-        "'Recaps' is in the row of Leaderboard links, 62.4 x 44 px.",
-        "'Telegram group' (Members) is 120.6 x 18 px.",
-        "'Privacy and terms' inside the sign-in note (visitors) is 123 x 17.5 px, in running text.",
-        "13 px text: the eyebrow 'Free chess Club · Vilnius', the status card's label ('Season 1', 'Next Matchday', 'Matchday under way'), 'Signed in as', and the footer.",
-        "'Sign in with LinkedIn', 'Your Profile', 'Edit your Profile', 'Sign out', 'Finish signing up' and 'Join this Matchday on Lichess' are all at least 44 px tall."
+        "No sideways scroll in any state (scrollWidth 390, clientWidth 390), measured 26 November 2026 (#77).",
+        "3,863 to 4,128 px tall on a phone (4.6 to 4.9 screens of 844 px); 3,569 px with the database down.",
+        "The strip is one line 44 px tall before Season 1, and two lines 57 px tall in the Matchday states.",
+        "'Recaps' is in the ruled list of Leaderboard links, 358 x 68 px.",
+        "'Telegram group' (Members) is 135 x 44 px; 'Privacy and terms' inside the sign-in note (visitors) is 109 x 46 px, in running text.",
+        "11 px text, in tracked capitals: the strip's label, the credit 'Free chess Club · Vilnius', the Season block's label ('Season 1', 'Next Matchday', 'Matchday under way') and 'Signed in as'. The footer is 14 px.",
+        "'Sign in with LinkedIn', 'Join this Matchday on Lichess', 'Your Profile' and 'Edit your Profile' are 54 px tall; 'Sign out' and every link in the header and footer 44 px."
       ],
       "differs_from_spec": [
         "Story 29 wants the next Matchday's time and Lichess link 'on the site'; the link is on this page only, for Members only, and only from the time the tournament is created (six days ahead).",
@@ -97,6 +100,13 @@
           "as": "ana",
           "path": "/",
           "note": "Added: what a Member sees on the live site today. Countdown card, 'You' panel with the Telegram link."
+        },
+        {
+          "name": "home-visitor-season-1-scheduled",
+          "label": "Visitor once Season 1 is scheduled: all sixteen pawns standing",
+          "seed": "scheduled",
+          "path": "/",
+          "note": "Added (#77). The sixteenth sign-up is in and Season 1's first Matchday is the coming Sunday: 'Next Matchday' with all sixteen pawns standing, until that Matchday starts."
         },
         {
           "name": "home-visitor-season-under-way",
@@ -401,7 +411,7 @@
         "No sideways scroll.",
         "Each date link is a 68 px row; 'Home' is 44 px tall. No control is under 44 px.",
         "No text under 15 px outside the footer.",
-        "1,771 px tall with 16 Recaps."
+        "1,767 px tall with 16 Recaps."
       ],
       "differs_from_spec": [
         "The list shows dates only: no winner, Award or number of players per Matchday."
@@ -442,7 +452,7 @@
         "Heading 'Recap of Sunday, 15 November 2026' over the photograph of the queen standing above the fallen king; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
         "'Awards', on black, with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
         "Members: under each Award a 'Replay the Game' button that opens Lichess's board in the page, with 'Open the Game on Lichess'; for an Award won against someone who has since left, 'Their opponent has since left the Club, so the Game isn't shown.' Visitors get nothing under the Awards.",
-        "'Leaderboard': table Rank / Name / Company (with domain) / Points, in Lichess's final order; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
+        "'Leaderboard', on the Leaderboards' table: Rank / Name / Company (with domain) / Points, in Lichess's final order, the Company under the name on a phone; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
         "Back links: All Recaps, Home."
       ],
       "leads_from": [
@@ -459,10 +469,10 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The table fits: 358 px, columns Rank 43, Name 143, Company 120, Points 52 px. A long Company name wraps to five lines plus its domain: the tallest row is 141 px, the shortest 55 px. Names wrap to two or three lines.",
+        "The table fits: 358 px, columns Rank 42, Name 256, Points 60 px, each Company under its name (its own column from 900 wide). The tallest row is 136 px (a long Company over three lines and its domain), the shortest 55 px. A name breaks only between words; from 300 wide nothing scrolls sideways, a 16-letter surname and a 20-character domain included.",
         "No control is under 44 px: a name in the table is its whole cell; Award winners, 'Season 3', 'Open this Matchday on Lichess' and 'Open the Game on Lichess' are padded to 44 px or more; 'Replay the Game' is 54 px.",
         "11 px column headings (labels in capitals) and 13.5 px Companies; everything else 15 px or more.",
-        "1,034 px (nobody on it) to 3,988 px tall (a Member with a board opened, which adds about 580 px)."
+        "992 px (nobody on it) to 3,900 px tall (a Member with a board opened, which adds about 580 px)."
       ],
       "differs_from_spec": [
         "The spec's 'Least time left' Award is titled 'Closest call'.",

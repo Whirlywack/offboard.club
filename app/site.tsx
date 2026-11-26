@@ -34,10 +34,21 @@ export function Masthead({ strip, children }: { strip?: ReactNode; children?: Re
   );
 }
 
-// One line in black across the top of a page, leading down to the part of the page it names.
-export function Strip({ href, label, children }: { href: string; label: string; children: ReactNode }) {
+// One line in black across the top of a page, leading down to the part of the page it names. `stacked` puts the text under
+// its label on a phone, for a text too long to share the line.
+export function Strip({
+  href,
+  label,
+  stacked = false,
+  children,
+}: {
+  href: string;
+  label: string;
+  stacked?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <a href={href} className={`${site.strip} ${ui.black}`}>
+    <a href={href} className={`${site.strip} ${ui.black} ${stacked ? site.stacked : ""}`}>
       <span className={site.mark} aria-hidden="true" />
       <span className={ui.caps}>{label}</span>
       <span className={site.stripText}>{children}</span>

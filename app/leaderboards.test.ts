@@ -43,8 +43,8 @@ function ingested(date: string, rows: [userId: string, points: number, companyDo
 }
 
 // What a page streams in after its static shell: the element inside its <Suspense>, rendered.
-async function streamed(page: ReactElement<{ children: ReactNode[] }>, at = 0) {
-  const inner = (page.props.children[at] as ReactElement<{ children: ReactElement }>).props.children;
+async function streamed(page: ReactElement<{ children: ReactNode }>, at = 0) {
+  const inner = ([page.props.children].flat()[at] as ReactElement<{ children: ReactElement }>).props.children;
   const render = inner.type as (props: unknown) => Promise<ReactNode>;
   return renderToStaticMarkup((await render(inner.props)) as ReactElement);
 }
@@ -73,6 +73,8 @@ const rows = (html: string) =>
     .slice(1)
     .map(([, row]) => [...row.matchAll(/<t[dh][^>]*>(.*?)<\/t[dh]>/g)].map(([, cell]) => cell.replace(/<[^>]+>/g, "").replaceAll("&#x27;", "'")));
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
+// A page's heading, as text.
+const heading = (html: string) => text(html.match(/<h1[^>]*>(.*?)<\/h1>/)![1]).trim();
 
 beforeEach(() => {
   resetDb();
@@ -122,11 +124,11 @@ describe("a Season's Leaderboard", () => {
   it("ranks Members by their best four Matchdays, with their Company, score and Matchdays played", async () => {
     seasonOne();
     const html = await season("1");
-    expect(html).toContain("<h1>Season 1</h1>");
+    expect(heading(html)).toBe("Season 1");
     // Ana: 4.5 + 4 + 3 + 3 = 14.5 from six. Ben: 12 from three, joined mid-Season. The marked account and the person
     // part-way through signing up are left out.
     expect(rows(html)).toEqual([
-      ["1", "Ana Petraitėbolt.eu", "14.5", "6"],
+      ["1", "Ana Petraitė bolt.eu", "14.5", "6"],
       ["2", "Benas Kazlauskas", "12", "3"],
     ]);
     for (const hidden of ["Marked Account", "Not Yet"]) expect(html).not.toContain(hidden);
@@ -149,6 +151,8 @@ describe("a Season's Leaderboard", () => {
     SEASON_1.slice(0, 5).forEach((date) => ingested(date, [["ana", 3]]));
     const html = await season("1");
     expect(html).not.toContain("Season champion");
+    // The only Season so far has no row of Seasons to go to.
+    expect(html).not.toContain('aria-label="Seasons"');
     expect(text(html)).toContain("Matchday 5 of 6 is done. Results from Sunday, 17 January 2027 aren't in yet.");
     vi.setSystemTime(new Date("2027-01-12T12:00:00Z"));
     expect(text(await season("1"))).toContain("Matchday 5 of 6 is done. The next one is on Sunday, 17 January 2027.");
@@ -173,7 +177,8 @@ describe("a Season's Leaderboard", () => {
 
   it("shows nothing else about anyone: no email, photo, LinkedIn link, Lichess name, rating, position or open-to line", async () => {
     seasonOne();
-    const html = (await season("1")) + (await allTime());
+    // The one picture is the photograph of six chess pieces at the top of a Season's page.
+    const html = ((await season("1")) + (await allTime())).replace(/<img [^>]*photos%2Frow\.webp[^>]*>/, "");
     for (const hidden of ["@", "licdn", "linkedin", "lichess", "Lichess-", "1500", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
   });
 
@@ -192,6 +197,8 @@ describe("a Season's Leaderboard", () => {
     expect(text(html)).toContain("Season 2 starts on Sunday, 31 January 2027.");
     expect(text(html)).toContain("It fills in after the first Matchday.");
     expect(html).not.toContain("<table");
+    // Its six Matchdays are still to come, not gone by unplayed.
+    expect(html).not.toContain("Not played");
   });
 
   it("is not found, without reading the database, for an address that cannot be a Season's", async () => {
@@ -204,7 +211,7 @@ describe("a Season's Leaderboard", () => {
   it("is not found for a Season after the one after the current one, whose dates would still move", async () => {
     seasonOne();
     // 10 February: Season 1 is the latest with results and Season 2 is under way, so Season 2 is the last with a page.
-    expect(await season("2")).toContain("<h1>Season 2</h1>");
+    expect(heading(await season("2"))).toBe("Season 2");
     for (const number of ["3", "200"]) await expect(season(number)).rejects.toThrow("not found");
   });
 
@@ -227,10 +234,10 @@ describe("the current Season's Leaderboard", () => {
   it("stays on the Season just ended through the week off, until the next Season's first Matchday is in", async () => {
     seasonOne();
     ingested(WEEK_OFF, [["cid", 5]]);
-    expect(await currentSeason()).toContain("<h1>Season 1</h1>");
+    expect(heading(await currentSeason())).toBe("Season 1");
     ingested(SEASON_2[0], [["cid", 5]]);
     const html = await currentSeason();
-    expect(html).toContain("<h1>Season 2</h1>");
+    expect(heading(html)).toBe("Season 2");
     expect(rows(html)).toEqual([["1", "Cidas Jonaitis", "5", "1"]]);
     // Both Seasons so far are a link away.
     expect([...html.matchAll(/href="(\/seasons\/\d+)"/g)].map(([, href]) => href)).toEqual(["/seasons/1", "/seasons/2"]);
@@ -242,7 +249,7 @@ describe("the all-time Leaderboard", () => {
     seasonOne();
     ingested(WEEK_OFF, [["cid", 5], ["ben", 1]]);
     expect(rows(await allTime())).toEqual([
-      ["1", "Ana PetraitėVinted (vinted.com)", "6"],
+      ["1", "Ana Petraitė Vinted (vinted.com)", "6"],
       ["2", "Benas Kazlauskas", "4"],
       ["3", "Cidas Jonaitis", "1"],
     ]);
@@ -252,7 +259,20 @@ describe("the all-time Leaderboard", () => {
   it("leaves out a closed account while it stays closed", async () => {
     seasonOne();
     people.get("ben")!.lichessClosed = true;
-    expect(rows(await allTime()).map((r) => r[1])).toEqual(["Ana PetraitėVinted (vinted.com)"]);
+    expect(rows(await allTime()).map((r) => r[1])).toEqual(["Ana Petraitė Vinted (vinted.com)"]);
+  });
+
+  it("tells a visitor, and nobody else, that Profiles are for signed-in Members, once there are names on it", async () => {
+    const note = "Only signed-in Members can open Profiles.";
+    expect(await allTime()).not.toContain(note);
+    expect(await season("1")).not.toContain(note);
+    seasonOne();
+    expect(await allTime()).toContain(note);
+    expect(await season("1")).toContain(note);
+    const at = new Date("2026-11-24T18:00:00Z");
+    getSession.mockResolvedValue({ user: { id: "viewer", publicDisplayConsentAt: at, houseRulesAcceptedAt: at, lichessId: "viewer" } });
+    expect(await allTime()).not.toContain(note);
+    expect(await season("1")).not.toContain(note);
   });
 
   it("says so when nobody is on it yet, and when the database cannot be read, whose failure it hands on", async () => {

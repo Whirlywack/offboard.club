@@ -25,7 +25,7 @@ describe("a page that is not there", () => {
       "No Recap for that Sunday There was no Matchday that day, or its results aren't in yet. All Recaps Home",
     );
     expect(words(NoSeason())).toBe(
-      "Season Leaderboard That Season's dates aren't set yet This Season's Leaderboard All-time Leaderboard Home",
+      "That Season's dates aren't set yet Season Leaderboard This Season's Leaderboard All-time Leaderboard Home",
     );
   });
 });

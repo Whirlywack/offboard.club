@@ -43,7 +43,7 @@ function ingested(date: string, rows: [userId: string, points: number, companyDo
 // The page is a static shell; what reads the database is the element inside <Suspense>, first in <main>.
 async function open(date: string) {
   const page = RecapPage({ params: Promise.resolve({ date }), searchParams: Promise.resolve({}) });
-  const inner = page.props.children[0].props.children;
+  const inner = [page.props.children].flat()[0].props.children;
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
 
@@ -81,9 +81,10 @@ describe("a Recap", () => {
   it("shows the Matchday Leaderboard in Lichess's order with names, Companies of that night and points", async () => {
     const html = await open(DATE);
     expect(html).toMatch(/<h1[^>]*><em>Recap<\/em> of <time dateTime="2026-11-29">Sunday, 29 November 2026<\/time><\/h1>/);
-    // The marked account is left out and everyone after it moves up. ana was at Vinted that night, wherever she is now.
+    // The marked account is left out and everyone after it moves up. ana was at Vinted that night, wherever she is now:
+    // under her name for a phone, and in the Company column for a desktop.
     expect(rows(html)).toEqual([
-      ["1", "Ana Petraitė", "Vinted (vinted.com)", "4.5"],
+      ["1", "Ana Petraitė Vinted (vinted.com)", "Vinted (vinted.com)", "4.5"],
       ["2", "Ben Kazlauskas", "", "3"],
       ["3", "Cora Jonaitė", "", "0.5"],
     ]);

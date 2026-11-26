@@ -123,6 +123,8 @@ Monochrome: a warm grey and a warm near-black, each sampled from a photograph's 
 
 **The No-Accent Rule.** There is no accent colour. Emphasis is size, italic, weight, or a black plate.
 
+**The Greyscale Rule.** A person's photograph (a Member's LinkedIn photo) is shown in greyscale, `filter: grayscale(1)`, so that nothing on a page is in colour.
+
 ## Typography
 
 **Display Font:** Bodoni Moda (with Bodoni 72, Didot, serif), its optical-size axis kept, so the hairlines thin as the type grows.
@@ -186,16 +188,22 @@ The pieces several pages share, and where they live:
 ### Strip
 - **Style:** a black line across the top, 44px, at the gutter: the square mark, a label in capitals, a line of text in 14px, an arrow. The whole strip is one link.
 - **Use:** it repeats, in its own words, what a part further down the page says, and leads there (`Strip href="#season"` on the home page). A page with nothing to repeat has no strip.
+- **Two lines:** a text too long to share a phone's line with its label takes `stacked`: under 480px wide the label and the mark go on the first line, the text under the label, the arrow beside both.
 
 ### Footer
 - **Style:** black, 14px; the two sentences in paper muted, the two links in paper, underlined, each a 44px target. Three columns on a desktop, stacked on a phone.
 
 ### Buttons
 - **Shape:** square (0).
-- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`). Full width on a phone where it is the plate's one action.
-- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px.
-- **On black:** a paper block with black text, by the Turned-Over Rule.
+- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`, which is the same size and type, so a link and a button side by side match). Full width on a phone where it is the plate's one action.
+- **Quiet:** the choice beside it, `ui.quiet` on a `<button>` or a link: the same size, no fill, a 1px outline in `--line-strong`; under the pointer a faint wash of ink and the outline in ink.
+- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px (not with reduced motion). The `<button>` rule's hover is no more specific than `button` itself, so a button with a class of its own (`ui.quiet`, a text button) keeps its own background under the pointer.
+- **On black:** a paper block with black text, by the Turned-Over Rule; a quiet one keeps paper text on black.
 - **In the header:** 44px tall, 20px either side, 14px.
+
+### Alert
+- **Style:** `ui.alert`, what went wrong, on the ground itself: 600 15px in `--error`, after a 7px square of the same red on the middle of its first line, as the strip's square marks what is happening now. No panel, no tint, no stripe. 5.7:1 on the grey; on the grey only, as the red does not read on black.
+- **Use:** beside the field or the button it is about, or in place of a part of a page that cannot be shown (the database down). With `role="alert"` where it arrives after the page.
 
 ### Ruled link list
 - **Style:** places to go, one to a row between 1px rules (`--line`), each in the display serif at 25px (`min(2.7vw, 40px)` on a desktop), at least 68px tall (92px), with a 22px arrow at the end that leans 5px forward under the pointer. `RuledLinks` takes `[href, label]` pairs and a `className` to place it.
@@ -206,17 +214,33 @@ The pieces several pages share, and where they live:
 ### Photographs
 How a photograph meets the page is most of this look.
 
-- **Choosing one.** One per plate, for what the plate says. The six photographs are the queen, the white king on black, a lone pawn, two knights facing each other, a queen over a fallen king, and a row of six pieces tallest to shortest.
+- **Choosing one.** One per plate, for what the plate says. The six photographs are the queen, the white king on black, a lone pawn, two knights facing each other, a queen over a fallen king, and a row of six pieces tallest to shortest. What the home page and the two pages with nothing to show use them for:
+  - the queen: the Club, at the top of the home page;
+  - the lone pawn and its long shadow: "busy gets lonely";
+  - sixteen pawns, standing or in outline: the Members Season 1 has and waits for;
+  - the row of six pieces: a Season's six Matchdays, once Season 1 has begun, whether the next is coming up or under way (the label says which);
+  - the white king on black: the chess;
+  - the two knights: meeting people;
+  - the queen over the fallen king: Leaderboards and their champion, and a page that failed;
+  - the outline of a pawn alone (`pawn-outline.webp`, traced again from the pawn's cut-out at twice the grid's outline, with an even stroke): a place nobody holds, the page that is not there.
 - **In the code.** Always the framework's image component with a static import, which gives it its width and height and a hashed address: `import king from "./photos/king.webp"`, then `<Image src={king} alt="" sizes="(min-width: 900px) 72vw, 512px" className={styles.king} />`. `sizes` says how wide it is shown at each width, in `px` or `vw`, and is left out only for a file smaller than any screen asks for (the pawns). Only the first screen's photograph takes `preload`. The browser is sent WebP at the width it needs, at quality 75; a photograph on a black backdrop takes `quality={90}`, as at 75 its grain breaks into blocks (`next.config.ts` allows those two).
 - **Never larger than it can hold.** A photograph's CSS width never passes its file's width: the 730px pawn is shown at 292px on a phone and at most 730px on a desktop; the 1800px queen at most about 1480px. On a phone, keep it within half its pixels where the composition allows, so it stays sharp on a 2x screen. Give a photograph `max-width: none` when it is positioned wider than its box, as the base `img` rule caps it at its box.
 - **A full photograph** (the queen, the king) sits in its plate with its edges feathered by a mask: two linear gradients on the queen, a radial one on the king. Its backdrop is the plate's own colour, so no edge shows.
 - **A cut-out** (the long-shadowed pawn, the knights, the fallen king) is the piece and its shadow with the backdrop divided out to white, and takes `mix-blend-mode: multiply`, so the white vanishes and the shadow lands on the grey, grain and all. Nothing between it and the grain may make a stacking context (`z-index`, `isolation`, `transform`, `opacity`), or it multiplies onto nothing.
 - **An alpha cut-out** (`pawn.webp`, and the outline `pawn-empty.webp` for a place not yet taken) sits as it is.
+- **A black cut-out** (`row.webp`) is the piece in black with the photograph's darkness as its alpha. On the grey it lands exactly as a multiplied cut-out would, and it needs no blend mode, so it can sit inside a stacking context, as the home page's Season block is. It was made from `design/photographs/row.jpeg`: the backdrop estimated by closing and blurring a small copy and divided out, the edges faded to white, then `-colorspace Gray -negate -background black -alpha shape`.
+- **People's photographs** are in greyscale (the Greyscale Rule).
 - **Alt text.** A photograph has `alt=""`: the words beside it say what it means. A photograph that showed something the words did not would need its own alt text.
 - **A new one** is made from `design/photographs/` with ImageMagick, cropped to what it shows, at the largest size it will be shown, and saved as WebP into `app/photos/`. A cut-out for multiplying must come out opaque with a pure white backdrop; check it on the grey before using it.
 
 ### Grain
 - `ui.grain` on a positioned element lays the grain over it. What inside it is positioned paints over the grain; the cut-outs multiply onto it.
+
+### A page with nothing to show
+- The not-found page and the error page (`app/fallback.module.css`): one grey plate with the grain, the heading in the display serif with its first word in italic, a line in muted text, the way on (a ruled link list, or the button to try again beside a quiet one), and the photograph that says what happened, beside the words on a desktop and under them on a phone.
+
+### Icons
+- The browser's icons (`app/icon.png`, `app/apple-icon.png`) are the black pawn cut-out on the ground colour.
 
 ### Motion
 - Only in answer to the pointer: a colour change on a button, an arrow that leans forward, an underline. 200 to 250ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`. Nothing moves by itself, and reduced motion drops the movement.
@@ -241,23 +265,46 @@ How a photograph meets the page is most of this look.
 
 ## Kept for the pages not yet redesigned
 
-`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker` and `arrive` are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
+`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, `--error-wash` (which `ui.alert` no longer reads), the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker`, `arrive` and `backLinks` (a row of small underlined links at a page's foot, where a redesigned page has `RuledLinks`) are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
 
 ## Adding to this file
 
 When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
 
+## Leaderboards
+
+The Season Leaderboard (`app/seasons/`), the all-time Leaderboard (`app/all-time/`), and the table a Recap shares with them. Built from the approved mock-up of the Season Leaderboard.
+
+### Leaderboard table
+- **Where:** `app/leaderboard.tsx` (`MemberCell`, `CompanyName`, `ScoreCell`) with `board.table` in `app/leaderboards.module.css`; a Recap's table uses the same class.
+- **Style:** no lines but rules: 1px of ink under the column heads, a 1px `--line` under each row. Heads in capitals, 600 11px, 0.1em, muted, the numbers' heads on the right. Rank 15px muted in a 42px column (64px on a desktop); the name 17px 500 (18px), not underlined until the pointer is on it, its whole cell the link's target; the Company 13.5px muted under the name on a phone, after it on its line on a desktop (14px), its domain kept whole. The figure a Leaderboard is ranked by (`board.score`) 19px 600 (21px) in a 60px column (120px); a secondary count (`board.number`) 15px muted (16px) in 58px (110px). A whole score keeps 0.74em on its right, the width of ".5", so scores line up on the point (`ScoreCell`).
+- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px. The tables take their columns from their heads (`table-layout: fixed`, on `board.board`), so a name breaks between words, and inside one only when the word is longer than its column.
+- **Empty:** a muted line between the head's ink rule and a row's rule.
+
+### Leaderboard plate
+- `board.board`: on a phone the heading (display, 44px), the table, the notes in 15px muted, then the links. On a desktop two columns, 3fr and 9fr with 4vw between: the heading (`min(3.7vw, 60px)`), the notes and the links on the left, the table on the right, its top level with the heading.
+- **Links at the foot** (`MoreLinks`): 16px 500 with a 16px arrow that leans 4px forward under the pointer, each a 44px target; in a row on a phone, a column on a desktop.
+
+### Season heading plate
+- A grey plate with grain: "*Season*" and its number in the display serif, the number at `clamp(190px, 58vw, 260px)` beside the word on a phone (under it when it does not fit) and `min(30vw, 420px)` under it on a desktop. Under them on a phone, and to their right on a desktop, the six pieces tallest to shortest (`app/photos/row.webp`, the black cut-out, the pieces 1120 of its 1300px), as wide as the gutters allow on a phone and running to the right gutter on a desktop, never wider than its pixels. The number stands on the pieces' floor.
+- Where the Season stands is a label and a 19px line, under the pieces on a phone and above the short pieces at the right on a desktop. Once the Season is over, its champion follows: a label, the names in the serif (`clamp(30px, 8.9vw, 40px)`, `min(3.3vw, 48px)`), the points in 15px muted; on a desktop on a line of its own under a rule, the names under the pieces.
+- The all-time Leaderboard's heading is the same without the number and the pieces: "*All-time* Leaderboard" over its line, which sits at the right on a desktop.
+- A Season too far off to have dates is a page with nothing to show (`app/fallback.module.css`), its label under the heading, with the pawn in outline.
+
+### The six Matchdays
+- A black plate after the Leaderboard, its heading on the left on a desktop. Six cells between `--line` rules, three to a row on a phone, six on a desktop: "Matchday" as a label over its number in the serif (58px, `min(7vw, 104px)`), the date at the foot. A Matchday with a Recap is a link to it, in paper, with an arrow; one to come, or that went by without results ("Not played"), is muted, its number drawn in a 1px outline. Under them the other Seasons, the one shown underlined 2px. A rule closes the plate above the footer.
+
 ## Recaps
 
 The list of Recaps, a Recap and the page for a Sunday with none (`app/recaps/`). What they bring that another page may want:
 
-- **A Recap is three plates.** Its date over the queen standing above the fallen king (grey, grain): the night's result. Its Awards (black): the event of the page, so they come before the Leaderboard. Its Leaderboard (grey, flat). Then the foot links.
+- **A Recap is three plates.** Its date over the queen standing above the fallen king (grey, grain): the night's result. Its Awards (black): the event of the page, so they come before the Leaderboard. Its Leaderboard on the Leaderboard plate (grey, flat), with the links at its foot (`MoreLinks`).
 - **The date as a headline** (`recaps.module.css`, `.title`): "*Recap* of", then the date on lines of its own, broken after the day. "September 2026", the longest month and year, is 7.25em, which sets the size on a phone (`clamp(36px, 12vw, 60px)`, on one line from 300 wide; narrower, the year takes a line of its own) and the measure at every width (`max-width: 8em`; `min(7.4vw, 124px)` on a desktop), so the date always breaks after the day and never runs into the photograph.
 - **The queen over the fallen king at the head of a plate**: at 0.5 on a phone (360 x 215), under the words, the pieces to the right; on a desktop at the foot of the plate's right side, `min(720px, 55vw)` wide so that below about 1300 wide it shrinks rather than come near the date, its pieces' right edge on the gutter and its long shadow running back towards the words.
 - **An Award** (`awards.module.css`): a ruled row on black. What it was for in the serif with its first word in italic (46px; `min(4.2vw, 68px)` on a desktop), who won it in the serif at 30px (`min(2.8vw, 42px)`), not underlined but for the pointer, what they did in the grotesque in muted with its number in ink, 600. On a desktop the name of the Award and the rest sit side by side, 4 to 5.
 - **A disclosure that does a button's job** (`<summary>`, "Replay the Game"): the primary block, 54px, a chevron that turns a quarter when it is open. What it opens fills its column, with a 1px rule (`--line`) round it.
-- **The plate's name on the left, the content on the right** on a desktop, columns 3 to 9 with a 4vw gap, as the Season Leaderboard's mock-up has it: the Awards and the Leaderboard both.
-- **A line instead of an empty list** ("No Recaps yet.", "Nobody is on this Matchday's Leaderboard."): the serif at 30px on a phone, where the list would start.
+- **The Awards' plate** has the Leaderboard plate's columns on a desktop, 3 to 9 with a 4vw gap: its name and line on the left, the Awards on the right.
+- **A line instead of an empty list** ("No Recaps yet."): the serif at 30px on a phone (`min(3.6vw, 56px)` on a desktop), where the list would start. A Recap nobody is on has the Leaderboard table's empty line.
 - **The list of Recaps**: the ruled list (`ui.ruled`) with each date in a `<time>`; on a desktop the page's name stays in view (`position: sticky`) while the dates go by on the right.
-- **Foot links** (`app/recaps/more.tsx`): the grotesque, 500 16px, each a 44px target with a 16px arrow that leans 4px forward under the pointer, as in the Season Leaderboard's mock-up.
-- **A table** (`recaps.module.css`, `.table`): the Season Leaderboard mock-up's: column heads as labels over a rule in ink, rows between 1px rules, rank in muted, the name in 500 with its whole cell the link, the points right-aligned at 19px 600 (21px), a whole number set in by 0.74em so its units line up with a half's.
+- **A night's Leaderboard** is the Leaderboard table with a Company column (`recaps.module.css`, `.companies`). On a phone there is no room for it: the column is left out and the Company sits under the name, as on the other Leaderboards, so from 320 wide nothing scrolls sideways and a name breaks only between words. From 900 wide the Company has its column, sharing the room with the name.
+- **A Sunday with no Recap** is the not-found page's plate (`app/fallback.module.css`), with the pawn in outline.

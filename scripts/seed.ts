@@ -2,7 +2,7 @@
 // in a browser. Only on a database `pnpm db:start` made: it refuses any other DATABASE_URL, a database without its mark,
 // and one holding people it did not make. It reads the block db:start wrote to .env.local.
 //
-//   pnpm seed [club|season-over|empty]  empties the database, seeds one scenario (default club), lists who is in it, then
+//   pnpm seed [club|season-over|empty|scheduled]  empties the database, seeds one scenario (default club), lists who is in it, then
 //                                       checks through the site's own code that every state it promises is there
 //   pnpm seed:cookies                   writes each seeded person's session cookie, keyed by id, to cookies.json beside
 //                                       the database, for Playwright: context.addCookies([cookies.ana])
@@ -14,7 +14,8 @@
 // page, Season 2's first Matchday played on Lichess and its results not collected yet, its second skipped with a
 // tournament the site could not cancel, the Organiser's permission expired and the job's failure recorded, then gone
 // left and could not be removed from the Lichess team. empty: two
-// sign-ups short of sixteen, nothing played or connected. Each has step1 and step2 part-way through signing up.
+// sign-ups short of sixteen, nothing played or connected. scheduled: the sixteenth sign-up in, Season 1 scheduled for the
+// coming Sunday, nothing played or connected. Each has step1 and step2 part-way through signing up.
 //
 // club's Organiser page also has Posting to Telegram run once, which posted the latest Recap to an in-process fake
 // Telegram; with `pnpm fake-telegram` running, the seed prints the `pnpm post-to-telegram` commands that post the next
@@ -124,10 +125,11 @@ const PEOPLE: Person[] = [
 ];
 
 // Each scenario's Matchdays by tag, "s2m4" being Season 2's fourth, and how many weeks before the latest Sunday
-// Season 1 starts. Sundays not listed have no Matchday. `played` is a Matchday played on Lichess whose results have not
-// been collected yet; `lost`, one whose tournament is recorded but whose results never came in, which runs have long
-// stopped looking for: Season 2's fourth in club, seven Sundays ago, so the last the Organiser page still lists.
-const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[]; played?: string; lost?: string }> = {
+// Season 1 starts (-1: the Sunday after it). Sundays not listed have no Matchday. `played` is a Matchday played on
+// Lichess whose results have not been collected yet; `lost`, one whose tournament is recorded but whose results never
+// came in, which runs have long stopped looking for: Season 2's fourth in club, seven Sundays ago, so the last the
+// Organiser page still lists. `members`: only the first that many Members, who have played nothing.
+const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[]; played?: string; lost?: string; members?: number }> = {
   // skip: weeks after Season 1's start, between Season 3's first two Matchdays
   club: {
     weeks: 17, skip: 15,
@@ -135,7 +137,8 @@ const SCENARIOS: Record<string, { weeks?: number; skip?: number; tags: string[];
     lost: "s2m4",
   },
   "season-over": { weeks: 7, tags: ["warmup", "s1m1", "s1m2", "s1m3", "s1m4", "s1m5", "s1m6"], played: "s2m1" },
-  empty: { tags: [] },
+  empty: { tags: [], members: MEMBERS_TO_START - 2 },
+  scheduled: { weeks: -1, tags: [], members: MEMBERS_TO_START },
 };
 
 const EMAIL = "@seed.invalid";
@@ -240,12 +243,14 @@ function evening(tag: string, date: string, players: Person[], games: Game[]) {
     .map((p, i) => ({ id: p.id, rank: i + 1, points: points.get(p.id)!, rating: ratings.get(p.id)! }));
 }
 
-// Who is in a scenario: in empty, the first Members who could have joined without playing (nobody is marked or closed
-// before a Matchday), so that two more sign-ups start Season 1.
-const peopleOf = (name: string) =>
-  name !== "empty"
+// Who is in a scenario: in empty and scheduled, the first Members who could have joined without playing (nobody is
+// marked or closed before a Matchday): in empty two short of what starts Season 1, in scheduled just enough.
+const peopleOf = (name: string) => {
+  const { members } = SCENARIOS[name];
+  return members === undefined
     ? PEOPLE
-    : [...PEOPLE.filter((p) => !p.step && !p.leaves && !p.marked && !p.closed).slice(0, MEMBERS_TO_START - 2), ...PEOPLE.filter((p) => p.step)];
+    : [...PEOPLE.filter((p) => !p.step && !p.leaves && !p.marked && !p.closed).slice(0, members), ...PEOPLE.filter((p) => p.step)];
+};
 
 async function seed(name: string) {
   const { rows } = await db.query<{ n: number }>(`select count(*)::int as n from "user" where email not like $1`, [`%${EMAIL}`]);
@@ -363,7 +368,7 @@ async function seed(name: string) {
   } finally {
     client.release();
   }
-  if (name !== "empty") [telegramPosts, alertsSent] = await organiser(name);
+  if (scenario.members === undefined) [telegramPosts, alertsSent] = await organiser(name);
   // Without LICHESS_URL there is no fake Lichess to read it.
   if (process.env.LICHESS_URL)
     writeFileSync(await besideDatabase(FAKE_LICHESS_FILE), JSON.stringify(waiting ? [waiting.swiss] : []), { mode: 0o600 });
@@ -505,10 +510,19 @@ async function check(name: string) {
       mustWelcome(user("step1")) && !mustWelcome(user("step2")) && mustConnectLichess(user("step2"))],
     ["the Organiser can open /organiser", isOrganiser(user(ORGANISER))],
   ];
-  if (name === "empty") {
+  if (SCENARIOS[name].members !== undefined) {
+    const [signUps, upcoming, s1] = await Promise.all([countSignUps(), upcomingMatchday(now), season(1)]);
+    if (name === "empty")
+      promises.push(
+        ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(signUps) === 2],
+        ["no Season scheduled, so no next Matchday", upcoming === null && s1?.matchdays === null],
+      );
+    else
+      promises.push(
+        ["sixteen sign-ups, so Season 1 is scheduled", signUps === MEMBERS_TO_START && s1?.matchdays?.length === 6],
+        ["Season 1's first Matchday still to come, and the next", upcoming?.season === 1 && upcoming.number === 1],
+      );
     promises.push(
-      ["two sign-ups short of sixteen, so the home page counts down", signUpsNeeded(await countSignUps()) === 2],
-      ["no Season scheduled, so no next Matchday", (await upcomingMatchday(now)) === null && (await season(1))?.matchdays === null],
       ["no Recaps and an empty all-time Leaderboard", recaps.length === 0 && allTime.length === 0],
       ["nothing on the Organiser page: no permission, no run, no failure, nobody to remove from the Lichess team, no tournament to cancel",
         permission === null && run === null && collecting === null && failure === null && removals.length === 0 && cancellations.length === 0],
@@ -601,7 +615,7 @@ async function check(name: string) {
     }
   }
   // The nightly backup and the alerts to the Organiser (#17), and the failed requests (#60).
-  if (name !== "empty") {
+  if (SCENARIOS[name].members === undefined) {
     const [backingUp, alerting, failedRequest] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS), lastFailedRequest()]);
     promises.push(["Backing up ran, and says backups are off, as no local block has the store's token",
       backingUp?.outcome === "skipped" && backingUp.detail === backupProblem()]);
@@ -643,7 +657,7 @@ const besideDatabase = async (name: string) =>
 // Why the seed must not run as asked, before it reads anything; null if it may.
 function problem(args: string[]) {
   if (args.length > 1 || args.some((arg) => !Object.hasOwn(SCENARIOS, arg) && arg !== "--cookies"))
-    return "Usage: pnpm seed [club|season-over|empty], or pnpm seed:cookies.";
+    return "Usage: pnpm seed [club|season-over|empty|scheduled], or pnpm seed:cookies.";
   const local = notLocal(process.env.DATABASE_URL);
   if (local) return `Refusing: ${local}. The seed only uses a database pnpm db:start made on this machine.`;
   const missing = ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "LICHESS_TEAM_ID"].find((name) => !process.env[name]);

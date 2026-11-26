@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { MoreLinks } from "../leaderboard";
 import ui from "../ui.module.css";
 import { longDate } from "./dates";
-import { More } from "./more";
 import styles from "./recaps.module.css";
 import { recapDates } from "@/lib/recaps";
 import { noticeLater } from "@/lib/request-failures";
@@ -23,7 +23,7 @@ export default function RecapsPage() {
       <Suspense>
         <RecapList />
       </Suspense>
-      <More links={[["/", "Home"]]} />
+      <MoreLinks links={[["/", "Home"]]} />
     </main>
   );
 }

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import ui from "../../ui.module.css";
 import { seasonLeaderboard } from "../season";
 import { isSeasonAddress } from "@/lib/schedule";
 
@@ -16,15 +14,10 @@ export async function generateMetadata({ params }: PageProps<"/seasons/[number]"
 // a 404. A Season the schedule does not have yet shows the not-found page, under a 200 as a Recap's does.
 export default function SeasonPage({ params }: PageProps<"/seasons/[number]">) {
   return (
-    <main id="main" className={ui.page}>
+    <main id="main">
       <Suspense>
         <SeasonOf params={params} />
       </Suspense>
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/all-time">All-time Leaderboard</Link>
-        <Link href="/recaps">Recaps</Link>
-        <Link href="/">Home</Link>
-      </nav>
     </main>
   );
 }

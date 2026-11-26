@@ -20,6 +20,7 @@ import {
   type LichessAccount,
 } from "./lichess";
 import { mustConnectLichess } from "./members";
+import { noticeLater } from "./request-failures";
 
 // Lichess takes any unique id from a public client.
 export const CLIENT_ID = "offboard.club";
@@ -182,6 +183,9 @@ export async function finishConnection(
     return { to: swap ? `/profiles/${person.id}` : "/welcome/profile", replaced: saved.replaced };
   } catch (error) {
     console.error("Connecting Lichess failed:", error instanceof LichessError ? error.message : error);
+    // Recorded unless it is Lichess's answer to what the person brought back, such as a code already used, which they
+    // could send at will (#60 review).
+    if (!(error instanceof LichessError)) noticeLater(error, CALLBACK_PATH, "route");
     return problem("failed");
   } finally {
     deadline.clear();

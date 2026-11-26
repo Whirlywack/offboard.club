@@ -7,6 +7,7 @@ import board from "../leaderboards.module.css";
 import ui from "../ui.module.css";
 import { viewerIsMember } from "@/lib/auth";
 import { getAllTime } from "@/lib/leaderboards";
+import { noticeLater } from "@/lib/request-failures";
 
 export const metadata: Metadata = { title: "All-time Leaderboard" };
 
@@ -40,9 +41,10 @@ async function AllTime() {
   const [rows, member] = await Promise.all([
     getAllTime().catch((error: Error) => {
       console.error("The all-time Leaderboard could not be read:", error.message);
+      noticeLater(error, "/all-time");
       return null;
     }),
-    viewerIsMember(),
+    viewerIsMember("/all-time"),
   ]);
   if (rows === null)
     return <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>;

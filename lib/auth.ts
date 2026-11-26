@@ -8,6 +8,7 @@ import { db } from "./db";
 import { MEMBER_SQL, mustConnectLichess } from "./members";
 import { isOrganiser } from "./organiser";
 import type { Profile } from "./profile";
+import { noticeLater } from "./request-failures";
 
 // Until the Organiser supplies LinkedIn credentials, sign-in says so instead of failing.
 export const linkedInConfigured = Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
@@ -85,9 +86,9 @@ export async function requireOrganiser() {
 
 // For pages anyone may open that show Members a little more: whether the viewer is a Member, by the same checks as
 // requireSignedUp but without sending anyone away. False for signed-out visitors, anyone part-way through signing up,
-// and whenever the session cannot be read.
-export async function viewerIsMember(): Promise<boolean> {
-  const session = await getSession().catch(() => null);
+// and whenever the session cannot be read, which is recorded as a failure of the page at `routePath`.
+export async function viewerIsMember(routePath: string): Promise<boolean> {
+  const session = await getSession().catch((error: unknown) => void noticeLater(error, routePath));
   return !!session && !mustWelcome(session.user) && !mustConnectLichess(session.user);
 }
 

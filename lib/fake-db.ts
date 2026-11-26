@@ -1,5 +1,5 @@
 // For tests only: the database's "user", "company", "matchday", "matchdayResult", "game", "season", "skippedSunday",
-// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation" and "telegramPost" tables in
+// "organiserLichess", "scheduledJob", "jobFailure", "teamRemoval", "tournamentCancellation", "telegramPost" and "requestFailure" tables in
 // memory, standing in for lib/db.ts with vi.mock("@/lib/db", () => import("@/lib/fake-db")). It knows each statement
 // the app sends by its full text, written out again below, and throws on any other: a condition dropped from a query in
 // the app fails the tests instead of passing unnoticed. Each statement answers a moment later, so callers running at once interleave,
@@ -109,6 +109,8 @@ export const jobFailures = new Map<string, JobFailureRow>(); // by String(id)
 export const teamRemovals = new Map<string, TeamRemovalRow>(); // by lichessId
 export const tournamentCancellations = new Map<string, TournamentCancellationRow>(); // by lichessTournamentId
 export const telegramPosts = new Map<string, TelegramPostRow>(); // by key
+export type RequestFailureRow = { route: string; kind: string; reason: string; lastAt: Date };
+export const requestFailures = new Map<string, RequestFailureRow>(); // by `${route} ${kind} ${reason}`, its primary key
 
 const welcomedAt = new Date("2026-11-24T18:00:00Z");
 
@@ -159,6 +161,7 @@ const tables = {
   teamRemovals,
   tournamentCancellations,
   telegramPosts,
+  requestFailures,
 };
 let lastFailureId = 0;
 let lastPostOrder = 0;
@@ -801,6 +804,29 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer(latest ? [{ job: latest.job, at: latest.at, matchdayDate: latest.matchdayDate, problem: latest.problem }] : []);
     },
 
+  // --- Failed requests (lib/request-failures.ts) ---
+
+  // noticeFailedRequest: one row a kind, its time moved on by each failure.
+  [`insert into "requestFailure" ("route", "kind", "reason") values ($1, $2, $3) on conflict ("route", "kind", "reason") do update set "lastAt" = now()`]:
+    (route, kind, reason) => {
+      requestFailures.set(`${route} ${kind} ${reason}`, { route, kind, reason: String(reason), lastAt: new Date() });
+      return answer([], 1);
+    },
+
+  // lastFailedRequest
+  [`select "route", "kind", "reason", "lastAt" as "at" from "requestFailure" order by "lastAt" desc limit 1`]: () => {
+    const latest = [...requestFailures.values()].sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())[0];
+    return answer(latest ? [{ route: latest.route, kind: latest.kind, reason: latest.reason, at: latest.lastAt }] : []);
+  },
+
+  // failedRequestsSince
+  [`select "route", "kind", "reason", "lastAt" as "at" from "requestFailure" where "lastAt" > $1`]: (since) =>
+    answer(
+      [...requestFailures.values()]
+        .filter((row) => row.lastAt > new Date(since as unknown as Date))
+        .map((row) => ({ route: row.route, kind: row.kind, reason: row.reason, at: row.lastAt })),
+    ),
+
   // --- Connecting Lichess (lib/connect-lichess.ts) ---
 
   // connectedToSomeoneElse
@@ -1013,12 +1039,16 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     },
 };
 
+// A statement as text and parameters, or as pg's config object ({ text, values, query_timeout }), as lib/request-failures.ts
+// sends its own, whose limit the fake never reaches, as each statement answers at once.
 async function run(sql: string, params: unknown[] = []) {
   await null;
-  const statement = sql.replace(/\s+/g, " ").trim();
+  const config = sql as string | { text: string; values?: unknown[] };
+  const [text, values] = typeof config === "string" ? [config, params] : [config.text, config.values ?? []];
+  const statement = text.replace(/\s+/g, " ").trim();
   const handler = statements[statement];
   if (!handler) throw new Error(`The fake database does not know this statement: ${statement}`);
-  return handler(...(params as Params));
+  return handler(...(values as Params));
 }
 
 // --- Transactions ---
@@ -1070,3 +1100,9 @@ function connection(): Queryable & { release: (error?: Error) => void } {
 }
 
 export const db = { query: vi.fn(run), connect: vi.fn(async () => connection()) };
+
+// `error` marked as lib/db.ts's pool marks what it throws, a statement's failure unless `stage` says it could not
+// connect, for a test that makes the database fail by hand, as with db.query.mockRejectedValueOnce: only such an error
+// is the database's to lib/request-failures.ts.
+export const fromDatabase = <T extends object>(error: T, stage: "connect" | "statement" = "statement"): T =>
+  Object.defineProperty(error, Symbol.for("offboard.from-database"), { value: stage });

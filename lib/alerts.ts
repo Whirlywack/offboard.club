@@ -14,6 +14,9 @@
 // - No backup having been made for two days, while backups are set up: once a day until one is.
 // - The Organiser's Lichess permission: 30 days before it ends, 7 days before, and on the day it ends. One revoked on
 //   Lichess shows when Creating Matchdays next uses it, as that job's failure.
+// - Each kind of request that failed on the server (lib/request-failures.ts, #60), by its address's shape, its kind and
+//   why: once, and again a day later if it has failed again since, however many requests fail.
+// A run that cannot use the database at all says so to the Organiser directly instead (alertWithoutDatabase).
 // Without the bot's token or the Organiser's chat id nothing is queued or sent, and the Organiser page says which is
 // missing. A bot cannot message a person before they have pressed Start in a chat with it; .env.example has the steps.
 
@@ -24,6 +27,7 @@ import { JOB as CREATE } from "./create-matchdays";
 import { done, doneSince, failed, failingJobs, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { organiserPermission, type OrganiserPermission } from "./organiser-lichess";
 import { lostPost, JOB as POST } from "./post-to-telegram";
+import { failedRequestsSince, failedRequestText, reasonOf } from "./request-failures";
 import { ZONE } from "./schedule";
 import { ALERT, botSetUp, deliverAlerts, forgetPastPosts, groupId, queuePost, sendMessage, stuckPosts, type Delivery } from "./telegram";
 
@@ -128,7 +132,25 @@ async function alert(now: Date): Promise<JobRun> {
     await queueAlert(`Backing up: no backup of the database has been made since ${day(since)}.`, aDay);
   const warning = permissionAlert(await organiserPermission(), now);
   if (warning) await queueAlert(warning.text, warning.until);
+  // A kind of request that failed in the last day, worth sending until a day after it last failed as of now: it is
+  // queued once, and again only once it has failed after that alert is forgotten.
+  for (const failure of await failedRequestsSince(new Date(now.getTime() - DAY)))
+    await queueAlert(failedRequestText(failure), new Date(failure.at.getTime() + DAY));
   return outcome(await deliverAlerts(chat, now));
+}
+
+// For a run that could not use the database, which holds every alert: tells the Organiser so directly, with one try
+// at Telegram of 10 s, after the run's 20 s at most of trying to connect (lib/db.ts), within its route's 300 s. Once a
+// run, so once an hour while it lasts (vercel.json), and twice in an hour only when Vercel delivers a run twice, which
+// it may (vercel.com/docs/cron-jobs/manage-cron-jobs, "Cron job delivery and idempotency"); a failed request sends
+// nothing itself. Nothing is sent while alerts are off. Its words are fixed but for a reason from reasonOf's fixed
+// list, so hold nothing to hide. Never throws.
+export async function alertWithoutDatabase(error: unknown) {
+  const chat = organiserChat();
+  if (!botSetUp() || !chat) return;
+  const text = `The site can't use its database: ${reasonOf(error)}. Pages that need it fail, and no alert can be read from it. You'll hear this every hour until it works again.`;
+  const sent = await sendMessage(chat, text);
+  if (sent.posted !== true) console.error(`Telling the Organiser that the database can't be used failed: ${sentence(sent.problem)}.`);
 }
 
 // --- A test message, from the Organiser page ---

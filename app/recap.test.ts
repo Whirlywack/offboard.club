@@ -5,7 +5,8 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RecapAward } from "@/lib/awards";
-import { addCompany, addPerson, db, games, matchdays, people, resetDb, results, type GameRow } from "@/lib/fake-db";
+import { addCompany, addPerson, db, fromDatabase, games, matchdays, people, requestFailures, resetDb, results, seasons, type GameRow } from "@/lib/fake-db";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import { ingestMatchday } from "@/lib/matchday";
 import { getRecap } from "@/lib/recaps";
 import Home from "./page";
@@ -51,6 +52,9 @@ async function list() {
   const inner = page.props.children[2].props.children;
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
+
+// The failed requests recorded (lib/request-failures.ts).
+const recorded = () => [...requestFailures.values()].map(({ route, kind, reason }) => ({ route, kind, reason }));
 
 // The Leaderboard's rows as text: rank, name, Company, points.
 const rows = (html: string) =>
@@ -137,10 +141,29 @@ describe("a Recap", () => {
     expect(await open("2026-12-06")).toContain("Nobody is on this Matchday&#x27;s Leaderboard.");
   });
 
-  it("says plainly that it cannot be shown when the database cannot be read", async () => {
+  it("says plainly that it cannot be shown when the database cannot be read, and records the page's failure", async () => {
+    const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    db.query.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
+    db.query.mockRejectedValueOnce(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
     expect(await open(DATE)).toContain("This Recap can&#x27;t be shown right now.");
+    await settled();
+    expect(recorded()).toEqual([{ route: "/recaps/[date]", kind: "page", reason: "the database couldn't be reached" }]);
+  });
+
+  it("is shown without its Season when the schedule cannot be read, and records the page's failure", async () => {
+    const settled = keepWaitUntil();
+    seasons.set(1, { number: 1, start: DATE });
+    expect(await open(DATE)).toContain("Season 1");
+    const real = db.query.getMockImplementation()!;
+    db.query.mockImplementation((sql: string, params?: unknown[]) =>
+      String(sql).includes(`from "season"`) ? Promise.reject(fromDatabase(new Error("Connection terminated unexpectedly"))) : real(sql, params),
+    );
+    const html = await open(DATE);
+    db.query.mockImplementation(real);
+    expect(html).toContain("<h1>Recap of");
+    expect(html).not.toContain("Season 1");
+    await settled();
+    expect(recorded()).toEqual([{ route: "/recaps/[date]", kind: "page", reason: "the database couldn't be reached" }]);
   });
 });
 
@@ -405,12 +428,15 @@ describe("the list of Recaps", () => {
     ]);
   });
 
-  it("says so when there are none yet, and when the database cannot be read", async () => {
+  it("says so when there are none yet, and when the database cannot be read, whose failure it records", async () => {
     resetDb();
     expect(await list()).toContain("No Recaps yet");
+    const settled = keepWaitUntil();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    db.query.mockRejectedValueOnce(new Error("connect ETIMEDOUT"));
+    db.query.mockRejectedValueOnce(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
     expect(await list()).toContain("The Recaps can&#x27;t be shown right now.");
+    await settled();
+    expect(recorded()).toEqual([{ route: "/recaps", kind: "page", reason: "the database couldn't be reached" }]);
   });
 
   it("is linked from the home page", () => {

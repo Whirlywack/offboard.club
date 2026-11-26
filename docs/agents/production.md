@@ -22,7 +22,7 @@ An agent given a ticket works against local throwaway databases and the fakes (`
 The site is https://offboard.club, the only public address: every `*.vercel.app` address is behind Vercel's sign-in. Team `ketflows-projects`, project `offboard`, Pro plan. Functions run in `fra1` on Fluid Compute, Node 26.x.
 
 - Production is built from `main` alone, and its build migrates the live database before `next build` (the `build` script). A changed setting takes effect only at the next production deploy.
-- Runtime logs keep a day of what the code wrote to the console. A job that succeeded writes nothing, so a missing line is no sign that it ran. A scheduled job's own record is its `scheduledJob` row, which the Organiser page shows.
+- Runtime logs keep a day of what the code wrote to the console. A job that succeeded writes nothing, so a missing line is no sign that it ran. A scheduled job's own record is its `scheduledJob` row, which the Organiser page shows. A request that threw on the server is kept by its kind, longer than the logs, in a `requestFailure` row: its route's shape, its kind, a reason from a fixed list and when it last failed (`lib/request-failures.ts`); the Organiser page shows the latest.
 - Fluid Compute suspends an idle instance and resumes it later with its timers still counting, so a timeout set before the pause can fire as the instance wakes. Ticket #55 met it connecting to the database: read the comment in `lib/db.ts`.
 
 ## Settings on Production

@@ -22,6 +22,7 @@ import { matchdayOn } from "@/lib/matchdays";
 import { isOrganiser } from "@/lib/organiser";
 import { LICHESS_SECURITY_URL, organiserMessage, organiserPermission, type OrganiserPermission } from "@/lib/organiser-lichess";
 import { JOB as POST } from "@/lib/post-to-telegram";
+import { lastFailedRequest, noticeLater, type FailedRequest } from "@/lib/request-failures";
 import { tournamentCancellations, type Cancellation } from "@/lib/reschedule";
 import { addDays, latestSunday, matchdayStart, ZONE } from "@/lib/schedule";
 import { MAX_SEASONS, nextMatchdayIn, placesIn, readSchedule, seasonDates, type Matchday, type Schedule } from "@/lib/seasons";
@@ -29,7 +30,7 @@ import { telegramProblem } from "@/lib/telegram";
 
 // To anyone but the Organiser the page does not exist, so their tab says so, as app/not-found.tsx does.
 export async function generateMetadata(): Promise<Metadata> {
-  const session = await getSession().catch(() => null);
+  const session = await getSession().catch((error: unknown) => void noticeLater(error, "/organiser"));
   return { title: isOrganiser(session?.user) ? "Organiser" : "Page not found" };
 }
 
@@ -90,8 +91,8 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
     tournamentCancellations(),
     membersToRemove(id),
   ]);
-  // The jobs #17 added: the nightly backup and the alerts to the Organiser.
-  const [backingUp, alerting] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS)]);
+  // The jobs #17 added, the nightly backup and the alerts to the Organiser, and the requests that failed (#60).
+  const [backingUp, alerting, failedRequest] = await Promise.all([lastRun(BACKUP), lastRun(ALERTS), lastFailedRequest()]);
   const runs: Record<string, LastRun | null> = { [CREATE]: creating, [COLLECT]: collecting, [POST]: posting, [BACKUP]: backingUp, [ALERTS]: alerting };
   const telegram = telegramProblem();
   const next = nextMatchdayIn(schedule, now);
@@ -189,6 +190,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
         />
         <ResultsNotIn matchdays={notIn} now={now} />
         <LastFailure failure={failure} since={failure ? (runs[failure.job] ?? null) : null} />
+        <LastFailedRequest failure={failedRequest} />
       </section>
 
       <nav aria-label="More" className={ui.backLinks}>
@@ -416,6 +418,32 @@ function LastFailure({ failure, since }: { failure: Failure | null; since: LastR
         </>
       ) : (
         <p className={styles.detail}>No job has failed.</p>
+      )}
+    </div>
+  );
+}
+
+const upper = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+// The kind of request that failed last (lib/request-failures.ts): its address's shape, its kind, when it last failed
+// and why. History, like the last failure above, so not an alert.
+function LastFailedRequest({ failure }: { failure: FailedRequest | null }) {
+  return (
+    <div className={styles.part}>
+      <h3>Last failed request</h3>
+      {failure ? (
+        <>
+          <dl className={styles.facts}>
+            <Fact label="Address">{failure.route}</Fact>
+            <Fact label="Kind">{upper(failure.kind)}</Fact>
+            <Fact label="Last failed">
+              <Time at={failure.at} as={DATE_TIME} />
+            </Fact>
+          </dl>
+          <p className={styles.detail}>{upper(failure.reason)}.</p>
+        </>
+      ) : (
+        <p className={styles.detail}>No failed request has been recorded.</p>
       )}
     </div>
   );

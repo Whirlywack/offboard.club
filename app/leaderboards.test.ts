@@ -4,7 +4,8 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addCompany, addPerson, db, matchdays, people, resetDb, results, seasons, skippedSundays } from "@/lib/fake-db";
+import { addCompany, addPerson, db, fromDatabase, matchdays, people, resetDb, results, seasons, skippedSundays } from "@/lib/fake-db";
+import { keepWaitUntil } from "@/lib/fixtures/wait-until";
 import AllTimePage from "./all-time/page";
 import RootLayout from "./layout";
 import Home from "./page";
@@ -90,10 +91,18 @@ beforeEach(() => {
 
 // A test that makes the database unreachable makes every statement fail; this puts the fake back.
 const answering = db.query.getMockImplementation()!;
+// Every statement fails as pg's does when it cannot connect, the one that would record the page's failure too, which is
+// then logged (lib/request-failures.ts): returns what waits for that, then what was logged as its failure.
 const unreachable = () => {
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  db.query.mockRejectedValue(new Error("connect ETIMEDOUT"));
+  const settled = keepWaitUntil();
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  db.query.mockRejectedValue(fromDatabase(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })));
+  return async () => {
+    await settled();
+    return logged.mock.calls.map(([said]) => String(said)).filter((said) => said.includes("couldn't be recorded"));
+  };
 };
+const unrecorded = (route: string) => `A page failed at ${route}: the database couldn't be reached. It couldn't be recorded: the database couldn't be reached.`;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -203,10 +212,11 @@ describe("a Season's Leaderboard", () => {
     await expect(season("2")).rejects.toThrow("not found");
   });
 
-  it("says plainly that it cannot be shown when the database cannot be read", async () => {
-    unreachable();
+  it("says plainly that it cannot be shown when the database cannot be read, and hands the page's failure on", async () => {
+    const failures = unreachable();
     expect(await season("1")).toContain("This Leaderboard can&#x27;t be shown right now.");
     expect(await currentSeason()).toContain("This Leaderboard can&#x27;t be shown right now.");
+    expect(await failures()).toEqual([unrecorded("/seasons/[number]"), unrecorded("/seasons")]);
   });
 });
 
@@ -241,10 +251,11 @@ describe("the all-time Leaderboard", () => {
     expect(rows(await allTime()).map((r) => r[1])).toEqual(["Ana PetraitėVinted (vinted.com)"]);
   });
 
-  it("says so when nobody is on it yet, and when the database cannot be read", async () => {
+  it("says so when nobody is on it yet, and when the database cannot be read, whose failure it hands on", async () => {
     expect(await allTime()).toContain("Nobody is on it yet.");
-    unreachable();
+    const failures = unreachable();
     expect(await allTime()).toContain("This Leaderboard can&#x27;t be shown right now.");
+    expect(await failures()).toEqual([unrecorded("/all-time")]);
   });
 });
 

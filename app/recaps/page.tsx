@@ -6,6 +6,7 @@ import ui from "../ui.module.css";
 import { longDate } from "./dates";
 import styles from "./recaps.module.css";
 import { recapDates } from "@/lib/recaps";
+import { noticeLater } from "@/lib/request-failures";
 
 export const metadata: Metadata = { title: "Recaps" };
 
@@ -31,6 +32,7 @@ async function RecapList() {
   await connection();
   const dates = await recapDates().catch((error: Error) => {
     console.error("The Recaps page could not read the Matchdays:", error.message);
+    noticeLater(error, "/recaps");
     return null;
   });
   if (dates === null) return <p className={ui.alert}>The Recaps can&apos;t be shown right now. Please try again in a minute.</p>;

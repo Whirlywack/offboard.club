@@ -8,10 +8,11 @@ import { RemoveActions } from "../forms";
 import { getProfile, getSession, requireOrganiser } from "@/lib/auth";
 import { MEMBER_ID_MAX } from "@/lib/leaving";
 import { isOrganiser } from "@/lib/organiser";
+import { noticeLater } from "@/lib/request-failures";
 
 // To anyone but the Organiser the page does not exist, as the Organiser page does not.
 export async function generateMetadata(): Promise<Metadata> {
-  const session = await getSession().catch(() => null);
+  const session = await getSession().catch((error: unknown) => void noticeLater(error, "/organiser/remove"));
   return { title: isOrganiser(session?.user) ? "Remove a Member" : "Page not found" };
 }
 

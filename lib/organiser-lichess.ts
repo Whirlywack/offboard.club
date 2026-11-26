@@ -11,6 +11,7 @@ import { db } from "./db";
 import { CLIENT_ID, CONNECTION_DEADLINE_MS, redirectUri, returnedFrom, revoke, REVOKED_BY_MS, startConnection, type Flow } from "./connect-lichess";
 import { exchangeCode, getAccount, LichessError, teamLeaders, timeLimit } from "./lichess";
 import { organiserId } from "./organiser";
+import { noticeLater } from "./request-failures";
 import { vilniusDate } from "./schedule";
 import { openToken, sealToken, tokenKey } from "./token-box";
 
@@ -105,6 +106,8 @@ export async function finishOrganiserConnection(
   } catch (error) {
     // A LichessError names the request and the status only; nothing else that is logged holds the token.
     console.error("Connecting the Organiser's Lichess account failed:", error instanceof Error ? error.message : "unknown error");
+    // Recorded unless it is Lichess's answer to what was brought back, as for a Member (lib/connect-lichess.ts).
+    if (!(error instanceof LichessError)) noticeLater(error, ORGANISER_FLOW.callbackPath, "route");
     return back("failed");
   } finally {
     deadline.clear();

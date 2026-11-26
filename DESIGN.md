@@ -195,10 +195,15 @@ The pieces several pages share, and where they live:
 
 ### Buttons
 - **Shape:** square (0).
-- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`). Full width on a phone where it is the plate's one action.
-- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px.
-- **On black:** a paper block with black text, by the Turned-Over Rule.
+- **Primary:** an ink block with paper text, 600 16px, 54px tall, 28px either side (`<button>` as it is; a link that does a button's job takes `ui.button`, which is the same size and type, so a link and a button side by side match). Full width on a phone where it is the plate's one action.
+- **Quiet:** the choice beside it, `ui.quiet` on a `<button>` or a link: the same size, no fill, a 1px outline in `--line-strong`; under the pointer a faint wash of ink and the outline in ink.
+- **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px (not with reduced motion). The `<button>` rule's hover is no more specific than `button` itself, so a button with a class of its own (`ui.quiet`, a text button) keeps its own background under the pointer.
+- **On black:** a paper block with black text, by the Turned-Over Rule; a quiet one keeps paper text on black.
 - **In the header:** 44px tall, 20px either side, 14px.
+
+### Alert
+- **Style:** `ui.alert`, what went wrong, on the ground itself: 600 15px in `--error`, after a 7px square of the same red on the middle of its first line, as the strip's square marks what is happening now. No panel, no tint, no stripe. 5.7:1 on the grey; on the grey only, as the red does not read on black.
+- **Use:** beside the field or the button it is about, or in place of a part of a page that cannot be shown (the database down). With `role="alert"` where it arrives after the page.
 
 ### Ruled link list
 - **Style:** places to go, one to a row between 1px rules (`--line`), each in the display serif at 25px (`min(2.7vw, 40px)` on a desktop), at least 68px tall (92px), with a 22px arrow at the end that leans 5px forward under the pointer. `RuledLinks` takes `[href, label]` pairs and a `className` to place it.
@@ -260,11 +265,26 @@ How a photograph meets the page is most of this look.
 
 ## Kept for the pages not yet redesigned
 
-`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker` and `arrive` are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
+`--raised`, `--sunken`, `--accent`, `--on-accent`, `--image-outline`, `--shadow-raised`, `--error-wash` (which `ui.alert` no longer reads), the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker`, `arrive` and `backLinks` (a row of small underlined links at a page's foot, where a redesigned page has `RuledLinks`) are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
 
 ## Adding to this file
 
 When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
+
+## Profiles, and the pages for a task
+
+What a Member's Profile, Edit your Profile, Leave the Club and the page after leaving brought (`app/profiles/[id]/profile.module.css`, `app/profile/profile.module.css`).
+
+- **A person's plate.** A Profile opens on a black plate: the Member's photograph, then their name across the plate in the display serif, the first name in italic (`clamp(44px, 12.8vw, 60px)`, `min(8.4vw, 140px)` on a desktop); under the name, the position on the left and the facts on the right, from the same line. Their record follows on the grey. The person takes the black because emphasis here is a black plate.
+- **A Member's photograph** is shown in greyscale, at 100px square on a Profile: the size LinkedIn gives it, so never larger than its pixels. It is under the grain (`.portrait::after`), so it looks printed with the page. A Member without one has their initials in the serif's italic, in an empty 1px frame of `--line` (`.large` in `app/avatar.module.css`).
+- **A heading that wraps where its words fall** (a name, or a heading not set line by line) takes line-height 1.04. The serif's descenders reach 0.26em below the line and its ascenders 0.76em above, so any tighter and a descender can meet the ascender under it, as the y of "your" met the fi of "Profile" at 0.96.
+- **Facts.** One ruled row each (`--line`), the label in capitals (600 11px, 0.16em, `--muted`) at the left, 7.5rem wide (10rem on a desktop), the value beside it. A line to start a conversation with ("Open to") goes first, in the serif at 26px (`clamp(26px, 2.8vw, 44px)` on a desktop), with no rule above it. A record's numbers (Blitz rating, Matchdays played, Streak) stand three to a row under one rule, each in the serif under its label, never split over two lines: `min(42px, 11.2vw)`, so four digits fit a third of a 320 phone, and `clamp(42px, 4.4vw, 68px)` on a desktop.
+- **A ledger.** Games grouped by evening: each evening opens on a full `--ink` rule with its date in the serif at 25px (`clamp(25px, 2.2vw, 32px)`) and the ruled list's arrow, leading to its Recap; its Games follow, one to a row on `--line` rules, the result in words and the Game's link at the right.
+- **A page for a task** (Edit your Profile, Leave the Club). Its heading across the page on one line, in the serif (`min(12vw, 60px)`, which holds "Edit your Profile" on one line from 224 wide, and `min(7.8vw, 128px)`); under it, on a desktop, the words on the left and the work on the right, from the same line, in the columns a Profile uses (5fr and 7fr, 6vw apart); on a phone one column. No photograph: a task needs none, and leaving least of all.
+- **A sentence in the serif** under a heading says the one thing a person must not miss: "This can't be undone." 30px, `clamp(30px, 2.8vw, 44px)` on a desktop.
+- **A form.** Each field: its label (600), its hint (15px, `--muted`), then the box: 54px tall, the height of a button, square, 1px `--line-strong`, no fill. A refusal is said between the hint and the box, in `ui.alert`, and the box's border turns `--error`. An answer longer than a line (Open to) is a box four lines tall, enough for its 140 characters on a phone, and Enter in it saves the form as in a one-line field (`enterkeyhint="go"`). The buttons stack at full width on a phone, the first choice first. Below the form, each further part opens on a `--line` rule with its heading in the serif at 34px (44px on a desktop).
+- **A choice that cannot be undone.** What goes, one item to a ruled row; then keeping, the ink block, first; then deleting, the button's shape outlined in `--error` and never filled. What stops for the Organiser is said in `ui.alert`.
+- **A page with a few words** (`.plain`: after leaving): the heading, a sentence in the serif under it, then the words and the way on, on the left, with the space of the plate around them. No Profile at this address is the site's not-found page (A page with nothing to show), in its own words.
 
 ## Signing up
 

@@ -193,9 +193,10 @@ function envLocal() {
 }
 
 // <dir>'s block, or null if db:start has not used <dir>, or left it unfinished. A directory holding a Postgres that
-// db:start did not make, such as the owner's own, is refused. One whose initdb db:start ran (offboard.initdb), and that
-// has no block yet, was left by a start that failed, or was stopped, before choosing its ports: it is made again.
-const unfinished = (dir) => !existsSync(`${dir}/offboard.env`) && existsSync(`${dir}/offboard.initdb`);
+// db:start did not make, such as the owner's own, is refused. A Postgres folder whose initdb db:start ran (PG_VERSION and
+// offboard.initdb), and that has no block yet, was left by a start that failed, or was stopped, before choosing its
+// ports: it is made again.
+const unfinished = (dir) => !existsSync(`${dir}/offboard.env`) && existsSync(`${dir}/PG_VERSION`) && existsSync(`${dir}/offboard.initdb`);
 function blockOf(dir) {
   const file = `${dir}/offboard.env`;
   const text = existsSync(file) ? readFileSync(file, "utf8") : null;
@@ -372,6 +373,7 @@ async function start(dir, port) {
       // throwaway, so it is made again, empty, as one left unfinished is. Only db:start's own is emptied, and through
       // its real path, so that a --dir that is a link, or a folder made beforehand, stays where it is.
       const left = !saved && unfinished(dir);
+      if (left && running(pg, dir)) throw new Error(`${dir} has a Postgres running in it and no block, so it is left alone: stop it first, with pnpm db:stop --dir ${dir}.`);
       if (saved || left) for (const entry of readdirSync(realpathSync(dir))) rmSync(`${realpathSync(dir)}/${entry}`, { recursive: true, force: true });
       if (made && made !== pg.major) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
       else if (made) say(`${dir} was made to sort or keep time otherwise than the live database does, so it was made again, empty.`);

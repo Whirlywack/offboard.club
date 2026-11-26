@@ -839,12 +839,32 @@ describe("db:start beside others starting at the same time", () => {
       expect(existsSync(join(dir, "offboard.env"))).toBe(true);
     }
     expect([lstatSync(link).isSymbolicLink(), existsSync(join(target, "offboard.env")), existsSync(premade)]).toEqual([true, true, true]);
-    // A folder of someone else's, with neither mark, is not emptied: initdb refuses it, as it is not empty.
-    const theirs = join(root, "theirs");
-    mkdirSync(theirs);
-    writeFileSync(join(theirs, "notes.txt"), "someone's\n");
-    const refused = run(process.execPath, [script, "start", "--dir", theirs]);
-    expect([refused.status, readFileSync(join(theirs, "notes.txt"), "utf8")]).toEqual([1, "someone's\n"]);
+    // A folder of someone else's, with neither mark, or with a file of that name and no Postgres in it, is not emptied:
+    // initdb refuses it, as it is not empty.
+    for (const [name, files] of [["theirs", ["notes.txt"]], ["named", ["notes.txt", "offboard.initdb"]]] as const) {
+      const theirs = join(root, name);
+      mkdirSync(theirs);
+      for (const file of files) writeFileSync(join(theirs, file), file === "notes.txt" ? "someone's\n" : "");
+      const refused = run(process.execPath, [script, "start", "--dir", theirs]);
+      expect([refused.status, readFileSync(join(theirs, "notes.txt"), "utf8")], name).toEqual([1, "someone's\n"]);
+    }
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 90_000);
+
+  it("leaves a folder alone whose Postgres runs, and whose block is gone, and says to stop it first", async () => {
+    const root = repository();
+    const script = join(root, "scripts/local-db.mjs");
+    const dir = join(root, "running");
+    expect(run(process.execPath, [script, "start", "--dir", dir]).status).toBe(0);
+    rmSync(join(dir, "offboard.env"));
+    const refused = run(process.execPath, [script, "start", "--dir", dir]);
+    expect([refused.status, refused.stderr.trim().split("\n").at(-1), existsSync(join(dir, "PG_VERSION"))]).toEqual([
+      1,
+      `${dir} has a Postgres running in it and no block, so it is left alone: stop it first, with pnpm db:stop --dir ${dir}.`,
+      true,
+    ]);
+    expect(tool(root, "stop", "--dir", dir).status).toBe(0);
+    expect(run(process.execPath, [script, "start", "--dir", dir]).status).toBe(0);
     expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
   }, 90_000);
 

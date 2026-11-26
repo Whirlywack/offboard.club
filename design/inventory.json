@@ -864,10 +864,10 @@
         "'Delete your account' → /welcome/leave."
       ],
       "phone_facts": [
-        "No sideways scroll.",
-        "The checkboxes are 20 x 20 px, inside labels of 311 x 157 px and 311 x 46 px that also tick them.",
-        "'Privacy and terms' (136.5 x 20) and 'Delete your account' (137.8 x 17.5) are links in running text.",
-        "13 px text: the step indicator's numbers and labels, and the footer."
+        "No sideways scroll, at 320 wide too, with a name of 56 letters.",
+        "The checkboxes are 28 x 28 px, inside labels of 358 x 177 px and 358 x 58 px that also tick them.",
+        "'Privacy and terms' (137 x 46) and 'Delete your account' (136 x 44) are links in running text, with room above and below to make them full-size targets.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [
         "Both boxes are marked required, so the browser stops the form itself and the site's own refusal beside a box ('To join, please tick the box accepting the house rules.') shows only if the browser's check is bypassed; it was not captured.",
@@ -929,8 +929,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "'Make one on Lichess' is a link in running text that wraps over two lines (258.7 x 40.8 px); 'Delete your account' 137.8 x 17.5 px.",
-        "13 px text: the step indicator and the footer."
+        "'Make one on Lichess' (139 x 44) and 'Delete your account' (136 x 44) are links in running text, with room above and below to make them full-size targets.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [
@@ -974,9 +974,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The Open to field's placeholder 'e.g. A coffee, mentoring, hearing about jobs' needs 333 px and the field has 261 px, so it is cut off.",
-        "'Join the Telegram group' is a link 346.5 x 26.3 px.",
-        "13 px text: the step indicator and the footer."
+        "'Join the Telegram group' is a link of 202.5 x 44 px on a line of its own.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [

@@ -1,7 +1,8 @@
 /*
- * Signing up: agreeing, connecting Lichess, the optional Profile, and deleting the account part-way. One grey plate
- * under the header, as the home page's first is: the steps and the heading, then what there is to do. On a phone they
- * stack; on a desktop the heading stands on the left and what there is to do on the right, up to the gutter.
+ * Signing up: agreeing, connecting Lichess and the optional Profile. One grey plate under the header, as the home
+ * page's first is: the steps and the heading, then what there is to do. On a phone they stack; on a desktop the heading
+ * stands on the left and what there is to do on the right, up to the gutter. Deleting the account part-way is laid out
+ * as Leaving the Club is (app/profile/profile.module.css).
  */
 
 /* One column, no wider than the screen whatever is in it */
@@ -119,6 +120,11 @@
   width: 100%;
 }
 
+/* A form after a line of its own (the agreements, the Profile) stands apart from it as its parts stand apart */
+.body > .text + form {
+  margin-top: 16px;
+}
+
 /* A line beside the action, in the small size */
 .note {
   color: var(--muted);
@@ -131,11 +137,6 @@
 .text a {
   padding-block: 12px;
   color: var(--ink);
-}
-
-/* A refusal is as wide as the action it is about */
-.body > [role="alert"] {
-  max-width: none;
 }
 
 /* Leaving instead, at the foot: apart from the action, never beside it */
@@ -151,6 +152,7 @@
   align-items: center;
   width: fit-content;
   min-height: var(--tap);
+  margin-top: 4px; /* its focus ring clear of the sentence */
   padding: 0;
   font-weight: 600;
 }
@@ -250,25 +252,6 @@
   .check input[type="checkbox"] {
     appearance: auto;
   }
-}
-
-/* ---------- Deleting the account part-way ---------- */
-
-.confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* Keeping as tall as deleting, which is a button */
-.confirm a {
-  min-height: 54px;
-}
-
-/* Keeping, once deleting has begun: no longer on offer, so dimmed as the working button is */
-.confirm a[aria-disabled="true"] {
-  opacity: 0.6;
-  pointer-events: none;
 }
 
 /* =========================================================

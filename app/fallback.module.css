@@ -37,11 +37,6 @@
   margin-top: 28px;
 }
 
-.actions a {
-  min-height: 54px;
-  padding-inline: 28px;
-}
-
 .reference {
   margin-top: 18px;
   color: var(--muted);

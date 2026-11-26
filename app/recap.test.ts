@@ -49,7 +49,7 @@ async function open(date: string) {
 
 async function list() {
   const page = RecapsPage();
-  const inner = page.props.children[2].props.children;
+  const inner = page.props.children[1].props.children;
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
 
@@ -80,7 +80,7 @@ beforeEach(() => {
 describe("a Recap", () => {
   it("shows the Matchday Leaderboard in Lichess's order with names, Companies of that night and points", async () => {
     const html = await open(DATE);
-    expect(html).toContain('<h1>Recap of <time dateTime="2026-11-29">Sunday, 29 November 2026</time></h1>');
+    expect(html).toMatch(/<h1[^>]*><em>Recap<\/em> of <time dateTime="2026-11-29">Sunday, 29 November 2026<\/time><\/h1>/);
     // The marked account is left out and everyone after it moves up. ana was at Vinted that night, wherever she is now.
     expect(rows(html)).toEqual([
       ["1", "Ana Petraitė", "Vinted (vinted.com)", "4.5"],
@@ -119,7 +119,9 @@ describe("a Recap", () => {
 
   it("shows nothing else about anyone: no email, photo, LinkedIn link, position or open-to line", async () => {
     const html = await open(DATE);
-    for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
+    for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee"]) expect(html).not.toContain(hidden);
+    // Its one picture is the Club's photograph of the queen over the fallen king, which needs no words.
+    expect([...html.matchAll(/<img [^>]*>/g)].map(([img]) => img)).toEqual([expect.stringMatching(/^<img alt="".* src="[^"]*queen-king\.webp/)]);
   });
 
   it("is not found for a Sunday with no ingested Matchday", async () => {
@@ -160,7 +162,7 @@ describe("a Recap", () => {
     );
     const html = await open(DATE);
     db.query.mockImplementation(real);
-    expect(html).toContain("<h1>Recap of");
+    expect(html).toMatch(/<h1[^>]*><em>Recap<\/em> of/);
     expect(html).not.toContain("Season 1");
     await settled();
     expect(recorded()).toEqual([{ route: "/recaps/[date]", kind: "page", reason: "the database couldn't be reached" }]);
@@ -385,9 +387,11 @@ describe("a Recap's Awards", () => {
     played("BENMATES", "ben", null, { status: "mate", plies: 21, winnerClockCentis: 9_000 });
     played("CORAWINS", "cora", "ana", { whiteRating: 1450, blackRating: 1500, winnerClockCentis: 4_000 });
 
+    // A visitor gets nothing under an Award, not even why its Game is not there.
     let html = await open(DATE);
     expect(html).not.toContain("Replay the Game");
     expect(html).not.toMatch(/BENMATES|CORAWINS/);
+    expect(html).not.toContain("has since left");
 
     asMember();
     html = await open(DATE);

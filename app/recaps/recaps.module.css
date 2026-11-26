@@ -1,84 +1,167 @@
-/* The list of Recaps and a single Recap. */
+/*
+ * The list of Recaps, a Recap and the page for a Sunday with none. A Recap is three plates: its date over the queen
+ * standing above the fallen king (grey, with grain), its Awards (black, awards.module.css), then where everyone finished
+ * (grey). The phone is composed first; the desktop at 900px, its two columns 3 to 9 as the Season Leaderboard's.
+ */
 
-/* The line under the list's heading sits closer to it than the page's other parts do to each other */
-.underTitle {
-  margin-top: calc(var(--space-3) - var(--space-6));
+/* ---------- The list of Recaps ---------- */
+
+.index {
+  padding: 40px var(--gutter) 64px;
 }
 
-/* The list: one full-width row per Matchday */
-.list {
-  list-style: none;
-  border-top: 1px solid var(--line);
+.index .indexTitle {
+  font-size: clamp(84px, 29vw, 128px); /* "Recaps" is 3em wide */
 }
 
-.list li {
-  border-bottom: 1px solid var(--line);
-}
-
-.list a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: 3.5rem;
-  padding-block: var(--space-3);
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-  text-decoration: none;
-  transition: color var(--duration-hover) ease;
-}
-
-.list a::after {
-  content: "→" / "";
-  font-family: var(--font-text);
-  color: var(--muted);
-  transition: transform var(--duration-hover) var(--ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .list a:hover::after {
-    transform: translateX(3px);
-    color: var(--ink);
-  }
-}
-
-.empty {
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 0 1px var(--line);
+/* Clear of the p's descender */
+.indexLede {
+  margin-top: 30px;
+  max-width: 30em;
   color: var(--muted);
 }
 
-/* A Recap */
-.recap {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
+.dates {
+  margin-top: 36px;
 }
+
+/* No Recaps yet: a line in the serif, where the list would start */
+.index .none {
+  margin-top: 40px;
+  font-size: 30px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+}
+
+.unread {
+  margin-top: 32px;
+}
+
+.index .more {
+  margin-top: 40px;
+}
+
+/* ---------- A Sunday with no Recap ---------- */
+
+.missing {
+  padding: 40px var(--gutter) 64px;
+}
+
+.missing .missingTitle {
+  font-size: clamp(52px, 15vw, 72px);
+  line-height: 0.92;
+}
+
+.missingLede {
+  margin-top: 22px;
+  max-width: 30em;
+  color: var(--muted);
+}
+
+.missing .more {
+  margin-top: 40px;
+}
+
+/* ---------- A Recap: the night's date over the queen and the fallen king ---------- */
+
+.head {
+  position: relative;
+  overflow: hidden;
+  padding: 30px var(--gutter) 0;
+}
+
+/* "Recap of", then the date on lines of its own, broken after the day: "September 2026", the longest month and year,
+   is 7.25em wide, which sets the size on a phone and the measure on a desktop */
+.head .title {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(38px, 12.4vw, 60px);
+  line-height: 0.9;
+}
+
+.title time {
+  display: block;
+}
+
+.night {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  margin-top: 22px;
+}
+
+/* Two small links, each a full-size target without spreading the lines */
+.night a {
+  display: inline-block;
+  margin: -12px 0;
+  padding: 12px 0;
+}
+
+/* The queen over the fallen king, cut out (720 x 430): at 0.5 on the phone, half its pixels on a 2x screen, under the
+   words with the pieces to the right and their long shadow running left. No stacking context between it and the grain. */
+.fallen {
+  --s: 0.5;
+  position: relative;
+  width: calc(720px * var(--s));
+  max-width: none;
+  height: calc(430px * var(--s));
+  margin: -12px 0 0 calc(100% - (665px + 8px) * var(--s));
+  mix-blend-mode: multiply;
+}
+
+/* When the database cannot be read there is no Recap to show, only this */
+.unreadRecap {
+  margin: 40px var(--gutter) 0;
+}
+
+/* ---------- A Recap: its Leaderboard ---------- */
 
 .board {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  padding: 56px var(--gutter) 40px;
+}
+
+.board .boardTitle {
+  margin-bottom: 22px;
+  font-size: 44px;
+  line-height: 0.95;
+}
+
+/* Nobody on it: a line in the serif, where the table would be */
+.board .nobody {
+  font-size: 30px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+}
+
+/* The note about Profiles, for anyone who is not a Member */
+.table + p {
+  margin-top: 20px;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
-.table th,
-.table td {
-  padding: var(--space-3) var(--space-2);
+.table thead th {
+  padding: 0 10px 10px 0;
+  border-bottom: 1px solid var(--ink);
+  color: var(--muted);
+  font: 600 11px/1.2 var(--font-text);
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+
+.table tbody td,
+.table tbody th {
+  padding: 13px 10px 12px 0;
   border-bottom: 1px solid var(--line);
+  font-weight: 400;
   text-align: left;
   vertical-align: baseline;
-}
-
-.table th:first-child,
-.table td:first-child {
-  padding-left: 0;
 }
 
 .table th:last-child,
@@ -87,121 +170,293 @@
   text-align: right;
 }
 
-.table thead th {
-  padding-top: 0;
+/* Rank */
+.table td:first-child {
+  width: 34px;
   color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  white-space: nowrap;
+  font-size: 15px;
 }
 
-.table tbody td:first-child {
-  width: 2rem;
-  color: var(--muted);
+/* Name: the whole cell is the link's target, however short the name. A long name breaks at its spaces and hyphens. On a
+   phone it has the larger share of the room a long Company would take. */
+.table thead th:nth-child(2) {
+  width: 40%;
 }
 
-/* Words wrap whole: a long name breaks at its spaces and hyphens, a domain stays in one piece */
 .table tbody th {
   position: relative;
-  font-weight: 600;
+  line-height: 1.3;
   overflow-wrap: break-word;
 }
 
-/* The whole name cell is the link's target, however short the name */
+.table tbody th a {
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
 .table tbody th a::before {
   content: "";
   position: absolute;
   inset: 0;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .table tbody th a:hover {
+    text-decoration: underline;
+  }
+}
+
+.table tbody th a:focus-visible {
+  outline: none;
+}
+
+.table tbody th a:focus-visible::before {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* Company, the domain kept in one piece on a line of its own */
 .table tbody td:nth-child(3) {
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: 13.5px;
+  line-height: 1.35;
   overflow-wrap: break-word;
 }
 
-.table tbody td:last-child {
-  font-weight: 600;
-}
-
-/* On a phone the domain gets its own line, so the four columns fit in 350px without breaking a word */
 .domain {
   display: block;
-  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
-@media (max-width: 39.99rem) {
-  .table th,
-  .table td {
-    padding-inline: 0.375rem;
+/* Points */
+.table td:last-child {
+  width: 52px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.table td.whole {
+  padding-right: 0.74em;
+}
+
+/* ---------- Where to go next, at the foot of each page ---------- */
+
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 26px;
+}
+
+.recap > .more {
+  padding: 8px var(--gutter) 72px;
+}
+
+.more a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.more svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  transition: transform 250ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .more a:hover span {
+    text-decoration: underline;
   }
 
-  .table thead th {
-    letter-spacing: 0.02em;
+  .more a:hover svg {
+    transform: translateX(4px);
   }
-
-  .table tbody td:first-child {
-    width: 1.5rem;
-  }
-}
-
-@media (min-width: 40rem) {
-  .table tbody td:first-child {
-    width: 3rem;
-  }
-
-  .domain {
-    display: inline;
-    font-size: inherit;
-  }
-}
-
-/* Rows settle in one after another the first time a Recap opens: a weekly page, so a little ceremony is fine */
-@keyframes settle {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-@keyframes settle-still {
-  from {
-    opacity: 0;
-  }
-}
-
-.table tbody tr {
-  animation: settle 280ms var(--ease-out) both;
-}
-
-.table tbody tr:nth-child(2) {
-  animation-delay: 40ms;
-}
-.table tbody tr:nth-child(3) {
-  animation-delay: 80ms;
-}
-.table tbody tr:nth-child(4) {
-  animation-delay: 120ms;
-}
-.table tbody tr:nth-child(5) {
-  animation-delay: 160ms;
-}
-.table tbody tr:nth-child(n + 6) {
-  animation-delay: 200ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .table tbody tr {
-    animation-name: settle-still;
+  .more svg {
+    transition: none;
   }
 
-  .list a:hover::after {
+  .more a:hover svg {
     transform: none;
   }
 }
 
-.lichessLink {
-  font-size: var(--text-sm);
+/* =========================================================
+   The desktop
+   ========================================================= */
+@media (min-width: 900px) {
+  /* The list: its name on the left, staying in view while the Sundays go by on the right */
+  .index {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto 1fr;
+    column-gap: 6vw;
+    align-items: start;
+    padding: 96px var(--gutter) 120px;
+  }
+
+  .indexHead {
+    position: sticky;
+    top: 40px;
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .index .indexTitle {
+    font-size: min(11vw, 190px);
+  }
+
+  .indexLede {
+    margin-top: 60px;
+    font-size: 18px;
+  }
+
+  .dates,
+  .index .none,
+  .unread {
+    grid-column: 2;
+    margin-top: 0;
+  }
+
+  .index .none {
+    font-size: min(3.6vw, 56px);
+  }
+
+  .index .more {
+    grid-column: 2;
+  }
+
+  .missing {
+    padding: 96px var(--gutter) 120px;
+  }
+
+  .missing .missingTitle {
+    max-width: 9em;
+    font-size: min(7.6vw, 132px);
+    line-height: 0.88;
+  }
+
+  .missingLede {
+    margin-top: 32px;
+    font-size: 18px;
+  }
+
+  .missing .more {
+    margin-top: 56px;
+  }
+
+  /* A Recap's first plate: the date on the left, the queen and the fallen king at their own size on the right, the
+     Matchday at the foot of the words */
+  .head {
+    display: flex;
+    flex-direction: column;
+    min-height: 560px;
+    padding: 84px var(--gutter) 52px;
+  }
+
+  .head .title {
+    max-width: 8em;
+    font-size: min(7.4vw, 124px);
+    line-height: 0.86;
+  }
+
+  .night {
+    margin-top: auto;
+    padding-top: 40px;
+    font-size: 18px;
+  }
+
+  /* At its own size from about 1300 wide, smaller below that to keep clear of the date; its pieces' right edge on the
+     gutter (they end 55px short of the file's) */
+  .fallen {
+    position: absolute;
+    right: calc(var(--gutter) - min(55px, 4.2vw));
+    bottom: 26px;
+    width: min(720px, 55vw);
+    height: auto;
+    margin: 0;
+  }
+
+  /* The Leaderboard: its name and the note on the left, the table on the right */
+  .board {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+    grid-template-rows: auto 1fr;
+    column-gap: 4vw;
+    align-items: start;
+    padding: 96px var(--gutter) 64px;
+  }
+
+  .board .boardTitle {
+    grid-column: 1;
+    margin: 0;
+    font-size: min(3.7vw, 60px);
+  }
+
+  .table,
+  .board .nobody {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  /* A line, not a second heading beside the plate's own */
+  .board .nobody {
+    padding-top: 6px;
+    font-size: min(2.5vw, 38px);
+  }
+
+  .table + p {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 26px;
+  }
+
+  .table thead th {
+    padding-bottom: 12px;
+  }
+
+  .table tbody td,
+  .table tbody th {
+    padding: 15px 16px 14px 0;
+  }
+
+  .table td:first-child {
+    width: 64px;
+    font-size: 16px;
+  }
+
+  .table thead th:nth-child(2) {
+    width: auto;
+  }
+
+  .table tbody th a {
+    font-size: 18px;
+  }
+
+  .table tbody td:nth-child(3) {
+    font-size: 14px;
+  }
+
+  .domain {
+    display: inline;
+  }
+
+  .table td:last-child {
+    width: 96px;
+    font-size: 21px;
+  }
+
+  .recap > .more {
+    padding: 0 var(--gutter) 96px;
+  }
 }

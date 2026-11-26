@@ -614,7 +614,10 @@ describe("after someone has left", () => {
 
   it("their Awards go to the next best Game, and one won against them keeps its winner", async () => {
     const html = await recap(FIRST);
-    const awards = [...html.matchAll(/<li[^>]*><h3[^>]*>(.*?)<\/h3><p[^>]*><a href="([^"]+)"/g)].map(([, title, href]) => [title, href]);
+    const awards = [...html.matchAll(/<li[^>]*><h3[^>]*>(.*?)<\/h3><div[^>]*><p[^>]*><a href="([^"]+)"/g)].map(([, title, href]) => [
+      title.replace(/<[^>]+>/g, ""),
+      href,
+    ]);
     expect(awards).toEqual([
       ["Biggest upset", "/profiles/cid"],
       ["Closest call", "/profiles/cid"],

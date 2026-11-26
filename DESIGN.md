@@ -246,3 +246,18 @@ How a photograph meets the page is most of this look.
 ## Adding to this file
 
 When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
+
+## Recaps
+
+The list of Recaps, a Recap and the page for a Sunday with none (`app/recaps/`). What they bring that another page may want:
+
+- **A Recap is three plates.** Its date over the queen standing above the fallen king (grey, grain): the night's result. Its Awards (black): the event of the page, so they come before the Leaderboard. Its Leaderboard (grey, flat). Then the foot links.
+- **The date as a headline** (`recaps.module.css`, `.title`): "*Recap* of", then the date on lines of its own, broken after the day. "September 2026", the longest month and year, is 7.25em, which sets the size on a phone (`clamp(38px, 12.4vw, 60px)`) and the measure on a desktop (`max-width: 8em` at `min(7.4vw, 124px)`), so the date never runs into the photograph.
+- **The queen over the fallen king at the head of a plate**: at 0.5 on a phone (360 x 215), under the words, the pieces to the right; on a desktop at the foot of the plate's right side, `min(720px, 55vw)` wide so that below about 1300 wide it shrinks rather than come near the date, its pieces' right edge on the gutter and its long shadow running back towards the words.
+- **An Award** (`awards.module.css`): a ruled row on black. What it was for in the serif with its first word in italic (46px; `min(4.2vw, 68px)` on a desktop), who won it in the serif at 30px (`min(2.8vw, 42px)`), not underlined but for the pointer, what they did in the grotesque in muted with its number in ink, 600. On a desktop the name of the Award and the rest sit side by side, 4 to 5.
+- **A disclosure that does a button's job** (`<summary>`, "Replay the Game"): the primary block, 54px, a chevron that turns a quarter when it is open. What it opens fills its column, with a 1px rule (`--line`) round it.
+- **The plate's name on the left, the content on the right** on a desktop, columns 3 to 9 with a 4vw gap, as the Season Leaderboard's mock-up has it: the Awards and the Leaderboard both.
+- **A line instead of an empty list** ("No Recaps yet.", "Nobody is on this Matchday's Leaderboard."): the serif at 30px on a phone, where the list would start.
+- **The list of Recaps**: the ruled list (`ui.ruled`) with each date in a `<time>`; on a desktop the page's name stays in view (`position: sticky`) while the dates go by on the right.
+- **Foot links** (`app/recaps/more.tsx`): the grotesque, 500 16px, each a 44px target with a 16px arrow that leans 4px forward under the pointer, as in the Season Leaderboard's mock-up.
+- **A table** (`recaps.module.css`, `.table`): the Season Leaderboard mock-up's: column heads as labels over a rule in ink, rows between 1px rules, rank in muted, the name in 500 with its whole cell the link, the points right-aligned at 19px 600 (21px), a whole number set in by 0.74em so its units line up with a half's.

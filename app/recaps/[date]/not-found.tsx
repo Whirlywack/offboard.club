@@ -1,5 +1,6 @@
-import Link from "next/link";
 import ui from "../../ui.module.css";
+import { More } from "../more";
+import styles from "../recaps.module.css";
 
 // For a Sunday with no ingested Matchday. This streams in after the page's App Shell, so the status stays 200 and
 // Next.js marks the page noindex. A 404 would need the database read before anything is sent, which Cache Components
@@ -8,15 +9,17 @@ import ui from "../../ui.module.css";
 // fetching data. Addresses that cannot be a Matchday's date at all get a real 404 from proxy.ts.
 export default function NoRecap() {
   return (
-    <main id="main" className={ui.page}>
-      <div className={ui.intro}>
-        <h1>No Recap for that Sunday</h1>
-        <p className={ui.lede}>There was no Matchday that day, or its results aren&apos;t in yet.</p>
-      </div>
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/recaps">All Recaps</Link>
-        <Link href="/">Home</Link>
-      </nav>
+    <main id="main" className={styles.missing}>
+      <h1 className={`${styles.missingTitle} ${ui.display}`}>
+        <em>No</em> Recap for that Sunday
+      </h1>
+      <p className={styles.missingLede}>There was no Matchday that day, or its results aren&apos;t in yet.</p>
+      <More
+        links={[
+          ["/recaps", "All Recaps"],
+          ["/", "Home"],
+        ]}
+      />
     </main>
   );
 }

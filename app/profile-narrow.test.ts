@@ -54,10 +54,11 @@ async function page() {
   return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><main>${html}</main>`;
 }
 
+// Chrome can take longer than a test's ten seconds to start on a busy machine, as capture's test allows for.
 let browser: Awaited<ReturnType<typeof chromium.launch>>;
 beforeAll(async () => {
   browser = await chromium.launch({ channel: "chrome" });
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });

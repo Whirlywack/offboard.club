@@ -184,33 +184,41 @@ describe.concurrent("a check", () => {
     );
   }, 60_000);
 
-  it("fails when any step does, runs the others, and says which failed, a skipped test among them", async ({ onTestFinished }) => {
+  it("fails when any step does, runs the others, and says which failed", async ({ onTestFinished }) => {
     const { root, log } = fakeCheckout(onTestFinished);
     const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "lint,build,seed" });
     expect(stdout).toContain("\npnpm check failed: lint, build, seeds, in ");
     expect(stdout).toContain("✓ typecheck\n");
     expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states");
     expect(status).toBe(1);
-    const skipped = await check(root, { FAKE_LOG: log, FAKE_FAIL: "skip" });
-    expect(skipped.stdout).toContain("\npnpm check failed: tests, in ");
-    expect(skipped.stdout).toContain("skipped, which a check may not: lib/a.test.ts > it works");
-    expect(skipped.status).toBe(1);
     expect(leftovers(root)).toEqual([]);
   }, 60_000);
 
-  it("fails the tests when vitest exits 1 though its report is clean, and when a test file is one vitest never runs", async ({ onTestFinished }) => {
+  it("fails when a test was skipped", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "skip" });
+    expect(stdout).toContain("\npnpm check failed: tests, in ");
+    expect(stdout).toContain("skipped, which a check may not: lib/a.test.ts > it works");
+    expect(status).toBe(1);
+  }, 60_000);
+
+  it("fails the tests when vitest exits 1 though its report is clean", async ({ onTestFinished }) => {
     const { root, log } = fakeCheckout(onTestFinished, NODE_FROM_PACKAGE);
-    const exit = await check(root, { FAKE_LOG: log, FAKE_FAIL: "exit" });
-    expect(exit.stdout).toContain("; CI runs Node.js 26.x and Postgres 18.\n");
-    expect(exit.stdout).toContain("\npnpm check failed: tests, in ");
-    expect(exit.stdout).toContain("✗ tests (");
-    expect(exit.stdout).toContain("  vitest exited 1\n");
-    expect(exit.status).toBe(1);
+    const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "exit" });
+    expect(stdout).toContain("; CI runs Node.js 26.x and Postgres 18.\n");
+    expect(stdout).toContain("\npnpm check failed: tests, in ");
+    expect(stdout).toContain("✗ tests (");
+    expect(stdout).toContain("  vitest exited 1\n");
+    expect(status).toBe(1);
+  }, 60_000);
+
+  it("fails the tests when a test file is one vitest never runs", async ({ onTestFinished }) => {
+    const { root, log } = fakeCheckout(onTestFinished);
     mkdirSync(join(root, "app"));
     writeFileSync(join(root, "app/page.test.tsx"), "// never run\n");
-    const tsx = await check(root, { FAKE_LOG: log });
-    expect(tsx.stdout).toContain("  never run, as vitest runs *.test.ts only: app/page.test.tsx\n");
-    expect(tsx.status).toBe(1);
+    const { status, stdout } = await check(root, { FAKE_LOG: log });
+    expect(stdout).toContain("  never run, as vitest runs *.test.ts only: app/page.test.tsx\n");
+    expect(status).toBe(1);
   }, 60_000);
 
   it("fails when a merged migration was edited, and runs nothing that needs a database it could not start", async ({ onTestFinished }) => {
@@ -266,13 +274,14 @@ describe.concurrent("a check", () => {
 
 describe("a test's own folder", () => {
   it("is short, and takes away those left by a test process that has gone, and no other", () => {
-    const gone = mkdtempSync("/tmp/offboard-test-999999-");
+    // Linux gives pids below 4194304 at most, macOS below 100000: none has this one.
+    const gone = mkdtempSync("/tmp/offboard-test-4194304-");
     // A number no process can have: kill refuses it, which says nothing of whether the folder's process has gone.
     const huge = mkdtempSync("/tmp/offboard-test-99999999999-");
     onTestFinished(() => rmSync(huge, { recursive: true, force: true }));
     const mine = shortFolder();
     onTestFinished(() => rmSync(mine, { recursive: true, force: true }));
-    expect(mine).toMatch(new RegExp(`^/private/tmp/offboard-test-${process.pid}-`));
+    expect(mine.startsWith(`${realpathSync("/tmp")}/offboard-test-${process.pid}-`)).toBe(true);
     expect(mine.length).toBeLessThan(48);
     expect(existsSync(mine)).toBe(true);
     expect(existsSync(gone)).toBe(false);

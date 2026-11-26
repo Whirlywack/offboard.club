@@ -300,13 +300,14 @@ const exec = (file: string, args: string[], env: NodeJS.ProcessEnv) =>
     child.on("close", (status) => done({ status, stdout, stderr }));
   });
 
-// Removed when the test that made it ends (`finished`, its own onTestFinished), passed or failed.
-function fakeCheckout(finished: (end: () => void) => void) {
+// Removed when the test that made it ends (`finished`, its own onTestFinished), passed or failed. With `typecheck`, the
+// package has a typecheck script, which guards then runs for each change.
+function fakeCheckout(finished: (end: () => void) => void, { typecheck = false } = {}) {
   const root = shortFolder();
   finished(() => rmSync(root, { recursive: true, force: true }));
   for (const dir of ["scripts", "lib", "app", "migrations", "tmp"]) mkdirSync(join(root, dir));
   for (const script of ["guards.mjs", "check.mjs", "local-db.mjs"]) copyFileSync(`scripts/${script}`, join(root, "scripts", script));
-  const scripts = Object.fromEntries(["test", "typecheck", "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
+  const scripts = Object.fromEntries(["test", ...(typecheck ? ["typecheck"] : []), "db:start", "db:stop"].map((name) => [name, `node fake.mjs ${name}`]));
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fake", private: true, scripts }));
   writeFileSync(join(root, "fake.mjs"), FAKE);
   writeFileSync(join(root, "lib/a.ts"), A);
@@ -404,7 +405,7 @@ describe.concurrent("a run of pnpm guards", () => {
   }, 60_000);
 
   it("calls broken, and runs no test for, a change that does not parse or that TypeScript refuses", async ({ onTestFinished }) => {
-    const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    const { guards, filters, left, AS_IT_WAS } = fakeCheckout(onTestFinished, { typecheck: true });
     const { status, stdout } = await guards(["lib/a.ts:6", "lib/a.ts:4", "--replace", '"two"', "2"]);
     expect(stdout).toContain("BROKEN    lib/a.ts:6\n         - }\n         lib/a.ts no longer parses: '}' expected.\n");
     expect(stdout).toContain(
@@ -443,7 +444,7 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);
 
-  it("runs the real-Postgres suites for every change with --pg, puts each file back before the next change, and exits 0 when every change went red", async ({ onTestFinished }) => {
+  it("runs the real-Postgres suites for every change with --pg", async ({ onTestFinished }) => {
     const { root, guards, runs, tests, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
     const { status, stdout } = await guards(["lib/b.ts:2", "--pg"]);
     // What db:start starts in the copy is recorded in the repository's own registry (ticket #58), and the tests are not given it.
@@ -456,13 +457,23 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(stdout).toContain(`GREEN     lib/b.ts:2\n         - if (n > 9) return 9;\n         no test noticed: 5 passed, ${POSTGRES}\n`);
     expect(status).toBe(1);
     expect(tests().every((run) => run.postgres)).toBe(true);
-    // Had lib/a.ts not been put back, the change to lib/b.ts after it would not have been green.
-    const both = await fakeCheckout(onTestFinished).guards(["lib/a.ts:3", "lib/b.ts:2"]);
-    expect(both.stdout).toContain("GREEN     lib/b.ts:2\n");
-    const red = await fakeCheckout(onTestFinished).guards(["lib/a.ts:3"]);
-    expect(red.stdout).toContain("1 of 1 changes went red.\n");
-    expect(red.status).toBe(0);
     expect(left()).toEqual(AS_IT_WAS);
+  }, 60_000);
+
+  it("puts each file back before the next change", async ({ onTestFinished }) => {
+    const { guards, left, AS_IT_WAS } = fakeCheckout(onTestFinished);
+    // Had lib/a.ts not been put back, the change to lib/b.ts after it would not have been green.
+    const { stdout } = await guards(["lib/a.ts:3", "lib/b.ts:2"]);
+    expect(stdout).toContain("RED       lib/a.ts:3\n");
+    expect(stdout).toContain("GREEN     lib/b.ts:2\n");
+    expect(left()).toEqual(AS_IT_WAS);
+  }, 60_000);
+
+  it("exits 0 when every change went red", async ({ onTestFinished }) => {
+    const { guards } = fakeCheckout(onTestFinished);
+    const { status, stdout } = await guards(["lib/a.ts:3"]);
+    expect(stdout).toContain("1 of 1 changes went red.\n");
+    expect(status).toBe(0);
   }, 60_000);
 
   it("gives the tests neither the caller's DATABASE_URL nor ALLOW_DB_TESTS, but a TMPDIR in its own folder, and refuses a DATABASE_URL not on this machine", async ({ onTestFinished }) => {

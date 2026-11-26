@@ -1,9 +1,11 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Fragment, type ReactNode } from "react";
-import { MemberCell, ProfilesNote } from "../leaderboard";
+import { MemberCell, MoreLinks, ProfilesNote, ScoreCell } from "../leaderboard";
 import board from "../leaderboards.module.css";
+import pieces from "../photos/row.webp";
 import { longDate } from "../recaps/dates";
 import ui from "../ui.module.css";
 import styles from "./seasons.module.css";
@@ -17,6 +19,13 @@ import { matchdayStart } from "@/lib/schedule";
 // year; the markup carries the whole date.
 const shortDate = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
+
+// Where to go from a Season's page, at the foot of its Leaderboard.
+const MORE: [string, string][] = [
+  ["/all-time", "All-time Leaderboard"],
+  ["/recaps", "Recaps"],
+  ["/", "Home"],
+];
 
 // The Season Leaderboard of a Season by number, or of the current one, for the two Season pages to put inside their
 // <Suspense>. A number with no Season, or one too far off to have a page, is not found; a database that cannot be read
@@ -39,29 +48,45 @@ export async function seasonLeaderboard(which: number | "current"): Promise<Reac
     viewerIsMember(route),
   ]);
   if (read === undefined)
-    return <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>;
+    return (
+      <div className={board.down}>
+        <p className={ui.alert}>This Leaderboard can&apos;t be shown right now. Please try again in a minute.</p>
+        <MoreLinks links={MORE} />
+      </div>
+    );
   if (!read.season) notFound();
   return <SeasonView season={read.season} played={read.played} member={member} now={now} />;
 }
 
+// The Season's number beside the six pieces, tallest to shortest, with where it stands and its champion; its
+// Leaderboard; then, in black, its six Matchdays and the other Seasons.
 function SeasonView({ season, played, member, now }: { season: Season; played: number[]; member: boolean; now: Date }) {
   const { number, matchdays, leaderboard, over, champions } = season;
   // How far the Season has gone: the latest of its Matchdays to have been ingested.
   const done = matchdays ? matchdays.findLastIndex((m) => m.ingested) + 1 : 0;
+  const others = played.some((n) => n !== number);
   return (
-    <article className={styles.season}>
-      <div className={ui.intro}>
-        <p className={ui.eyebrow}>Season Leaderboard</p>
-        <h1>Season {number}</h1>
-        <p className={ui.lede}>{progress(season, done, now)}</p>
+    <article>
+      <div className={`${styles.head} ${ui.grain}`}>
+        <h1 className={`${styles.title} ${ui.display}`}>
+          <em>Season</em> <span className={styles.number}>{number}</span>
+        </h1>
+        <div className={styles.row}>
+          <Image src={pieces} alt="" sizes="(min-width: 900px) min(80vw, 1376px), calc(121vw - 39px)" preload />
+        </div>
+        <div className={styles.standing}>
+          <p className={`${ui.caps} ${styles.label}`}>Season Leaderboard</p>
+          <p className={styles.lede}>{progress(season, done, now)}</p>
+        </div>
+        {over && champions.length > 0 && <Champions champions={champions} score={leaderboard[0].score} />}
       </div>
 
-      {over && champions.length > 0 && <Champions champions={champions} score={leaderboard[0].score} />}
-
       <section aria-labelledby="leaderboard" className={board.board}>
-        <h2 id="leaderboard">Leaderboard</h2>
+        <h2 id="leaderboard" className={ui.display}>
+          Leaderboard
+        </h2>
         {leaderboard.length === 0 ? (
-          <p className={`${board.empty} ${ui.arrive}`}>
+          <p className={board.empty}>
             {done === 0 ? "It fills in after the first Matchday." : "Nobody is on this Season's Leaderboard."}
           </p>
         ) : (
@@ -70,7 +95,7 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
               <tr>
                 <th scope="col">Rank</th>
                 <th scope="col">Name</th>
-                <th scope="col" className={board.number}>
+                <th scope="col" className={board.score}>
                   Score
                 </th>
                 <th scope="col" className={board.number}>
@@ -83,7 +108,7 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
                 <tr key={row.memberId}>
                   <td>{row.rank}</td>
                   <MemberCell member={row} />
-                  <td className={`${board.number} ${board.score}`}>{row.score}</td>
+                  <ScoreCell value={row.score} />
                   <td className={board.number}>{row.played}</td>
                 </tr>
               ))}
@@ -95,52 +120,67 @@ function SeasonView({ season, played, member, now }: { season: Season; played: n
           too, they share the rank.
         </p>
         {!member && leaderboard.length > 0 && <ProfilesNote />}
+        <MoreLinks links={MORE} />
       </section>
 
-      {matchdays && (
-        <section aria-labelledby="matchdays" className={styles.matchdaysSection}>
-          <h2 id="matchdays">The six Matchdays</h2>
-          <ol className={styles.matchdays} role="list">
-            {matchdays.map(({ date, ingested, missed }, i) => {
-              const inside = (
-                <>
-                  <span className={styles.ordinal}>Matchday {i + 1}</span>
-                  <time dateTime={date} className={styles.date}>
-                    {shortDate(date)}
-                  </time>
-                </>
-              );
-              return (
-                <li key={date}>
-                  {ingested ? (
-                    <Link href={`/recaps/${date}`} className={styles.played}>
-                      {inside}
-                      <span className="visually-hidden">, Recap</span>
-                    </Link>
-                  ) : (
-                    <span className={styles.toCome}>
-                      {inside}
-                      {missed && <span className={styles.missed}>Not played</span>}
+      {(matchdays || others) && (
+        <div className={`${styles.time} ${ui.black}`}>
+          {matchdays && (
+            <section aria-labelledby="matchdays" className={styles.matchdaysSection}>
+              <h2 id="matchdays" className={ui.display}>
+                <em>The</em> six Matchdays
+              </h2>
+              <ol className={styles.matchdays} role="list">
+                {matchdays.map(({ date, ingested, missed }, i) => {
+                  const ordinal = (
+                    <span className={styles.ordinal}>
+                      Matchday <span className={styles.numeral}>{i + 1}</span>
                     </span>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      )}
-
-      {played.some((n) => n !== number) && (
-        <nav aria-label="Seasons" className={styles.seasonsNav}>
-          <span className={styles.seasonsLabel} aria-hidden="true">
-            Seasons
-          </span>
-          {played.map((n) => (
-            <Link key={n} href={`/seasons/${n}`} aria-current={n === number ? "page" : undefined}>
-              Season {n}
-            </Link>
-          ))}
-        </nav>
+                  );
+                  const when = (
+                    <time dateTime={date} className={styles.date}>
+                      {shortDate(date)}
+                    </time>
+                  );
+                  return (
+                    <li key={date}>
+                      {ingested ? (
+                        <Link href={`/recaps/${date}`} className={styles.played}>
+                          {ordinal}
+                          <span className={styles.go}>
+                            {when}
+                            <span className="visually-hidden">, Recap</span>
+                            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                              <path d="M2 8h11M9 4l4 4-4 4" />
+                            </svg>
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className={styles.toCome}>
+                          {ordinal}
+                          {when}
+                          {missed && <span className={styles.missed}>Not played</span>}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          )}
+          {others && (
+            <nav aria-label="Seasons" className={styles.seasons}>
+              <span className={ui.caps} aria-hidden="true">
+                Seasons
+              </span>
+              {played.map((n) => (
+                <Link key={n} href={`/seasons/${n}`} aria-current={n === number ? "page" : undefined}>
+                  Season {n}
+                </Link>
+              ))}
+            </nav>
+          )}
+        </div>
       )}
     </article>
   );
@@ -176,11 +216,11 @@ function progress({ number, matchdays, over }: Season, done: number, now: Date):
 function Champions({ champions, score }: { champions: Member[]; score: number }) {
   const shared = champions.length > 1;
   return (
-    <section aria-labelledby="champion" className={`${styles.champion} ${ui.arrive}`}>
-      <h2 id="champion" className={styles.championLabel}>
+    <section aria-labelledby="champion" className={styles.champion}>
+      <h2 id="champion" className={ui.caps}>
         {shared ? "Season champions" : "Season champion"}
       </h2>
-      <p className={styles.championNames}>
+      <p className={`${styles.championNames} ${ui.display}`}>
         {champions.map((c, i) => (
           <Fragment key={c.memberId}>
             {i > 0 && (i === champions.length - 1 ? " and " : ", ")}

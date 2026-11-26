@@ -174,7 +174,7 @@ const whatIsNext = cache(async (): Promise<WhatIsNext | null> => {
     const underWay = member ? await lateToJoin(schedule!, now).catch(unreadable) : null;
     const tournament =
       underWay?.tournament ?? (member ? (await matchdayOn(next.date).catch(unreadable))?.lichessTournamentId : null);
-    const first = !underWay && next.season === 1 && next.number === 1;
+    const first = next.season === 1 && next.number === 1;
     return {
       label: underWay ? "Matchday under way" : "Next Matchday",
       start: (underWay ?? next).start,

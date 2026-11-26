@@ -48,9 +48,10 @@
   font-size: 14px;
 }
 
-/* The outline of a pawn, a place nobody holds (202 x 384): at half its pixels on a phone */
+/* The outline of a pawn, a place nobody holds (416 x 782, traced again from the pawn's cut-out with an even stroke):
+   at half its pixels or less, so it stays sharp on a 2x screen */
 .empty {
-  width: 101px;
+  width: 104px;
   height: auto;
   margin: 40px auto 0;
 }
@@ -91,7 +92,7 @@
   }
 
   .empty {
-    width: 202px;
+    width: 208px;
     margin: 0 auto;
   }
 

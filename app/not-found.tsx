@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import styles from "./fallback.module.css";
-import pawnEmpty from "./photos/pawn-empty.webp";
+import pawnOutline from "./photos/pawn-outline.webp";
 import { RuledLinks } from "./ruled-links";
 import ui from "./ui.module.css";
 
@@ -27,7 +27,7 @@ export default function NotFound() {
           />
         </nav>
       </div>
-      <Image className={styles.empty} src={pawnEmpty} alt="" />
+      <Image className={styles.empty} src={pawnOutline} alt="" sizes="(min-width: 900px) 208px, 104px" />
     </main>
   );
 }

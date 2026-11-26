@@ -213,11 +213,11 @@ How a photograph meets the page is most of this look.
   - the queen: the Club, at the top of the home page;
   - the lone pawn and its long shadow: "busy gets lonely";
   - sixteen pawns, standing or in outline: the Members Season 1 has and waits for;
-  - the row of six pieces: a Season's six Matchdays, once Season 1 has begun;
+  - the row of six pieces: a Season's six Matchdays, once Season 1 has begun, whether the next is coming up or under way (the label says which);
   - the white king on black: the chess;
   - the two knights: meeting people;
   - the queen over the fallen king: Leaderboards and their champion, and a page that failed;
-  - the outline of a pawn alone: a place nobody holds, the page that is not there.
+  - the outline of a pawn alone (`pawn-outline.webp`, traced again from the pawn's cut-out at twice the grid's outline, with an even stroke): a place nobody holds, the page that is not there.
 - **In the code.** Always the framework's image component with a static import, which gives it its width and height and a hashed address: `import king from "./photos/king.webp"`, then `<Image src={king} alt="" sizes="(min-width: 900px) 72vw, 512px" className={styles.king} />`. `sizes` says how wide it is shown at each width, in `px` or `vw`, and is left out only for a file smaller than any screen asks for (the pawns). Only the first screen's photograph takes `preload`. The browser is sent WebP at the width it needs, at quality 75; a photograph on a black backdrop takes `quality={90}`, as at 75 its grain breaks into blocks (`next.config.ts` allows those two).
 - **Never larger than it can hold.** A photograph's CSS width never passes its file's width: the 730px pawn is shown at 292px on a phone and at most 730px on a desktop; the 1800px queen at most about 1480px. On a phone, keep it within half its pixels where the composition allows, so it stays sharp on a 2x screen. Give a photograph `max-width: none` when it is positioned wider than its box, as the base `img` rule caps it at its box.
 - **A full photograph** (the queen, the king) sits in its plate with its edges feathered by a mask: two linear gradients on the queen, a radial one on the king. Its backdrop is the plate's own colour, so no edge shows.

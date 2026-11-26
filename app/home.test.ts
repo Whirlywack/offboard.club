@@ -191,24 +191,41 @@ describe("the home page as each reader meets it", () => {
   });
 });
 
-// Before Season 1, sixteen pawns: one standing for each Member who has joined, an outline for each place still open.
-describe("the pawns on the home page", () => {
-  const pawns = (html: string) => [...html.matchAll(/ src="[^"]*%2F(pawn|pawn-empty)\.webp[^"]*"/g)].map(([, file]) => file);
+// The Season block's picture (#77). Until Season 1's first Matchday, sixteen pawns: one standing for each Member who has
+// joined and an outline for each place still open, all sixteen standing once it is scheduled. After that, the six
+// pieces of a Season.
+describe("the picture in the Season block", () => {
+  const pictures = (html: string) =>
+    [...html.matchAll(/ src="[^"]*%2F(pawn|pawn-empty|row)\.webp[^"]*"/g)].map(([, file]) => file);
+  const standing = (n: number) => [...Array(n).fill("pawn"), ...Array(16 - n).fill("pawn-empty")];
 
-  it("stand for every Member who has joined, from none to fifteen, and the rest are outlines", async () => {
+  it("is a pawn standing for every Member who has joined, from none to sixteen, and outlines for the rest", async () => {
     seasons.clear();
     people.clear();
     for (let joined = 0; joined < 16; joined++) {
-      expect(pawns(await nextMatchday())).toEqual([...Array(joined).fill("pawn"), ...Array(16 - joined).fill("pawn-empty")]);
+      expect(pictures(await nextMatchday())).toEqual(standing(joined));
       addPerson(`joined-${joined}`);
     }
-    expect(pawns(await nextMatchday())).toEqual([]);
-    expect(await nextMatchday()).toContain("Next Matchday");
+    const scheduled = await nextMatchday();
+    expect(scheduled).toContain("Next Matchday");
+    expect(pictures(scheduled)).toEqual(standing(16));
   });
 
-  it("do not count anyone part-way through signing up", async () => {
+  it("does not count anyone part-way through signing up", async () => {
     seasons.clear();
-    expect(pawns(await nextMatchday())).toEqual(["pawn", ...Array(15).fill("pawn-empty")]);
+    expect(pictures(await nextMatchday())).toEqual(standing(1));
+  });
+
+  it("is the six pieces of a Season once Season 1's first Matchday is under way, and after it", async () => {
+    expect(pictures(await nextMatchday())).toEqual(standing(16));
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    vi.setSystemTime(new Date(`${DATE}T20:40:00+02:00`));
+    signedIn = "member";
+    expect(await nextMatchday()).toContain("Matchday under way");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
+    signedIn = null;
+    expect(await nextMatchday()).toContain("Sunday 6 December");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
   });
 });
 

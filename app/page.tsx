@@ -15,6 +15,7 @@ import pawnLong from "./photos/pawn-long.webp";
 import pawn from "./photos/pawn.webp";
 import queenKing from "./photos/queen-king.webp";
 import queen from "./photos/queen.webp";
+import row from "./photos/row.webp";
 import { RuledLinks } from "./ruled-links";
 import { SignIn } from "./sign-in";
 import { Masthead, Strip } from "./site";
@@ -148,9 +149,11 @@ export default function Home({ searchParams }: PageProps<"/">) {
 // Member is shown the Matchday under way for this long after its start.
 const LATE_JOIN_MS = 90 * 60_000;
 
+// `pawns` is how many of the sixteen pawns stand: the Members Season 1 has, until its first Matchday; null after it, when
+// the six pieces of a Season stand in their place.
 type WhatIsNext =
-  | { label: "Season 1"; signUps: number; needed: number }
-  | { label: "Next Matchday" | "Matchday under way"; start: Date; tournament: string | null };
+  | { label: "Season 1"; needed: number; pawns: number }
+  | { label: "Next Matchday" | "Matchday under way"; start: Date; tournament: string | null; pawns: number | null };
 
 // What is next, read once for each request for the strip and the Season block alike (React's cache): the next Matchday
 // once Season 1 is scheduled; until then, how many more sign-ups it is waiting for. A Member also gets the link to its
@@ -171,11 +174,17 @@ const whatIsNext = cache(async (): Promise<WhatIsNext | null> => {
     const underWay = member ? await lateToJoin(schedule!, now).catch(unreadable) : null;
     const tournament =
       underWay?.tournament ?? (member ? (await matchdayOn(next.date).catch(unreadable))?.lichessTournamentId : null);
-    return { label: underWay ? "Matchday under way" : "Next Matchday", start: (underWay ?? next).start, tournament: tournament ?? null };
+    const first = !underWay && next.season === 1 && next.number === 1;
+    return {
+      label: underWay ? "Matchday under way" : "Next Matchday",
+      start: (underWay ?? next).start,
+      tournament: tournament ?? null,
+      pawns: first ? MEMBERS_TO_START : null,
+    };
   }
   const signUps = next === null ? await countSignUps().catch(unreadable) : undefined;
   const needed = signUps === undefined ? null : signUpsNeeded(signUps);
-  return needed === null ? null : { label: "Season 1", signUps: signUps!, needed };
+  return needed === null ? null : { label: "Season 1", needed, pawns: signUps! };
 });
 
 // What is next, in the words the strip and the Season block both use.
@@ -192,58 +201,58 @@ function Value({ next }: { next: WhatIsNext }) {
   return <time dateTime={next.start.toISOString()}>{when}</time>;
 }
 
-// The strip at the top of the page: what the Season block says, in its words, leading down to it.
+// The strip at the top of the page: what the Season block says, in its words, leading down to it. A Matchday's time is
+// too long for one line on a phone, so it goes under its label there.
 async function WhatIsNextStrip() {
   const next = await whatIsNext();
   return (
     next && (
-      <Strip href="#season" label={next.label}>
+      <Strip href="#season" label={next.label} stacked={"start" in next}>
         <Value next={next} />
       </Strip>
     )
   );
 }
 
-// The Season block: what is next, and until Season 1 is scheduled, a pawn for each Member it has and an outline for
-// each it waits for. A pawn's file is smaller than any screen asks for, so it goes without `sizes`, and each of the two
-// is fetched once. Exported for app/home.test.ts.
+// The Season block: what is next, and its picture. Until Season 1's first Matchday, sixteen pawns: one standing for each
+// Member it has and an outline for each it waits for, all standing once it is scheduled. After it, the six pieces of a
+// Season, tallest to shortest. A pawn's file is smaller than any screen asks for, so it goes without `sizes`, and each of
+// the two is fetched once. On a phone the picture comes between the time and what follows it. Exported for
+// app/home.test.ts.
 export async function NextMatchday() {
   const next = await whatIsNext();
   if (!next) return null;
-  if ("needed" in next)
-    return (
-      <>
-        <div className={styles.left}>
-          <p className={`${ui.caps} ${styles.label}`}>{next.label}</p>
-          <p className={`${styles.count} ${ui.display}`}>
-            <Value next={next} />
-          </p>
+  const standing = next.pawns;
+  return (
+    <>
+      <div className={styles.left}>
+        <p className={`${ui.caps} ${styles.label}`}>{next.label}</p>
+        <p className={`${styles.count} ${ui.display}`}>
+          <Value next={next} />
+        </p>
+        {"needed" in next ? (
           <p className={styles.starts}>It starts once there are sixteen of us, on the first Sunday at least a week later.</p>
-        </div>
+        ) : next.label === "Matchday under way" ? (
+          <p className={styles.starts}>Lichess lets you join until round 3 starts.</p>
+        ) : null}
+        {"tournament" in next && next.tournament && (
+          <p className={styles.statusLink}>
+            <ExternalLink href={lichessSwissUrl(next.tournament)}>Join this Matchday on Lichess</ExternalLink>
+          </p>
+        )}
+      </div>
+      {standing === null ? (
+        <Image className={styles.row} src={row} alt="" sizes="(min-width: 900px) 44vw, 100vw" />
+      ) : (
         <ol className={styles.pawns} aria-hidden="true">
           {Array.from({ length: MEMBERS_TO_START }, (_, place) => (
             <li key={place}>
-              <Image src={place < next.signUps ? pawn : pawnEmpty} alt="" />
+              <Image src={place < standing ? pawn : pawnEmpty} alt="" />
             </li>
           ))}
         </ol>
-      </>
-    );
-  return (
-    <div className={styles.left}>
-      <p className={`${ui.caps} ${styles.label}`}>{next.label}</p>
-      <p className={`${styles.count} ${ui.display}`}>
-        <Value next={next} />
-      </p>
-      {next.label === "Matchday under way" ? (
-        <p className={styles.starts}>Lichess lets you join until round 3 starts.</p>
-      ) : null}
-      {next.tournament && (
-        <p className={styles.statusLink}>
-          <ExternalLink href={lichessSwissUrl(next.tournament)}>Join this Matchday on Lichess</ExternalLink>
-        </p>
       )}
-    </div>
+    </>
   );
 }
 
@@ -270,7 +279,7 @@ export async function SeasonChampions() {
   const season = <Link href={`/seasons/${named.season}`}>Season {named.season}</Link>;
   return (
     <p className={styles.champion}>
-      <span className={ui.marker} aria-hidden="true" />
+      <span className={styles.mark} aria-hidden="true" />
       <span>
         {named.champions.length > 1 ? (
           <>
@@ -321,14 +330,14 @@ export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">
       <div className={styles.who}>
         <Avatar name={name} src={image ?? null} size="small" />
         <p>
-          <span className={styles.whoLabel}>Signed in as</span>
+          <span className={`${ui.caps} ${styles.whoLabel}`}>Signed in as</span>
           <span className={styles.whoName}>{name}</span>
         </p>
         <form action={signOut} className={styles.signOut}>
           <button>Sign out</button>
         </form>
       </div>
-      <div className={ui.actions}>
+      <div className={styles.actions}>
         {unfinished ? (
           <Link className={ui.button} href={mustWelcome(session.user) ? "/welcome" : "/welcome/lichess"}>
             Finish signing up
@@ -345,7 +354,7 @@ export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">
         )}
       </div>
       {invite && (
-        <p className={ui.small}>
+        <p className={styles.telegram}>
           <ExternalLink href={invite}>Telegram group</ExternalLink>
         </p>
       )}

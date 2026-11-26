@@ -46,6 +46,26 @@
   outline-offset: -5px;
 }
 
+/* A strip whose text is too long for a phone's line: the label and its mark on the first line, the text under the
+   label, the arrow beside both */
+@media (max-width: 479px) {
+  .stacked {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 3px 12px;
+    padding-block: 10px;
+  }
+
+  .stacked .stripText {
+    grid-area: 2 / 2;
+  }
+
+  .stacked svg {
+    grid-area: 1 / 3 / span 2;
+  }
+}
+
 /* The header: the name on the left, the three Leaderboard pages on the right */
 .masthead {
   position: relative;

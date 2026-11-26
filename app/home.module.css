@@ -244,9 +244,10 @@
   text-underline-offset: 0.22em;
 }
 
-.signOut button:hover:not(:disabled) {
-  background: transparent;
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .signOut button:hover {
+    color: var(--ink);
+  }
 }
 
 /* Two blocks side by side, the same height as the button to sign in; one alone takes the width */
@@ -254,10 +255,6 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-}
-
-.actions a {
-  min-height: 54px;
 }
 
 .actions a:only-child {
@@ -564,10 +561,6 @@
   .actions {
     display: flex;
     gap: 12px;
-  }
-
-  .actions a {
-    padding-inline: 28px;
   }
 
   /* With the database down, the way to sign in takes the whole row */

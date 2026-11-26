@@ -217,8 +217,10 @@ button {
   transition: background-color var(--duration-hover) var(--ease-out);
 }
 
+/* No more specific than `button` itself, so that a button with a class of its own (ui.quiet, a text button) keeps its
+   own background under the pointer rather than taking the ink one */
 @media (hover: hover) and (pointer: fine) {
-  button:hover:not(:disabled) {
+  button:where(:hover:not(:disabled)) {
     background: var(--button-hover);
   }
 }

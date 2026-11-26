@@ -12,7 +12,7 @@
 //   on it. Nothing is created unless that look succeeded.
 
 import { matchdayOn, registerTournament } from "./matchdays";
-import { createSwiss, teamSwissNamed, timeLimit, type Swiss } from "./lichess";
+import { createSwiss, limitBy, NO_TIME_LEFT, teamSwissNamed, type Swiss } from "./lichess";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
 import { organiserToken, refusedPermission } from "./organiser-lichess";
 import { sweepTournaments } from "./reschedule";
@@ -49,16 +49,19 @@ export const matchdayTournament = ({ date, start }: Pick<Matchday, "date" | "sta
 
 // One run of the job at `now`: what it did and why. Whatever that was, the run then cancels on Lichess any tournament a
 // change to the schedule has left without a Matchday (lib/reschedule.ts), including one this job recorded while the
-// change was being made. Throws only if the database cannot record the run.
-export const createUpcomingMatchday = (now: Date) =>
-  runJob(JOB, async () => {
-    const run = await createIfDue(now);
-    const cancelled = await sweepTournaments(now);
+// change was being made. Both give up on Lichess JOB_DEADLINE_MS after the run's first line. Throws only if the
+// database cannot record the run.
+export const createUpcomingMatchday = (now: Date) => {
+  const by = Date.now() + JOB_DEADLINE_MS;
+  return runJob(JOB, async () => {
+    const run = await createIfDue(now, by);
+    const cancelled = await sweepTournaments(now, by);
     if (cancelled.length === 0) return run;
     return { ...run, outcome: run.outcome === "failed" ? "failed" : "done", detail: [run.detail, ...cancelled].join(" ") };
   });
+};
 
-async function createIfDue(now: Date): Promise<JobRun> {
+async function createIfDue(now: Date, by: number): Promise<JobRun> {
   const next = await upcomingMatchday(now);
   if (!next) return skipped("No Matchday is scheduled, so there is nothing to create.");
   const { date, start } = next;
@@ -73,7 +76,9 @@ async function createIfDue(now: Date): Promise<JobRun> {
   const permission = await organiserToken(now);
   if ("problem" in permission) return cannot(permission.problem);
 
-  const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 1000} s`);
+  // The same words however long the run's reads took, so that a failure that stands is recorded once (runJob).
+  const deadline = limitBy(by, Infinity, `Lichess didn't answer within the run's ${JOB_DEADLINE_MS / 1000} s`);
+  if (!deadline) return cannot(NO_TIME_LEFT);
   const signal = deadline.signal;
   let made: Swiss | null = null;
   try {

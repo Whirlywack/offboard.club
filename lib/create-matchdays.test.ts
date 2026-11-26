@@ -4,8 +4,8 @@
 // connected beforehand the way the Organiser connects it; everything else is the app's own code.
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GET as cronRequest } from "@/app/api/jobs/create-matchdays/route";
-import { addPerson, db, jobFailures, matchdays, organiserLichess, scheduledJobs, seasons, skippedSundays, resetDb } from "@/lib/fake-db";
+import { GET as cronRequest, maxDuration } from "@/app/api/jobs/create-matchdays/route";
+import { addPerson, db, jobFailures, matchdays, organiserLichess, scheduledJobs, seasons, skippedSundays, resetDb, tournamentCancellations } from "@/lib/fake-db";
 import { createFakeLichess, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 import { createUpcomingMatchday, JOB } from "./create-matchdays";
 import { lastFailure } from "./jobs";
@@ -419,6 +419,86 @@ describe("failures", () => {
     await runAt(DUE);
     expect(jobFailures.size).toBe(0);
     expect(await lastFailure()).toBeNull();
+  });
+});
+
+describe("the run's time", () => {
+  const cannot = (why: string) => ({ outcome: "failed", detail: `The Matchday of ${DATE} could not be created: ${why}`, matchdayDate: DATE });
+
+  // A run at `at`, DUE unless told otherwise. A tournament is kept to cancel by hand for the week off, 10 January, still to come, which the run asks
+  // Lichess again to cancel. The run's first statement, its hold on the job, waits `hold` ms, and the one that records
+  // the run `record` ms, as for a connection to a database tried twice (lib/db.ts). Lichess is rate-limiting: each
+  // request answers 429 after 25 s, and after the minute's wait, 25 s later, the team's tournaments, or never anything
+  // else. What the run did, when it ended from its first line, and each request Lichess was sent.
+  async function slowRun(hold: number, record: number, at = DUE) {
+    vi.useFakeTimers({ now: at, toFake: ["Date", "setTimeout", "clearTimeout"] });
+    lichess.now = () => at.getTime();
+    tournamentCancellations.set("WeekOff1", { lichessTournamentId: "WeekOff1", date: "2027-01-10", problem: "kept" });
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      const wait = sql.startsWith(`insert into "scheduledJob"`) ? hold : sql.startsWith(`update "scheduledJob"`) ? record : 0;
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      return fakeQuery(sql, params);
+    });
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
+      const key = `${init.method ?? "GET"} ${new URL(String(input)).pathname}`;
+      const again = asked.includes(key);
+      asked.push(key);
+      await new Promise((resolve, reject) => {
+        if (!again || key.startsWith("GET")) setTimeout(resolve, 25_000);
+        init.signal!.addEventListener("abort", () => reject(init.signal!.reason));
+      });
+      return again ? lichess.fetch(input, init) : new Response(null, { status: 429 });
+    });
+    let ended = 0;
+    const running = createUpcomingMatchday(at).then((run) => ((ended = Date.now() - at.getTime()), run));
+    await vi.advanceTimersByTimeAsync(600_000);
+    const run = await running;
+    vi.useRealTimers();
+    return { run, ended, asked };
+  }
+
+  it("gives up on Lichess 240 s after its first line, the sweep's cancelling included, so that it is recorded inside its 300 s", async () => {
+    // The hold takes until 20 s; the look for an earlier tournament until 130 s; the creation is given up at 240 s.
+    const { run, ended, asked } = await slowRun(20_000, 20_000);
+    expect(run).toEqual(cannot("Lichess didn't answer within the run's 240 s."));
+    // The sweep had no time left, so Lichess was asked nothing more, and the tournament is kept, saying so.
+    const [look, create] = [`GET /api/team/${TEAM}/swiss`, `POST /api/swiss/new/${TEAM}`];
+    expect(asked).toEqual([look, look, create, create]);
+    expect(tournamentCancellations.get("WeekOff1")?.problem).toBe("There was no time left to ask Lichess.");
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: run.detail, lockedBy: null });
+    expect(ended).toBe(260_000);
+    expect(ended).toBeLessThanOrEqual(maxDuration * 1000);
+  });
+
+  it("asks Lichess nothing once the run's 240 s have gone, and says so", async () => {
+    const { run, asked } = await slowRun(241_000, 0);
+    expect(run).toEqual(cannot("There was no time left to ask Lichess."));
+    expect(asked).toEqual([]);
+    expect(scheduledJobs.get(JOB)?.lastDetail).toBe(run.detail);
+  });
+
+  it("records a failure that stands once, however long each hourly run's reads took", async () => {
+    // Each run's hold takes 16 s or more, so that the run's 240 s are up before a request's own 30 s.
+    const details: string[] = [];
+    for (const [hour, hold] of [[0, 16_000], [1, 18_000], [2, 20_000]])
+      details.push((await slowRun(hold, 0, new Date(DUE.getTime() + hour * 3_600_000))).run.detail);
+    expect(details).toEqual(Array(3).fill(cannot("Lichess didn't answer within the run's 240 s.").detail));
+    expect(jobFailures.size).toBe(1);
+  });
+
+  it("gives up on cancelling after 25 s, however much of the run is left", async () => {
+    // Its Matchday is more than six days away, so the run creates nothing; Lichess never answers.
+    vi.useFakeTimers({ now: DUE, toFake: ["Date", "setTimeout", "clearTimeout"] });
+    tournamentCancellations.set("WeekOff1", { lichessTournamentId: "WeekOff1", date: "2027-01-10", problem: "kept" });
+    vi.stubGlobal("fetch", (_: unknown, init: RequestInit) => new Promise((__, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
+    let ended = 0;
+    const running = createUpcomingMatchday(new Date(START.getTime() - SIX_DAYS - 1)).then((run) => ((ended = Date.now() - DUE.getTime()), run));
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect((await running).outcome).toBe("skipped");
+    vi.useRealTimers();
+    expect(tournamentCancellations.get("WeekOff1")?.problem).toBe("Lichess took more than 25 s.");
+    expect(ended).toBe(25_000);
   });
 });
 

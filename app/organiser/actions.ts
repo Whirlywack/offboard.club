@@ -25,9 +25,9 @@ export async function connectOrganiserLichess(): Promise<void> {
 // A Lichess id is at most 30 characters; anything longer names no account the site could have kept.
 const LICHESS_ID_MAX = 30;
 
-// "Done" under an account on the Organiser page's list of people to remove from the Lichess team by hand: the
-// Organiser has removed it on Lichess, so the site forgets it. Anyone but the Organiser is not found, and nothing is
-// forgotten.
+// "Done" under an account the Organiser page keeps for the Organiser, to remove from the Lichess team by hand or whose
+// Member to ask to connect it again: the Organiser has dealt with it, so the site forgets it. Anyone but the Organiser
+// is not found, and nothing is forgotten.
 export async function teamRemovalDone(form: FormData): Promise<void> {
   await requireOrganiser();
   const lichessId = form.get("lichessId");

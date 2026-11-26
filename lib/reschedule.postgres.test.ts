@@ -1,10 +1,14 @@
+import type { AsyncLocalStorage } from "node:async_hooks";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import type pg from "pg";
+import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeLichess, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
+import { waitingForLock } from "@/lib/fixtures/waiting-for-lock";
 import { finishOrganiserConnection, startOrganiserConnection } from "./organiser-lichess";
-import { changeSeasonStart, forgetTournamentCancellation, skipMatchday, tournamentCancellations } from "./reschedule";
+import { changeSeasonStart, forgetTournamentCancellation, skipMatchday, tournamentCancellations, type Said } from "./reschedule";
+import { postgresStore, readSchedule, seasonDates } from "./seasons";
 
 // The Organiser's changes to the schedule with their real SQL against the database in DATABASE_URL, inside one
 // transaction that is always rolled back, so nothing it does is kept: which tournaments a change leaves without a
@@ -16,23 +20,32 @@ import { changeSeasonStart, forgetTournamentCancellation, skipMatchday, tourname
 // before seeding (once that one is seeded, a second from `pnpm db:start --dir .local-db-tests`), with that database's
 // address:
 // ALLOW_DB_TESTS=1 DATABASE_URL=<that address> pnpm vitest run lib/reschedule.postgres.test.ts
+//
+// Two changes at once need connections of their own, which see what the other commits, and the schedule's tables are the
+// whole database's, which other suites empty in their own transactions: that case makes a database of its own on the
+// same server, migrates it with scripts/migrate.mjs, and drops it again.
 vi.mock("@/lib/db", async () => {
+  const { AsyncLocalStorage } = await import("node:async_hooks");
   const { default: pg } = await import("pg");
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   const inner: Record<string, string> = { begin: "savepoint change", commit: "release savepoint change", rollback: "rollback to savepoint change" };
+  // The connection the app's statements go to, transactions and all: the test's transaction, unless a case runs them on
+  // one of its own.
+  const on = new AsyncLocalStorage<pg.Client>();
   // What a test does just before each statement the app sends.
   const hooks = { before: async (sql: string) => void sql };
   // Nothing the app sends may end the test's transaction.
   const query = async (sql: string, params?: unknown[]) => {
-    if (/^\s*(begin|start|commit|end|rollback|abort)\b/i.test(sql)) throw new Error(`refused inside the test's transaction: ${sql}`);
+    const own = on.getStore();
+    if (!own && /^\s*(begin|start|commit|end|rollback|abort)\b/i.test(sql)) throw new Error(`refused inside the test's transaction: ${sql}`);
     await hooks.before(sql.replace(/\s+/g, " ").trim());
-    return client.query(sql, params);
+    return (own ?? client).query(sql, params);
   };
   const connect = async () => ({
-    query: (sql: string, params?: unknown[]) => (Object.hasOwn(inner, sql) ? client.query(inner[sql]) : query(sql, params)),
+    query: (sql: string, params?: unknown[]) => (!on.getStore() && Object.hasOwn(inner, sql) ? client.query(inner[sql]) : query(sql, params)),
     release: () => {},
   });
-  return { db: { client, hooks, query, connect } };
+  return { db: { client, hooks, on, query, connect } };
 });
 
 const ORGANISER = `test-organiser-${randomBytes(6).toString("hex")}`;
@@ -195,4 +208,48 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       await run("rollback to savepoint racing");
     }
   });
+});
+
+describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("two changes to the schedule at once in Postgres", () => {
+  const { on, hooks } = db as unknown as { on: AsyncLocalStorage<pg.Client>; hooks: { before: (sql: string) => Promise<void> } };
+
+  // Each allowed alone, made by two requests from the Organiser page, each in its own transaction on its own connection:
+  // skipping 3 January, which makes Season 1, from 6 December, end on 17 January; and starting Season 2 on 17 January.
+  // The skip, once it holds whatever its first statement takes, lets the other start, and waits just before it commits
+  // until the other waits for it or has finished.
+  it("lets one wait for the other, which then finds the schedule as the first left it", async () => {
+    const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await admin.connect();
+    const name = `offboard_schedule_test_${randomBytes(6).toString("hex")}`;
+    const url = new URL(process.env.DATABASE_URL!);
+    url.pathname = `/${name}`;
+    await admin.query(`create database ${name}`);
+    const [one, two] = [0, 1].map(() => new pg.Client({ connectionString: url.toString() }));
+    try {
+      const migrated = spawnSync(process.execPath, ["scripts/migrate.mjs"], { env: { ...process.env, DATABASE_URL: url.toString() }, encoding: "utf8" });
+      if (migrated.status !== 0) throw new Error(migrated.stderr);
+      await Promise.all([one.connect(), two.connect()]);
+      await one.query(`insert into "season" ("number", "start") values (1, '2026-12-06')`);
+      const { rows } = await two.query<{ pid: number }>(`select pg_backend_pid() as pid`);
+      let starting: Promise<Said> | undefined;
+      let sent = 0;
+      hooks.before = async (sql) => {
+        if (on.getStore() !== one) return;
+        if (++sent === 3) starting = on.run(two, () => changeSeasonStart(2, "2027-01-17", NOW));
+        if (sql === "commit") await waitingForLock(admin, rows[0].pid, starting);
+      };
+      expect(await on.run(one, () => skipMatchday("2027-01-03", NOW))).toEqual({
+        text: "Sunday 3 January is skipped, so Season 1 now ends on Sunday 17 January.",
+        problem: false,
+      });
+      expect(await starting).toEqual({ text: "Season 2 would start before Season 1 has finished.", problem: true });
+      const schedule = await readSchedule(NOW, postgresStore(one));
+      expect([seasonDates(schedule, 1)?.at(-1), seasonDates(schedule, 2)?.[0]]).toEqual(["2027-01-17", "2027-01-31"]);
+    } finally {
+      hooks.before = async () => {};
+      await Promise.all([one.end(), two.end()]);
+      await admin.query(`drop database ${name} with (force)`);
+      await admin.end();
+    }
+  }, 30_000);
 });

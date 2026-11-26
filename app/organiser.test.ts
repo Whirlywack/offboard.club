@@ -389,7 +389,7 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(lichess.calls).toEqual([]);
   });
 
-  it("revokes a token it does not keep within 295 s of the callback's start, however long reading the session took", async () => {
+  it("revokes a token it does not keep within 270 s of the callback's start, however long reading the session took", async () => {
     vi.useFakeTimers();
     const back = await approveOnLichess(await pressConnect(), "boss");
     // Reading the session takes 20 s, as when the database has to be tried twice (lib/db.ts). Each Lichess request, its

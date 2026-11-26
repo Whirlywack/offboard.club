@@ -842,16 +842,18 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
 
   // removeMember, with what Postgres does by the foreign keys onto "user": their results and the Organiser's permission
   // they connected go with them (on delete cascade), and their side of each Game empties (on delete set null). Their
-  // sessions and account rows would go too; there are none here.
-  [`delete from "user" where id = $1`]: (id) => {
-    if (!people.delete(id)) return answer([], 0);
+  // sessions and account rows would go too; there are none here. Answers the Lichess account they had as they went.
+  [`delete from "user" where id = $1 returning "lichessId"`]: (id) => {
+    const person = people.get(id);
+    if (!person) return answer();
+    people.delete(id);
     for (const [key, result] of results) if (result.userId === id) results.delete(key);
     for (const game of games.values()) {
       if (game.whiteId === id) game.whiteId = null;
       if (game.blackId === id) game.blackId = null;
     }
     for (const [key, row] of organiserLichess) if (row.userId === id) organiserLichess.delete(key);
-    return answer([], 1);
+    return answer([{ lichessId: person.lichessId }]);
   },
 
   // keepForOrganiser, and saveConnection when nobody was there: an account the site could not remove from the Lichess
@@ -863,15 +865,28 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
       return answer([], 1);
     },
 
-  // teamRemovals: the oldest first.
-  [`select "lichessId", "problem" from "teamRemoval" order by "at", "lichessId"`]: () =>
-    answer(
-      [...teamRemovals.values()]
-        .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.lichessId < b.lichessId ? -1 : 1))
-        .map(({ lichessId, problem }) => ({ lichessId, problem })),
-    ),
+  // removedFromTeam: an account Lichess has removed from the team, kept once, and only while someone has it. Nothing
+  // equals null, so no account is anyone's.
+  [`insert into "teamRemoval" ("lichessId", "problem") select $1, $2 where exists (select 1 from "user" where "lichessId" = $1) on conflict ("lichessId") do update set "at" = now(), "problem" = excluded."problem"`]:
+    (lichessId, problem) => {
+      if (lichessId === null || ![...people.values()].some((p) => p.lichessId === lichessId)) return answer([], 0);
+      teamRemovals.set(lichessId, { lichessId, at: new Date(), problem: String(problem) });
+      return answer([], 1);
+    },
 
-  // teamRemovalDone
+  // teamRemovals: the oldest first, each with the name of the Member who has the account, if any.
+  [`select r."lichessId", r."problem", m.name as "heldBy" from "teamRemoval" r left join (select name, "lichessId" from "user" where "publicDisplayConsentAt" is not null and "houseRulesAcceptedAt" is not null and "lichessId" is not null) m on m."lichessId" = r."lichessId" order by r."at", r."lichessId"`]:
+    () =>
+      answer(
+        [...teamRemovals.values()]
+          .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.lichessId < b.lichessId ? -1 : 1))
+          .map(({ lichessId, problem }) => {
+            const holder = [...people.values()].find((p) => isMember(p) && p.lichessId === lichessId);
+            return { lichessId, problem, heldBy: holder?.name ?? null };
+          }),
+      ),
+
+  // forgetTeamRemoval, and removedFromTeam
   [`delete from "teamRemoval" where "lichessId" = $1`]: (lichessId) => answer([], teamRemovals.delete(lichessId) ? 1 : 0),
 
   // membersToRemove: every Member but the one given, in no order, as Postgres gives them without "order by": here the
@@ -891,11 +906,15 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
   [`select to_char("date", 'YYYY-MM-DD') as "date", "lichessTournamentId" from "matchday"`]: () =>
     answer([...matchdays.values()].map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId }))),
 
+  // changeSchedule's lock, held until its transaction ends: here every transaction already holds back every other.
+  [`select pg_advisory_xact_lock(16)`]: () => answer([{}]),
+
   // strand: a tournament cleared from its Matchday, only while the Matchday still has it and no results. A Matchday
-  // with results or Games cannot go, as their foreign keys require.
+  // with results or Games cannot go, as their foreign keys require. Nothing equals null, so one given no tournament
+  // matches no Matchday.
   [`delete from "matchday" where "date" = $1 and "lichessTournamentId" = $2 and "ingestedAt" is null`]: (date, id) => {
     const row = matchdays.get(date);
-    if (!row || row.lichessTournamentId !== id || row.ingestedAt !== null) return answer([], 0);
+    if (!row || id === null || row.lichessTournamentId !== id || row.ingestedAt !== null) return answer([], 0);
     if ([...results.values()].some((r) => r.matchdayDate === date)) throw violation("23503", "matchdayResult_matchdayDate_fkey");
     if ([...games.values()].some((g) => g.matchdayDate === date)) throw violation("23503", "game_matchdayDate_fkey");
     matchdays.delete(date);

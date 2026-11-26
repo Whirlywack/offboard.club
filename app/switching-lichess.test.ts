@@ -12,7 +12,8 @@ import { addPerson, db, organiserLichess, people, resetDb, teamRemovals } from "
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
-import { GET as comeBackFromLichess } from "./api/lichess/callback/route";
+import { GET as comeBackFromLichess, maxDuration } from "./api/lichess/callback/route";
+import { removeFromClub, teamRemovalDone } from "./organiser/actions";
 import OrganiserPage from "./organiser/page";
 
 const { getSession, browser, afterwards } = vi.hoisted(() => {
@@ -88,17 +89,30 @@ async function afterResponses() {
   for (const task of afterwards.splice(0)) await task();
 }
 
-// The accounts the Organiser page lists to remove from the team by hand, or null when it lists none.
-async function listedForOrganiser() {
+// The Organiser page's section `id`, as its text, or null when the page has none.
+async function organiserSection(id: string) {
   const previous = signedIn;
   signedIn = "organiser";
   const page = OrganiserPage({ params: Promise.resolve({}), searchParams: Promise.resolve({}) });
   const inner = page.props.children;
   const html = renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
   signedIn = previous;
-  const section = html.match(/<section aria-labelledby="removals"[^>]*>(.*?)<\/section>/)?.[1];
-  return section === undefined ? null : [...section.matchAll(/<h3>(.*?)<\/h3>/g)].map(([, id]) => id);
+  return html.match(new RegExp(`<section aria-labelledby="${id}"[^>]*>(.*?)</section>`))?.[1] ?? null;
 }
+
+// The headings of the section `id`: the accounts the Organiser page lists to remove from the team by hand
+// ("removals"), or the Members it names as out of the team ("rejoin"); null when it lists none.
+async function listedForOrganiser(id = "removals") {
+  const section = await organiserSection(id);
+  return section === null ? null : [...section.matchAll(/<h3>(.*?)<\/h3>/g)].map(([, heading]) => heading);
+}
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ").trim();
+
+const form = (fields: Record<string, string>) => {
+  const data = new FormData();
+  for (const [name, value] of Object.entries(fields)) data.set(name, value);
+  return data;
+};
 
 // The Organiser connects their Lichess account, which leads the team, as they would from the Organiser page.
 async function connectOrganiser() {
@@ -213,20 +227,25 @@ describe("switching to another Lichess account", () => {
     expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 25 s.");
   });
 
-  it("gives up on Lichess at 297 s from the callback's start, however long the database took, leaving time to list the old account", async () => {
+  // The database takes half a second over each statement, and `slowFirst` ms more over the removal's first, which reads
+  // who has the old account; keeping that account for the Organiser waits 20 s more for a connection, as when the
+  // database has to be tried twice (lib/db.ts). Lichess is rate-limiting: the marks and the join each answer 429 after
+  // 25 s, then properly after the minute's wait and 25 s more, so the switch is saved at 221 s. Revoking the token gets a
+  // 429 too and is given up at 270 s, when the Member is sent on. Lichess never answers the removal. Each request Lichess
+  // is sent, by method and path, in `asked`.
+  function slowEverything(slowFirst: number) {
     vi.useFakeTimers({ now: NOW, toFake: ["Date", "setTimeout", "clearTimeout"] });
-    // The database takes half a second over each statement. Lichess is rate-limiting: the marks and the join each answer
-    // 429 after 25 s, then properly after the minute's wait and 25 s more, so the switch is saved at 221 s. Revoking the
-    // token gets a 429 too and is given up at 295 s. The removal reads the database until 296 s, and Lichess never
-    // answers it.
     db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const extra = sql === `select 1 from "user" where "lichessId" = $1` ? slowFirst : sql.includes(`insert into "teamRemoval"`) ? 20_000 : 0;
+      await new Promise((resolve) => setTimeout(resolve, 500 + extra));
       return answeredAtOnce(sql, params);
     });
     const slowed = new Set<string>();
+    const asked: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
       const request = new Request(input, init);
       const key = `${request.method} ${new URL(request.url).pathname}`;
+      asked.push(key);
       if (key === "POST /api/token" || key === "GET /api/account") return lichess.fetch(input, init);
       await new Promise((resolve, reject) => {
         if (!key.includes("/kick/")) setTimeout(resolve, 25_000);
@@ -236,21 +255,46 @@ describe("switching to another Lichess account", () => {
       slowed.add(key);
       return new Response(null, { status: 429 });
     });
+    return asked;
+  }
+
+  // The switch to ana-new, and what the callback does once the Member has been sent on, begun at once, as Next.js
+  // begins it: when the Member was sent on, and when all of it had ended, from the callback's start. The database
+  // answers at once again after.
+  async function slowSwitch() {
     const back = await approveAs("ana-new");
     const started = Date.now();
-    const arrived = arrive(back);
-    await vi.advanceTimersByTimeAsync(295_000);
-    expect(await arrived).toBe("/profiles/ana");
+    const times = { sentOn: 0, ended: 0 };
+    const switching = arrive(back).then(async (to) => {
+      times.sentOn = Date.now() - started;
+      await afterResponses();
+      times.ended = Date.now() - started;
+      return to;
+    });
+    await vi.advanceTimersByTimeAsync(2 * maxDuration * 1000);
+    expect(await switching).toBe("/profiles/ana");
     expect(people.get("ana")?.lichessId).toBe("ana-new");
-    const removing = afterResponses();
-    // Its two reads take until 296 s, so Lichess is given the one second left before 297 s, and the account is kept,
-    // in one more statement, by 297.5 s.
-    await vi.advanceTimersByTimeAsync(2_499);
-    expect(teamRemovals.size).toBe(0);
-    await vi.advanceTimersByTimeAsync(1);
-    await removing;
-    expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 1 s.");
-    expect(Date.now() - started).toBe(297_500);
+    db.query.mockImplementation(answeredAtOnce);
+    return times;
+  }
+
+  it("gives up on Lichess at 275 s from the callback's start, however long the database took, leaving time to list the old account", async () => {
+    const asked = slowEverything(0);
+    // Its two reads take until 271 s, so Lichess is given the 4 s left before 275 s, and the account is kept, waiting
+    // 20 s for its connection, by 295.5 s: inside the callback's 300 s.
+    expect(await slowSwitch()).toEqual({ sentOn: 270_000, ended: 295_500 });
+    expect(asked).toContain(`POST /api/team/${TEAM}/kick/lichess-ana`);
+    expect(teamRemovals.get("lichess-ana")?.problem).toBe("Lichess took more than 4 s.");
+    expect(await listedForOrganiser()).toEqual(["lichess-ana"]);
+  });
+
+  it("asks Lichess nothing once there is no time left for the removal, and says so plainly, still inside the callback's 300 s", async () => {
+    // The removal's first read takes until 276 s, after the time for Lichess has run out at 275 s.
+    const asked = slowEverything(5_500);
+    expect(await slowSwitch()).toEqual({ sentOn: 270_000, ended: 297_000 });
+    expect(asked.filter((key) => key.includes("/kick/"))).toEqual([]);
+    expect(teamRemovals.get("lichess-ana")?.problem).toBe("There was no time left to ask Lichess.");
+    expect(await listedForOrganiser()).toEqual(["lichess-ana"]);
   });
 
   it("removes nothing when the Member \"switches\" to the account they already have", async () => {
@@ -326,6 +370,88 @@ describe("switching to another Lichess account", () => {
     await afterResponses();
     expect(teamRemovals.size).toBe(0);
     expect(await listedForOrganiser()).toBeNull();
+  });
+
+  // ana switches to ana-new. Lichess is slow to remove lichess-ana, and meanwhile her switch back to it is saved by
+  // another of the site's servers: it joined the team, which it was still in, and then Lichess removes it.
+  async function switchBackWhileRemoving() {
+    await switchTo("ana-new");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
+      if (String(input).includes("/kick/lichess-ana")) people.get("ana")!.lichessId = "lichess-ana";
+      return lichess.fetch(input, init);
+    });
+    await afterResponses();
+    vi.stubGlobal("fetch", lichess.fetch);
+    expect([people.get("ana")?.lichessId, inTeam("lichess-ana")]).toEqual(["lichess-ana", false]);
+  }
+
+  it("names for the Organiser a Member whose account Lichess removed just as they switched back to it, until they connect it again", async () => {
+    await switchBackWhileRemoving();
+    // Not listed to remove from the team, which it has left, but named, with what to do.
+    expect(await listedForOrganiser()).toBeNull();
+    expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
+    expect(text((await organiserSection("rejoin"))!)).toBe(
+      "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to press Switch Lichess account on their Profile and choose lichess-ana again on Lichess. Done : Ana Petraitė has been asked",
+    );
+    // She does so, "switching" to the account she has: it is in the team again, and nobody is named.
+    expect(await switchTo("lichess-ana")).toBe("/profiles/ana");
+    await afterResponses();
+    expect(inTeam("lichess-ana")).toBe(true);
+    expect(await listedForOrganiser("rejoin")).toBeNull();
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("lets the Organiser, and nobody else, say that a Member out of the team is dealt with, which names them no more", async () => {
+    await switchBackWhileRemoving();
+    // As when Lichess has since marked her account, which can then never be connected again.
+    const named = (await organiserSection("rejoin"))!;
+    expect(named).toContain('<input type="hidden" name="lichessId" value="lichess-ana"/>');
+    expect(named).toMatch(/<button[^>]*>Done<span class="visually-hidden">: Ana Petraitė has been asked<\/span><\/button>/);
+    for (const who of ["ana", null]) {
+      signedIn = who;
+      await expect(teamRemovalDone(form({ lichessId: "lichess-ana" }))).rejects.toThrow("not found");
+    }
+    expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
+    signedIn = "organiser";
+    expect(await redirectedTo(() => teamRemovalDone(form({ lichessId: "lichess-ana" })))).toBe("/organiser");
+    expect(await listedForOrganiser("rejoin")).toBeNull();
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("names nobody, and lists nothing to remove, once a Member out of the team switches to another account", async () => {
+    await switchBackWhileRemoving();
+    await switchTo("ana-third");
+    await afterResponses();
+    expect(["lichess-ana", "ana-third"].map(inTeam)).toEqual([false, true]);
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("names nobody, and lists nothing to remove, once a Member out of the team is removed from the Club", async () => {
+    await switchBackWhileRemoving();
+    signedIn = "organiser";
+    expect(await redirectedTo(() => removeFromClub(form({ memberId: "ana" })))).toBe("/organiser?member=removed");
+    expect(teamRemovals.size).toBe(0);
+  });
+
+  it("keeps for the Organiser the account a Member switched to while they were being removed from the Club", async () => {
+    // ana is removed. While Lichess removes lichess-ana from the team, her switch to ana-new, started earlier, is saved
+    // by another of the site's servers: ana-new joined the team.
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit) => {
+      if (String(input).includes("/kick/lichess-ana")) {
+        lichess.team.members.add("ana-new");
+        people.get("ana")!.lichessId = "ana-new";
+      }
+      return lichess.fetch(input, init);
+    });
+    signedIn = "organiser";
+    expect(await redirectedTo(() => removeFromClub(form({ memberId: "ana" })))).toBe("/organiser?member=removed");
+    expect(people.has("ana")).toBe(false);
+    expect(["lichess-ana", "ana-new"].map(inTeam)).toEqual([false, true]);
+    // Nobody's leaving will remove it now, so the Organiser is told to.
+    expect(await listedForOrganiser()).toEqual(["ana-new"]);
+    expect(teamRemovals.get("ana-new")?.problem).toBe(
+      "Its owner connected it to Offboard while their account was being deleted, so the site didn't remove it from the Club's team.",
+    );
   });
 
   it("does not remove an old account that another Member has connected since", async () => {

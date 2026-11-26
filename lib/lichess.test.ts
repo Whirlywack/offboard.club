@@ -120,6 +120,19 @@ describe("giving up", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("allows a caller whole seconds until its own time is up, and none at all when not a second is left", async () => {
+    expect(lichess.limitBy(Date.now() + 999)).toBeNull();
+    const limit = lichess.limitBy(Date.now() + 1_999)!;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(limit.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(limit.signal.reason).toEqual(new Error("Lichess took more than 1 s"));
+    // At most `most`, and with the caller's own reason when it gives one.
+    const capped = lichess.limitBy(Date.now() + 60_000, 2_000, "given up");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(capped!.signal.reason).toEqual(new Error("given up"));
+  });
+
   it("lets a request given up while waiting its turn go, without the next one overtaking the one in flight", async () => {
     const { fetch, asked } = controlledFetch();
     vi.stubGlobal("fetch", fetch);

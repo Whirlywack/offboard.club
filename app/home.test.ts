@@ -227,6 +227,14 @@ describe("the picture in the Season block", () => {
     expect(await nextMatchday()).toContain("Sunday 6 December");
     expect(pictures(await nextMatchday())).toEqual(["row"]);
   });
+
+  it("is the six pieces before a later Season's first Matchday too", async () => {
+    for (const date of ["2026-11-29", "2026-12-06", "2026-12-13", "2026-12-20", "2026-12-27", "2027-01-03"])
+      matchdays.set(date, { date, lichessTournamentId: `T${date.replaceAll("-", "")}`, ingestedAt: new Date() });
+    vi.setSystemTime(new Date("2027-01-06T12:00:00Z"));
+    expect(await nextMatchday()).toContain("Sunday 17 January");
+    expect(pictures(await nextMatchday())).toEqual(["row"]);
+  });
 });
 
 // The root layout's header goes on every page but the home page, which draws its own with the strip above it (#77).

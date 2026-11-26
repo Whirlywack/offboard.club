@@ -9,12 +9,10 @@ Tickets cut from the spec are sub-issues of #1; later ones stand alone. The owne
 Each stage is its own agent with a fresh context, on Opus at extra-high effort, and hands over through the branch and a written report. The orchestrating session only orchestrates. A brief is the issue number plus what is special about this ticket; the standing rules live in the agent's definition.
 
 1. **Build**: `ticket-builder`, in its own worktree, on `ticket-<n>-<short-name>` cut from `origin/main`. Give it the migration number to use.
-2. **Design**: `page-designer`, in the builder's worktree, when the ticket adds or changes a page. Give it the pages and a folder for screenshots.
-3. **Copy**: `page-copywriter`, in the same worktree, when the ticket has reader-facing words.
+2. **Review**: `ticket-reviewer`, on the finished branch. Send the findings back to the builder (a message resumes it with its context), which works them as the fix round in its definition says. A fix round that changed logic gets a short review of that round's commits alone, its findings sent back the same way, before the pull request is called ready; a round that changed only tests or comments does not.
+3. **Pull request**: opened by this session, to `main`, with the `pr` skill's template. The body ends with `Closes #<n>` and records what review found, what could not be verified, and each place the build differs from the issue's words (from the builder's report), with the issue edited or a `ready-for-human` issue opened for each. CI must be green before the link goes to the owner.
 
-   **Stages 2 and 3 are paused** (owner's decision, 25 November 2026): the owner will rework the site's design and wording in passes of their own. Until they say otherwise a ticket goes from build straight to review, and the builder is told to write plain, short words and stop its local database when it finishes. The owner's bar for words: say it once, in as few plain words as a person would.
-4. **Review**: `ticket-reviewer`, on the finished branch. Send each finding back to the agent whose stage owns it (a message resumes that agent with its context), then have the review repeated on what changed, until it finds nothing material.
-5. **Pull request**: opened by this session, to `main`, with the `pr` skill's template. The body ends with `Closes #<n>` and records what review found, what could not be verified, and each place the build differs from the issue's words (from the builder's report), with the issue edited or a `ready-for-human` issue opened for each. CI must be green before the link goes to the owner.
+The design and text stages have no agent yet: the owner is reworking the site's design and words in passes of their own (25 November 2026), and each stage gets an agent once they have set the direction.
 
 ## Running several tickets
 
@@ -28,4 +26,4 @@ Each stage is its own agent with a fresh context, on Opus at extra-high effort, 
 
 - **Product and privacy questions** raised by a build or a review become an issue labelled `ready-for-human` (here: anything only the owner can do or decide), with the options and what the site does meanwhile. A question that exists only in a conversation is lost when the conversation ends.
 - **Anything on a third-party service** (GitHub settings, Vercel, Neon, Lichess, LinkedIn, Telegram): read that service's current documentation first, then tell the owner what the step does, what it puts in their name and whether it can be undone. This covers statements about what a service will do after they click, not only setup steps.
-- **The live site and its data.** Agents work on local databases with pretend keys (`docs/agents/dev-environment.md`). Migrations reach the live database through the production deploy.
+- **The live site and its data**: who may read or change what is in `docs/agents/production.md`.

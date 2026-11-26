@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { ExternalLink } from "../../external-link";
-import { CompanyName, ProfilesNote, ScoreCell } from "../../leaderboard";
+import { CompanyName, MemberCell, MoreLinks, ProfilesNote, ScoreCell } from "../../leaderboard";
 import board from "../../leaderboards.module.css";
+import queenKing from "../../photos/queen-king.webp";
 import ui from "../../ui.module.css";
 import { Awards } from "../awards";
 import { longDate } from "../dates";
@@ -21,6 +23,12 @@ import { isRecapDate } from "@/lib/schedule";
 // This page's route as Next.js names it, by which a failure it catches is recorded.
 const ROUTE = "/recaps/[date]";
 
+// Where to go from a Recap, at the foot of its Leaderboard.
+const MORE: [string, string][] = [
+  ["/recaps", "All Recaps"],
+  ["/", "Home"],
+];
+
 export async function generateMetadata({ params }: PageProps<"/recaps/[date]">): Promise<Metadata> {
   const { date } = await params;
   return { title: isRecapDate(date) ? `Recap of ${longDate(date)}` : "Recap" };
@@ -32,18 +40,17 @@ export async function generateMetadata({ params }: PageProps<"/recaps/[date]">):
 // address that cannot be a Matchday's date never gets here: proxy.ts answers it with a 404.
 export default function RecapPage({ params }: PageProps<"/recaps/[date]">) {
   return (
-    <main id="main" className={ui.page}>
+    <main id="main">
       <Suspense>
         <RecapOf params={params} />
       </Suspense>
-      <nav aria-label="More" className={ui.backLinks}>
-        <Link href="/recaps">All Recaps</Link>
-        <Link href="/">Home</Link>
-      </nav>
     </main>
   );
 }
 
+// The night as it ended: its date over the queen standing above the fallen king, then its Awards, the event of the
+// page, on black, then where everyone finished, on the Leaderboards' table. A Company has a column of its own from 900
+// wide; on a phone it sits under the name, as on the other Leaderboards.
 async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
   const { date } = await params;
   await connection(); // the Matchday's Season is read from the schedule as of now
@@ -60,39 +67,50 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
     }),
   ]);
   if (recap === undefined)
-    return <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>;
+    return (
+      <div className={board.down}>
+        <p className={ui.alert}>This Recap can&apos;t be shown right now. Please try again in a minute.</p>
+        <MoreLinks links={MORE} />
+      </div>
+    );
   if (!recap) notFound();
   return (
-    <article className={styles.recap}>
-      <div className={ui.intro}>
-        <h1>
-          Recap of <time dateTime={recap.date}>{longDate(recap.date)}</time>
+    <article>
+      <header className={`${styles.head} ${ui.grain}`}>
+        <h1 className={`${styles.title} ${ui.display}`}>
+          <em>Recap</em> of <time dateTime={recap.date}>{longDate(recap.date)}</time>
         </h1>
-        {season && (
-          <p className={ui.small}>
-            Matchday {season.number} of <Link href={`/seasons/${season.season}`}>Season {season.season}</Link>
-          </p>
-        )}
-        {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
-        {member && (
-          <p className={styles.lichessLink}>
-            <ExternalLink href={lichessSwissUrl(recap.lichessTournamentId)}>
-              Open this Matchday on Lichess
-            </ExternalLink>
-          </p>
-        )}
-      </div>
-      <section aria-labelledby="leaderboard" className={styles.board}>
-        <h2 id="leaderboard">Leaderboard</h2>
+        <div className={styles.night}>
+          {season && (
+            <p>
+              Matchday {season.number} of <Link href={`/seasons/${season.season}`}>Season {season.season}</Link>
+            </p>
+          )}
+          {/* Lichess's standings list the same order and points under Lichess names, which only Members may see. */}
+          {member && (
+            <p>
+              <ExternalLink href={lichessSwissUrl(recap.lichessTournamentId)}>Open this Matchday on Lichess</ExternalLink>
+            </p>
+          )}
+        </div>
+        <Image className={styles.fallen} src={queenKing} alt="" sizes="(min-width: 900px) 720px, 360px" preload />
+      </header>
+      <Awards awards={recap.awards} showGames={AWARD_GAMES_ARE_PUBLIC || member} />
+      <section aria-labelledby="leaderboard" className={board.board}>
+        <h2 id="leaderboard" className={ui.display}>
+          Leaderboard
+        </h2>
         {recap.leaderboard.length === 0 ? (
-          <p className={styles.empty}>Nobody is on this Matchday&apos;s Leaderboard.</p>
+          <p className={board.empty}>Nobody is on this Matchday&apos;s Leaderboard.</p>
         ) : (
-          <table className={board.table}>
+          <table className={`${board.table} ${styles.withCompanies}`}>
             <thead>
               <tr>
                 <th scope="col">Rank</th>
                 <th scope="col">Name</th>
-                <th scope="col">Company</th>
+                <th scope="col" className={styles.companies}>
+                  Company
+                </th>
                 <th scope="col" className={board.score}>
                   Points
                 </th>
@@ -102,10 +120,8 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
               {recap.leaderboard.map((row) => (
                 <tr key={row.memberId}>
                   <td>{row.rank}</td>
-                  <th scope="row">
-                    <Link href={`/profiles/${row.memberId}`}>{row.name}</Link>
-                  </th>
-                  <td>{row.company && <CompanyName company={row.company} />}</td>
+                  <MemberCell member={row} />
+                  <td className={styles.companies}>{row.company && <CompanyName company={row.company} />}</td>
                   <ScoreCell value={row.points} />
                 </tr>
               ))}
@@ -113,8 +129,8 @@ async function RecapOf({ params }: { params: Promise<{ date: string }> }) {
           </table>
         )}
         {!member && recap.leaderboard.length > 0 && <ProfilesNote />}
+        <MoreLinks links={MORE} />
       </section>
-      <Awards awards={recap.awards} showGames={AWARD_GAMES_ARE_PUBLIC || member} />
     </article>
   );
 }

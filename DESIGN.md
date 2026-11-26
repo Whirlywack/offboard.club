@@ -316,7 +316,7 @@ The Season Leaderboard (`app/seasons/`), the all-time Leaderboard (`app/all-time
 ### Leaderboard table
 - **Where:** `app/leaderboard.tsx` (`MemberCell`, `CompanyName`, `ScoreCell`) with `board.table` in `app/leaderboards.module.css`; a Recap's table uses the same class.
 - **Style:** no lines but rules: 1px of ink under the column heads, a 1px `--line` under each row. Heads in capitals, 600 11px, 0.1em, muted, the numbers' heads on the right. Rank 15px muted in a 42px column (64px on a desktop); the name 17px 500 (18px), not underlined until the pointer is on it, its whole cell the link's target; the Company 13.5px muted under the name on a phone, after it on its line on a desktop (14px), its domain kept whole. The figure a Leaderboard is ranked by (`board.score`) 19px 600 (21px) in a 60px column (120px); a secondary count (`board.number`) 15px muted (16px) in 58px (110px). A whole score keeps 0.74em on its right, the width of ".5", so scores line up on the point (`ScoreCell`).
-- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px. The Season and all-time tables take their columns from their heads (`table-layout: fixed`), so a name breaks between words, and inside one only when the word is longer than its column; a Recap's table, laid out by what is in it, breaks a name inside a word only below 360px wide.
+- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px. The tables take their columns from their heads (`table-layout: fixed`, on `board.board`), so a name breaks between words, and inside one only when the word is longer than its column.
 - **Empty:** a muted line between the head's ink rule and a row's rule.
 
 ### Leaderboard plate
@@ -331,3 +331,46 @@ The Season Leaderboard (`app/seasons/`), the all-time Leaderboard (`app/all-time
 
 ### The six Matchdays
 - A black plate after the Leaderboard, its heading on the left on a desktop. Six cells between `--line` rules, three to a row on a phone, six on a desktop: "Matchday" as a label over its number in the serif (58px, `min(7vw, 104px)`), the date at the foot. A Matchday with a Recap is a link to it, in paper, with an arrow; one to come, or that went by without results ("Not played"), is muted, its number drawn in a 1px outline. Under them the other Seasons, the one shown underlined 2px. A rule closes the plate above the footer.
+
+## Recaps
+
+The list of Recaps, a Recap and the page for a Sunday with none (`app/recaps/`). What they bring that another page may want:
+
+- **A Recap is three plates.** Its date over the queen standing above the fallen king (grey, grain): the night's result. Its Awards (black): the event of the page, so they come before the Leaderboard. Its Leaderboard on the Leaderboard plate (grey, flat), with the links at its foot (`MoreLinks`).
+- **The date as a headline** (`recaps.module.css`, `.title`): "*Recap* of", then the date on lines of its own, broken after the day. "September 2026", the longest month and year, is 7.25em, which sets the size on a phone (`clamp(36px, 12vw, 60px)`, on one line from 300 wide; narrower, the year takes a line of its own) and the measure at every width (`max-width: 8em`; `min(7.4vw, 124px)` on a desktop), so the date always breaks after the day and never runs into the photograph.
+- **The queen over the fallen king at the head of a plate**: at 0.5 on a phone (360 x 215), under the words, the pieces to the right; on a desktop at the foot of the plate's right side, `min(720px, 55vw)` wide so that below about 1300 wide it shrinks rather than come near the date, its pieces' right edge on the gutter and its long shadow running back towards the words.
+- **An Award** (`awards.module.css`): a ruled row on black. What it was for in the serif with its first word in italic (46px; `min(4.2vw, 68px)` on a desktop), who won it in the serif at 30px (`min(2.8vw, 42px)`), not underlined but for the pointer, what they did in the grotesque in muted with its number in ink, 600. On a desktop the name of the Award and the rest sit side by side, 4 to 5.
+- **A disclosure that does a button's job** (`<summary>`, "Replay the Game"): the primary block, 54px, a chevron that turns a quarter when it is open. What it opens fills its column, with a 1px rule (`--line`) round it.
+- **The Awards' plate** has the Leaderboard plate's columns on a desktop, 3 to 9 with a 4vw gap: its name and line on the left, the Awards on the right.
+- **A line instead of an empty list** ("No Recaps yet."): the serif at 30px on a phone (`min(3.6vw, 56px)` on a desktop), where the list would start. A Recap nobody is on has the Leaderboard table's empty line.
+- **The list of Recaps**: the ruled list (`ui.ruled`) with each date in a `<time>`; on a desktop the page's name stays in view (`position: sticky`) while the dates go by on the right.
+- **A night's Leaderboard** is the Leaderboard table with a Company column (`recaps.module.css`, `.companies`). On a phone there is no room for it: the column is left out and the Company sits under the name, as on the other Leaderboards, so from 320 wide nothing scrolls sideways and a name breaks only between words. From 900 wide the Company has its column, sharing the room with the name.
+- **A Sunday with no Recap** is the not-found page's plate (`app/fallback.module.css`), with the pawn in outline.
+## The Organiser's pages
+
+The Organiser page and Remove a Member (`app/organiser/`, styled by `app/organiser/organiser.module.css`) are a control panel read by one person: the same world with nothing for show. No photograph, as no picture says what a list of jobs says; no cards; the display serif for the page's heading and each section's heading, the grotesque for everything else.
+
+### A working section
+- **Style:** a 1px ink rule across the page, then the section: 28px above and 44px below on a phone, 40px and 64px on a desktop. Its heading (`h2`) in the display serif, 500, at 34px on a phone and `min(3.3vw, 50px)` on a desktop.
+- **Desktop:** two columns, 4 to 8, 4vw apart: the heading on the left, what the section holds on the right. The page's opening takes the same columns: the heading and the line under it left, the next Matchday right, a label over its date at 22px (20px on a phone), as on the Season Leaderboard's mock-up.
+- **A part** inside a section (a scheduled job, a Sunday's tournament to cancel, a form) sits under a 1px `--line` rule, 24px below it. Its heading (`h3`) is the grotesque, 600, 17px. On a desktop the heading stands to the left of the rest, 1 to 3.
+- **Facts:** a label in `ui.caps`, muted, and its value. On a phone each fact is a row between `--line` rules, the labels in a column at least 5.5rem wide; on a desktop the facts stand side by side, each label over its value, each at least 8rem wide so that they line up from part to part, onto a second line where there is no room, and no rules.
+- **Rows:** a list of Sundays or Matchdays is a row each between `--line` rules; a Sunday's button stays at the end of its row, the day over what it holds on a phone.
+
+### State, at a glance
+Three states, told by form and never by colour alone:
+
+- **Fine:** unmarked.
+- **Needs you:** the square (`--ink`, 9px) before the words, which are ink at 500. A message to act on (`role="alert"`, or not when it is how things stand, such as "Not connected"), and a row of a list that wants a hand.
+- **Failed:** the same square and words turned over, on a black band: paper on `--black`, 12px above and below. On a phone the band reaches the screen's edges, its square and words in line with the others'; on a desktop it is the width of its column. A fact that is wrong where it stands, such as a failed outcome or a last run too long ago, is turned over in place (`.flag`): paper on black, 600.
+- **A section's heading** takes the mark of the worst thing in it: the square before it when anything needs the Organiser, and the heading itself turned over, on a black band from the screen's edge, when anything failed. A list of things to do by hand needs the Organiser by being there at all (`.byHand`). The heading's words wrap on their own edge, never under the square; on a desktop the square hangs in the gutter, so that every heading's words start on one edge.
+- **Nothing heavy where all is well:** a button that can always be pressed but is needed only when something is wrong (Connect Lichess again) is `ui.quiet` while things work, and the ink block only when they do not.
+- Contrast: ink on the ground 11.9:1, paper on the black 16.4:1.
+- **Forced colours** repaint every ground, so there the squares are drawn in `CanvasText` and what failed (the band, the flag, the heading) takes a 2px `CanvasText` border.
+- A heading or a paragraph that can print a Lichess account or a Member's name breaks a word where it must (`overflow-wrap: anywhere`), so a 30-character account never runs into what stands beside it or off a phone.
+
+### Forms
+- A field's label above it, the grotesque at 600; the field as `globals.css` draws it, at most 28rem wide.
+- Two or three choices are radio buttons, a 44px row each, not a list to open: a closed list cuts long choices off on a phone.
+- A form's own action is a primary button, the full width of a phone. The quieter actions beside a row (Skip, Undo, Done) are `ui.quiet`.
+- **Removing someone:** keeping them first, the ink block; removing outlined in `--error`, never filled, 54px tall like the other. Stacked at full width on a phone.

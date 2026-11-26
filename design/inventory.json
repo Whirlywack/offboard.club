@@ -412,9 +412,9 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "Each date link is at least 44 px tall; only 'Home' (40.7 x 44) is under 44 px.",
-        "No text under 14 px outside the footer.",
-        "1,593 px tall with 16 Recaps."
+        "Each date link is a 68 px row; 'Home' is 44 px tall. No control is under 44 px.",
+        "No text under 15 px outside the footer.",
+        "1,767 px tall with 16 Recaps."
       ],
       "differs_from_spec": [
         "The list shows dates only: no winner, Award or number of players per Matchday."
@@ -452,10 +452,10 @@
       "purpose": "The summary of one Matchday: that night's Leaderboard and its Awards. It gives the evening an ending and shows the public the Club's tone.",
       "should_be_able_to": "See where everyone finished that night and who won each Award; a Member can replay an Award's Game.",
       "on_it_now": [
-        "Heading 'Recap of Sunday, 15 November 2026'; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
-        "'Leaderboard': table Rank / Name / Company (with domain) / Points, in Lichess's final order; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
-        "'Awards' with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
+        "Heading 'Recap of Sunday, 15 November 2026' over the photograph of the queen standing above the fallen king; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
+        "'Awards', on black, with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
         "Members: under each Award a 'Replay the Game' button that opens Lichess's board in the page, with 'Open the Game on Lichess'; for an Award won against someone who has since left, 'Their opponent has since left the Club, so the Game isn't shown.' Visitors get nothing under the Awards.",
+        "'Leaderboard', on the Leaderboards' table: Rank / Name / Company (with domain) / Points, in Lichess's final order, the Company under the name on a phone; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
         "Back links: All Recaps, Home."
       ],
       "leads_from": [
@@ -472,11 +472,10 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The table fits: 347 px, columns Rank 44, Name 135, Company 111, Points 57 px. The 111 px Company column wraps a long Company name to five lines plus its domain: the tallest row is 210 px, the shortest 51 px. Names wrap to two or three lines.",
-        "Name links are 20 px tall, Award winners 22.5 px; 'Open this Matchday on Lichess' 227.5 x 17.5; 'Open the Game on Lichess' 174.5 x 15; 'Season 3' 63.6 x 17.5 (in running text). 10 of 26 controls (visitor) and 14 of 33 (Member) are under 44 px.",
-        "'Replay the Game' buttons are at least 44 px tall.",
-        "13 px text: column headings, domains, Award titles ('Biggest upset', 'Closest call', 'Fastest checkmate'), the note under an opened board.",
-        "2,441 to 3,516 px tall (the opened board adds about 570 px)."
+        "The table fits: 358 px, columns Rank 42, Name 256, Points 60 px, each Company under its name (its own column from 900 wide). The tallest row is 136 px (a long Company over three lines and its domain), the shortest 55 px. A name breaks only between words; from 300 wide nothing scrolls sideways, a 16-letter surname and a 20-character domain included.",
+        "No control is under 44 px: a name in the table is its whole cell; Award winners, 'Season 3', 'Open this Matchday on Lichess' and 'Open the Game on Lichess' are padded to 44 px or more; 'Replay the Game' is 54 px.",
+        "11 px column headings (labels in capitals) and 13.5 px Companies; everything else 15 px or more.",
+        "992 px (nobody on it) to 3,900 px tall (a Member with a board opened, which adds about 580 px)."
       ],
       "differs_from_spec": [
         "The spec's 'Least time left' Award is titled 'Closest call'.",
@@ -1039,17 +1038,18 @@
       "purpose": "The Organiser's one place to see whether the site is creating Matchdays, collecting results and posting to Telegram, and to act: skip a Sunday, set a Season's start, remove a Member, renew the Lichess permission, and clear up what the site could not do on Lichess.",
       "should_be_able_to": "See at a glance whether anything needs them, and act on it.",
       "on_it_now": [
-        "Eyebrow 'Only you can see this page', heading 'Organiser'.",
-        "A notice after removing a Member ('Member removed.') or a refusal.",
-        "'Next Matchday' card: the date, and whether it is on Lichess ('Open it on Lichess'), when it will be created, or a red alert saying what stops it.",
-        "'Lichess permission': account, connected and expiry dates, an alert when expired or unreadable, how to connect, 'Connect Lichess' / 'Connect Lichess again'.",
-        "'Cancel on Lichess' (only when there are some): Sundays no longer Matchdays whose tournaments the site could not cancel, each with why, 'Cancel it on Lichess' and 'Done'.",
-        "'Remove from the Lichess team' (only when there are some): accounts the site could not remove, each with why and 'Done', and 'Remove members on Lichess'.",
-        "'Schedule': 'Upcoming Sundays', the next eight with their Season and Matchday and a 'Skip' or 'Undo' button; 'Season start' with a Season select, a 'First Matchday' date field and 'Set start'.",
-        "'Remove a Member': a select 'Choose a Member' (name and Lichess username) and 'Continue'.",
-        "'Telegram': what the bot does or a red alert about its settings; 'Send a test message to me', 'Send a test message to the group'.",
-        "'Scheduled jobs': Creating Matchdays, Collecting results, Posting to Telegram, Backing up, Alerting you, each with outcome and last run or a red 'Not run yet' alert; 'Results not in' when a Matchday's results are missing; 'Last failure' (job, began, since, detail) or 'No job has failed.'",
-        "Back link: Home. Every panel is a bordered box."
+        "Heading 'Organiser' in the display serif, 'Only you can see this page' under it. Beside them on a desktop, under them on a phone: 'Next Matchday' in small capitals over the date, then whether it is on Lichess ('Open it on Lichess'), when it will be created, or what stops it.",
+        "A notice after removing a Member ('Member removed.') or a refusal, above the next Matchday.",
+        "Sections one under another, each under an ink rule, its heading in the display serif, on the left on a desktop: 'Lichess permission', 'Cancel on Lichess', 'Not in the Lichess team' and 'Remove from the Lichess team' (each only when there are some), 'Schedule', 'Remove a Member', 'Telegram', 'Scheduled jobs'. No panels, no photograph.",
+        "Each section's state: fine, unmarked; needs the Organiser, a black square before its heading and before what needs doing; failed, its heading and the failure turned over on a black band, and a failed outcome or a late last run turned over where it stands.",
+        "'Lichess permission': account, connected and expiry dates as labelled facts, what is wrong when it has expired or cannot be read, how to connect, 'Connect Lichess' (filled) or 'Connect Lichess again' (filled when it is needed, quiet while the permission works).",
+        "'Cancel on Lichess': each Sunday no longer a Matchday whose tournament the site could not cancel, with why, 'Cancel it on Lichess' and 'Done'.",
+        "'Not in the Lichess team': each Member whose account Lichess removed, with what to ask them and 'Done'. 'Remove from the Lichess team': 'Remove members on Lichess', then each account the site could not remove, with why and 'Done'.",
+        "'Schedule': 'Upcoming Sundays', the next eight in rows, each with its Season and Matchday and a 'Skip' or 'Undo' button at the end of the row; 'Season start' with the Seasons as radio buttons, the first ticked, a 'First Matchday' date field and 'Set start'.",
+        "'Remove a Member': 'Member', a select 'Choose a Member' (name and Lichess username) and 'Continue'.",
+        "'Telegram': what the bot does, or what is wrong with its settings; 'Send a test message to me', 'Send a test message to the group'.",
+        "'Scheduled jobs': Creating Matchdays, Collecting results, Posting to Telegram, Backing up, Alerting you, each with its outcome and last run, or 'Not run yet'; 'Results not in' when a Matchday's results are missing; 'Last failure' (job, began, since, detail) or 'No job has failed.'; 'Last failed request' (address, kind, last failed, why) or 'No failed request has been recorded.'",
+        "'Home' as a ruled link at the foot."
       ],
       "leads_from": [
         "Nothing on the site links here: the Organiser types the address.",
@@ -1064,11 +1064,11 @@
         "/."
       ],
       "phone_facts": [
-        "No sideways scroll.",
-        "The Season select's chosen option ('Season 4, now from Sunday 27 December') needs 319 px and the select has 265 px, so it is cut off; in season-over 'Season 3, now from Sunday 17 January' needs 298 px.",
-        "Links under 44 px: the Lichess account 114.5 x 20, 'Cancel it on Lichess' 166.3 x 20, 'Remove members on Lichess' 237.1 x 20, 'Home' 40.7 x 44. All buttons, selects and fields are at least 44 px tall.",
-        "3,407 px tall before Season 1, 5,078 px in club, 6,135 px with failures (4 to 7 screens).",
-        "13 px text: the eyebrow, the 'Next Matchday' label and the footer."
+        "No sideways scroll, a 30-character Lichess account included.",
+        "The Seasons are radio buttons, so their names wrap rather than being cut off.",
+        "Every button, select and field is at least 44 px tall, the buttons 54 px. The Lichess account link's box is 112 x 22, its target 44 px tall; each radio button is 20 x 20 in a 44 px row that ticks it.",
+        "3,224 px tall before Season 1, 4,513 px in club, 5,791 px with failures (4 to 7 screens).",
+        "11 px text: the small capitals ('Next Matchday', the facts' labels)."
       ],
       "differs_from_spec": [
         "Spec and ticket #16: one page with three actions (remove a Member, skip a Matchday, set a Season's start) that shows the permission's expiry and the last failure. As built it also has: the next Matchday's status, undoing a skip, Telegram test messages, the state of five scheduled jobs, results not in, and two lists of things to do by hand on Lichess (from tickets #13, #15, #17, #44).",
@@ -1126,10 +1126,10 @@
       "purpose": "The confirmation before the Organiser removes a Member: who, what removing does, and the choice.",
       "should_be_able_to": "Confirm removing the chosen Member, or keep them.",
       "on_it_now": [
-        "Heading 'Remove a Member', 'This can't be undone.'",
-        "A panel: 'Remove <name>, <Company>, <Lichess username> on Lichess?', four bullets on what goes and what stays, 'Nothing stops them signing up again.'",
-        "Buttons 'Keep them' (filled) and 'Remove <name>' (outlined in red).",
-        "When the address names nobody or the Organiser: a red alert ('That Member isn't in the Club.' / 'You can't remove yourself here...') and 'Back to the Organiser page'."
+        "Heading 'Remove a Member' in the display serif, 'This can't be undone.' under it. Beside them on a desktop, under them on a phone:",
+        "'Remove <name>, <Company>, <Lichess username> on Lichess?', four ruled lines on what goes and what stays, 'Nothing stops them signing up again.' No panel.",
+        "Buttons 'Keep them' (filled) and 'Remove <name>' (outlined in red), side by side on a desktop, one above the other at full width on a phone.",
+        "When the address names nobody or the Organiser: 'That Member isn't in the Club.' or 'You can't remove yourself here...' after a black square, and 'Back to the Organiser page' as a ruled link."
       ],
       "leads_from": [
         "/organiser: 'Remove a Member', 'Continue'."
@@ -1140,8 +1140,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "No control under 44 px.",
-        "No text under 14 px outside the footer."
+        "No control under 44 px; the two buttons are 54 px.",
+        "No text under 16 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [

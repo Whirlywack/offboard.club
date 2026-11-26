@@ -14,6 +14,7 @@ import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organ
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess, maxDuration } from "./api/lichess/callback/route";
 import { removeFromClub, teamRemovalDone } from "./organiser/actions";
+import styles from "./organiser/organiser.module.css";
 import OrganiserPage from "./organiser/page";
 
 const { getSession, browser, afterwards } = vi.hoisted(() => {
@@ -89,7 +90,7 @@ async function afterResponses() {
   for (const task of afterwards.splice(0)) await task();
 }
 
-// The Organiser page's section `id`, as its text, or null when the page has none.
+// The Organiser page's section `id`, as its markup, or null when the page has none.
 async function organiserSection(id: string) {
   const previous = signedIn;
   signedIn = "organiser";
@@ -97,7 +98,7 @@ async function organiserSection(id: string) {
   const inner = page.props.children;
   const html = renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
   signedIn = previous;
-  return html.match(new RegExp(`<section aria-labelledby="${id}"[^>]*>(.*?)</section>`))?.[1] ?? null;
+  return html.match(new RegExp(`<section aria-labelledby="${id}"[^>]*>.*?</section>`))?.[0] ?? null;
 }
 
 // The headings of the section `id`: the accounts the Organiser page lists to remove from the team by hand
@@ -393,6 +394,8 @@ describe("switching to another Lichess account", () => {
     // Not listed to remove from the team, which it has left, but named, with what to do.
     expect(await listedForOrganiser()).toBeNull();
     expect(await listedForOrganiser("rejoin")).toEqual(["Ana Petraitė"]);
+    // A list of things to do by hand, so its section is marked as needing the Organiser.
+    expect(await organiserSection("rejoin")).toMatch(new RegExp(`^<section aria-labelledby="rejoin" class="${styles.section} ${styles.byHand}">`));
     expect(text((await organiserSection("rejoin"))!)).toBe(
       "Not in the Lichess team Ana Petraitė lichess-ana: Lichess removed it from the Club's team just as it was connected again. Ask Ana Petraitė to press Switch Lichess account on Edit your Profile, and choose lichess-ana again on Lichess. Then press Done. Done : Ana Petraitė has been asked",
     );

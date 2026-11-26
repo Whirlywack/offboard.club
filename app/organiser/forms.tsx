@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
-import profile from "../profile/profile.module.css";
 import ui from "../ui.module.css";
 import { changeSunday, setStart, testTelegram } from "./actions";
 import styles from "./organiser.module.css";
 import type { Said } from "@/lib/reschedule";
 
-// What the form's last press did, or that it is being done: an alert when it needs the Organiser, quiet otherwise.
+// What the form's last press did, or that it is being done: an alert marked as needing the Organiser when it does,
+// quiet otherwise.
 function Outcome({ said, pending }: { said: Said | null; pending: boolean }) {
   if (pending) return <p className={styles.notice}>Saving…</p>;
   if (!said) return null;
   return (
-    <p role={said.problem ? "alert" : "status"} className={said.problem ? ui.alert : styles.notice}>
+    <p role={said.problem ? "alert" : "status"} className={said.problem ? styles.needs : styles.notice}>
       {said.text}
     </p>
   );
@@ -32,7 +32,7 @@ export function Sundays({ sundays }: { sundays: SundayRow[] }) {
     <form action={action} className={styles.part}>
       <h3>Upcoming Sundays</h3>
       <Outcome said={said} pending={pending} />
-      <ul className={styles.list}>
+      <ul role="list" className={styles.list}>
         {sundays.map(({ date, day, matchday, skipped }) => (
           <li key={date} className={styles.row}>
             <span>
@@ -61,7 +61,9 @@ export function Sundays({ sundays }: { sundays: SundayRow[] }) {
 // A Season whose first Matchday is still to come, as the page offers it: "Season 4, now from Sunday 17 January".
 type SeasonChoice = { number: number; label: string };
 
-// A Season's start set by hand. `first` is the first Sunday it can be, which the date picker starts from.
+// A Season's start set by hand. `first` is the first Sunday it can be, which the date picker starts from. The Seasons are
+// choices to tick, the first ticked, rather than a list to open: there are two at most, and a closed list cuts their
+// names off on a phone.
 export function SeasonStart({ seasons, first }: { seasons: SeasonChoice[]; first: string }) {
   const [said, action, pending] = useActionState(setStart, null);
   return (
@@ -69,21 +71,20 @@ export function SeasonStart({ seasons, first }: { seasons: SeasonChoice[]; first
       <h3>Season start</h3>
       <p className={styles.detail}>Later Seasons whose start isn&apos;t set move with it.</p>
       <Outcome said={said} pending={pending} />
-      <div className={profile.field}>
-        <label htmlFor="season">Season</label>
-        <select id="season" name="season">
-          {seasons.map(({ number, label }) => (
-            <option key={number} value={number}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className={profile.field}>
+      <fieldset className={styles.field}>
+        <legend>Season</legend>
+        {seasons.map(({ number, label }, i) => (
+          <label key={number} className={styles.choice}>
+            <input type="radio" name="season" value={number} defaultChecked={i === 0} />
+            {label}
+          </label>
+        ))}
+      </fieldset>
+      <div className={styles.field}>
         <label htmlFor="start">First Matchday</label>
         <input id="start" name="start" type="date" required min={first} step={7} />
       </div>
-      <div className={ui.actions}>
+      <div className={`${ui.actions} ${styles.fill}`}>
         <button disabled={pending}>Set start</button>
       </div>
     </form>
@@ -97,7 +98,7 @@ export function TestMessages() {
     <form action={action} className={styles.part}>
       <p className={styles.detail}>Everyone in the group sees the test message sent to it.</p>
       {pending ? <p className={styles.notice}>Sending…</p> : <Outcome said={said} pending={false} />}
-      <div className={ui.actions}>
+      <div className={`${ui.actions} ${styles.fill}`}>
         <button className={ui.quiet} name="to" value="me" disabled={pending}>
           Send a test message to me
         </button>
@@ -115,11 +116,11 @@ export function TestMessages() {
 export function RemoveActions({ name }: { name: string }) {
   const { pending } = useFormStatus();
   return (
-    <div className={`${ui.actions} ${profile.formActions}`}>
+    <div className={styles.choose}>
       <Link className={ui.button} href="/organiser" aria-disabled={pending || undefined} tabIndex={pending ? -1 : undefined}>
         Keep them
       </Link>
-      <button className={profile.delete} disabled={pending}>
+      <button className={styles.remove} disabled={pending}>
         {pending ? "Removing…" : `Remove ${name}`}
       </button>
     </div>

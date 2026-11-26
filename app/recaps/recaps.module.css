@@ -1,73 +1,181 @@
-/* The list of Recaps and a single Recap. */
+/*
+ * The list of Recaps and a Recap. A Recap is three plates: its date over the queen standing above the fallen king (grey,
+ * with grain), its Awards (black, awards.module.css), then where everyone finished, on the Leaderboards' plate and table
+ * (leaderboards.module.css). The phone is composed first; the desktop at 900px.
+ */
 
-/* The line under the list's heading sits closer to it than the page's other parts do to each other */
-.underTitle {
-  margin-top: calc(var(--space-3) - var(--space-6));
+/* ---------- The list of Recaps ---------- */
+
+.index {
+  padding: 40px var(--gutter) 64px;
 }
 
-/* The list: one full-width row per Matchday */
-.list {
-  list-style: none;
-  border-top: 1px solid var(--line);
+.index .indexTitle {
+  font-size: clamp(84px, 29vw, 128px); /* "Recaps" is 3em wide */
 }
 
-.list li {
-  border-bottom: 1px solid var(--line);
-}
-
-.list a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: 3.5rem;
-  padding-block: var(--space-3);
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-  text-decoration: none;
-  transition: color var(--duration-hover) ease;
-}
-
-.list a::after {
-  content: "→" / "";
-  font-family: var(--font-text);
-  color: var(--muted);
-  transition: transform var(--duration-hover) var(--ease-out);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .list a:hover::after {
-    transform: translateX(3px);
-    color: var(--ink);
-  }
-}
-
-.empty {
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 0 1px var(--line);
+/* Clear of the p's descender */
+.indexLede {
+  margin-top: 30px;
+  max-width: 30em;
   color: var(--muted);
 }
 
-/* A Recap */
-.recap {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
+.dates {
+  margin-top: 36px;
 }
 
-.board {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+/* No Recaps yet: a line in the serif, where the list would start */
+.index .none {
+  margin-top: 40px;
+  font-size: 30px;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .list a:hover::after {
-    transform: none;
+.unread {
+  margin-top: 32px;
+}
+
+/* ---------- A Recap: the night's date over the queen and the fallen king ---------- */
+
+.head {
+  position: relative;
+  overflow: hidden;
+  padding: 30px var(--gutter) 0;
+}
+
+/* "Recap of", then the date on lines of its own, broken after the day: "September 2026", the longest month and year,
+   is 7.25em wide, which sets the size on a phone, on one line from 300 wide, and the measure at every width */
+.head .title {
+  position: relative;
+  z-index: 1;
+  max-width: 8em;
+  font-size: clamp(36px, 12vw, 60px);
+  line-height: 0.9;
+}
+
+.title time {
+  display: block;
+}
+
+/* Its lines far enough apart that the two links' targets do not meet */
+.night {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  row-gap: 22px;
+  margin-top: 22px;
+}
+
+/* Two small links, each a full-size target: its 25 to 27px line and 10px either side */
+.night a {
+  display: inline-block;
+  margin: -10px 0;
+  padding: 10px 0;
+}
+
+/* The queen over the fallen king, cut out (720 x 430): at 0.5 on the phone, half its pixels on a 2x screen, under the
+   words with the pieces to the right and their long shadow running left. No stacking context between it and the grain. */
+.fallen {
+  --s: 0.5;
+  position: relative;
+  width: calc(720px * var(--s));
+  max-width: none;
+  height: calc(430px * var(--s));
+  margin: 4px 0 0 calc(100% - (665px + 8px) * var(--s));
+  mix-blend-mode: multiply;
+}
+
+/* ---------- A Recap: its Leaderboard, on the Leaderboards' table ---------- */
+
+/* A Recap's table has a Company column. On a phone there is no room for it: the Company sits under the name, as on
+   the other Leaderboards (app/leaderboard.tsx, MemberCell), and the column is left out. */
+.companies {
+  display: none;
+}
+
+/* =========================================================
+   The desktop
+   ========================================================= */
+@media (min-width: 900px) {
+  /* The list: its name on the left, staying in view while the Sundays go by on the right */
+  .index {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto 1fr;
+    column-gap: 6vw;
+    align-items: start;
+    padding: 96px var(--gutter) 120px;
   }
-}
 
-.lichessLink {
-  font-size: var(--text-sm);
+  .index > * {
+    grid-column: 2;
+  }
+
+  .index > .indexHead {
+    position: sticky;
+    top: 40px;
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .index .indexTitle {
+    font-size: min(11vw, 190px);
+  }
+
+  .indexLede {
+    margin-top: 60px;
+    font-size: 18px;
+  }
+
+  .dates,
+  .index .none,
+  .unread {
+    margin-top: 0;
+  }
+
+  .index .none {
+    font-size: min(3.6vw, 56px);
+  }
+
+  /* A Recap's first plate: the date on the left, the queen and the fallen king at their own size on the right, the
+     Matchday at the foot of the words */
+  .head {
+    display: flex;
+    flex-direction: column;
+    min-height: 560px;
+    padding: 84px var(--gutter) 52px;
+  }
+
+  .head .title {
+    font-size: min(7.4vw, 124px);
+    line-height: 0.86;
+  }
+
+  .night {
+    margin-top: auto;
+    padding-top: 40px;
+    font-size: 18px;
+  }
+
+  /* At its own size from about 1300 wide, smaller below that to keep clear of the date; its pieces' right edge on the
+     gutter (they end 55px short of the file's) */
+  .fallen {
+    position: absolute;
+    right: calc(var(--gutter) - min(55px, 4.2vw));
+    bottom: 26px;
+    width: min(720px, 55vw);
+    height: auto;
+    margin: 0;
+  }
+
+  /* The Company has its column, and is no longer under the name */
+  .companies {
+    display: table-cell;
+  }
+
+  .withCompanies tbody th > span {
+    display: none;
+  }
 }

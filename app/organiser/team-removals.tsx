@@ -8,7 +8,8 @@ import { lichessTeamKickUrl } from "@/lib/lichess";
 // The Lichess accounts kept for the Organiser (lib/leaving.ts), oldest first, each with why and a button for once the
 // Organiser has dealt with it, which forgets it. Those no Member has, of people who left the Club or switched to
 // another account, are to remove from the Club's Lichess team by hand. Those a Member has are out of the team: the
-// Member is named, to ask to connect it again, which forgets it too. Nothing at all when there are none.
+// Member is named, to ask to connect it again, which forgets it too. Each section is marked as needing the Organiser;
+// nothing at all when there are none.
 export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
   const toRemove = removals.filter((r) => r.heldBy === null);
   const outOfTeam = removals.filter((r) => r.heldBy !== null);
@@ -16,7 +17,7 @@ export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
   return (
     <>
       {outOfTeam.length > 0 && (
-        <section aria-labelledby="rejoin" className={styles.section}>
+        <section aria-labelledby="rejoin" className={`${styles.section} ${styles.byHand}`}>
           <h2 id="rejoin">Not in the Lichess team</h2>
           <ul role="list">
             {outOfTeam.map(({ lichessId, problem, heldBy }) => (
@@ -41,14 +42,14 @@ export function TeamRemovals({ removals }: { removals: TeamRemoval[] }) {
         </section>
       )}
       {toRemove.length > 0 && (
-        <section aria-labelledby="removals" className={styles.section}>
+        <section aria-labelledby="removals" className={`${styles.section} ${styles.byHand}`}>
           <h2 id="removals">Remove from the Lichess team</h2>
           <p>
             The site couldn&apos;t remove these accounts from the Club&apos;s Lichess team. Remove each on Lichess, then
             press Done.
           </p>
           {teamId && (
-            <p>
+            <p className={styles.link}>
               <ExternalLink href={lichessTeamKickUrl(teamId)}>Remove members on Lichess</ExternalLink>
             </p>
           )}

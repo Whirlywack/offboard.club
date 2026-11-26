@@ -31,6 +31,7 @@ import { createUpcomingMatchday } from "@/lib/create-matchdays";
 import { LICHESS_DEADLINE_MS } from "@/lib/leaving";
 import { finishOrganiserConnection, startOrganiserConnection } from "@/lib/organiser-lichess";
 import { changeSunday, removeFromClub, setStart, tournamentCancelled } from "./organiser/actions";
+import styles from "./organiser/organiser.module.css";
 import OrganiserPage from "./organiser/page";
 import RemovePage, { generateMetadata as confirmTitle } from "./organiser/remove/page";
 
@@ -38,7 +39,7 @@ const { getSession, refresh, formStatus, actionState } = vi.hoisted(() => ({
   getSession: vi.fn(),
   refresh: vi.fn(),
   formStatus: { pending: false },
-  actionState: { pending: false },
+  actionState: { pending: false, said: undefined as unknown },
 }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
@@ -61,7 +62,7 @@ vi.mock("react", async (original) => {
     ...react,
     useActionState: (action: unknown, initial: unknown) => {
       const [state, run] = react.useActionState(action as () => unknown, initial);
-      return [state, run, actionState.pending];
+      return [actionState.said ?? state, run, actionState.pending];
     },
   };
 });
@@ -131,6 +132,11 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;"
 const section = (html: string, id: string) => html.match(new RegExp(`<section aria-labelledby="${id}"[^>]*>.*?</section>`))?.[0] ?? null;
 // The schedule's Sundays as listed, each as its text and its buttons.
 const sundays = (html: string) => [...section(html, "schedule")!.matchAll(/<li[^>]*>(.*?)<\/li>/g)].map(([, row]) => text(row));
+// The Seasons the schedule offers to set the start of, each as its value and label, the first ticked.
+const seasonChoices = (html: string) =>
+  [...section(html, "schedule")!.matchAll(/<input type="radio" name="season"( checked="")? value="(\d+)"\/>(.*?)<\/label>/g)].map(
+    ([, ticked, n, label]) => [n, label, ticked !== undefined],
+  );
 
 const form = (fields: Record<string, string>) => {
   const data = new FormData();
@@ -185,6 +191,7 @@ beforeEach(async () => {
   signedIn = "organiser";
   formStatus.pending = false;
   actionState.pending = false;
+  actionState.said = undefined;
   getSession.mockReset().mockImplementation(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;
     return person ? { user: { ...person } } : null;
@@ -245,9 +252,11 @@ describe("removing a Member", () => {
 
   it("asks for confirmation first, saying who and what it does, and removes nobody", async () => {
     const html = await confirmPage({ member: "ana" });
-    expect(html).toContain("<h1>Remove a Member</h1>");
+    expect(html).toContain("<em>Remove</em> a Member</h1>");
     expect(text(html)).toContain("This can't be undone. Remove Ana Petraitė , Pretend Robotics, Ana-Plays on Lichess?");
     expect(text(html)).toContain("They disappear from every Leaderboard and Recap, including past ones.");
+    // A list, whatever its bullets: Safari stops announcing one drawn without them unless it says so.
+    expect(html).toMatch(/<ul role="list"[^>]*><li>They disappear/);
     expect(text(html)).toContain("The site asks Lichess to remove their account from the Club's team.");
     expect(text(html)).toContain("Nothing stops them signing up again.");
     // Keeping them comes first, then removing, both inside the form that removes.
@@ -322,10 +331,11 @@ describe("removing a Member", () => {
     expect(await remove("ana")).toBe("/organiser?member=gone");
     expect(lichess.calls).toEqual([]);
     expect(people.size).toBe(5);
-    expect(await openPage({ member: "gone" })).toMatch(/<p role="alert"[^>]*>That Member has already left the Club\.<\/p>/);
+    // Marked as needing the Organiser, as a refusal is.
+    expect(await openPage({ member: "gone" })).toContain(`<p role="alert" class="${styles.needs}">That Member has already left the Club.</p>`);
     // Nor is a confirmation step shown for them.
     const html = await confirmPage({ member: "ana" });
-    expect(html).toMatch(/<p role="alert"[^>]*>That Member isn&#x27;t in the Club\.<\/p>/);
+    expect(html).toContain(`<p role="alert" class="${styles.needs}">That Member isn&#x27;t in the Club.</p>`);
     expect(html).not.toContain("memberId");
   });
 
@@ -335,7 +345,9 @@ describe("removing a Member", () => {
     expect(organiserLichess.size).toBe(1);
     expect(lichess.calls).toEqual([]);
     for (const html of [await openPage({ member: "self" }), await confirmPage({ member: "organiser" })]) {
-      expect(html).toMatch(/<p role="alert"[^>]*>You can&#x27;t remove yourself here\. To leave the Club, delete your account on Edit your Profile\.<\/p>/);
+      expect(html).toContain(
+        `<p role="alert" class="${styles.needs}">You can&#x27;t remove yourself here. To leave the Club, delete your account on Edit your Profile.</p>`,
+      );
       expect(html).not.toContain("memberId");
     }
   });
@@ -365,10 +377,11 @@ describe("the schedule on the Organiser page", () => {
   });
 
   it("offers the next two Seasons that have not started, with when each starts now", async () => {
-    const part = section(await openPage(), "schedule")!;
-    expect([...part.matchAll(/<option value="(\d+)">(.*?)<\/option>/g)].map(([, n, label]) => [n, label])).toEqual([
-      ["1", "Season 1, now from Sunday 29 November"],
-      ["2", "Season 2, now from Sunday 17 January"],
+    const html = await openPage();
+    const part = section(html, "schedule")!;
+    expect(seasonChoices(html)).toEqual([
+      ["1", "Season 1, now from Sunday 29 November", true],
+      ["2", "Season 2, now from Sunday 17 January", false],
     ]);
     expect(part).toContain('<input id="start" type="date" required="" min="2026-11-29" step="7" name="start"/>');
     expect(text(part)).toContain("Season start Later Seasons whose start isn't set move with it.");
@@ -378,11 +391,9 @@ describe("the schedule on the Organiser page", () => {
   it("offers Season 1 alone, and nothing to skip, while it is not scheduled", async () => {
     seasons.clear();
     matchdays.clear();
-    const part = section(await openPage(), "schedule")!;
-    expect(text(part)).toContain("No Matchday in the next 8 weeks.");
-    expect([...part.matchAll(/<option value="(\d+)">(.*?)<\/option>/g)].map(([, n, label]) => [n, label])).toEqual([
-      ["1", "Season 1, not scheduled yet"],
-    ]);
+    const html = await openPage();
+    expect(text(section(html, "schedule")!)).toContain("No Matchday in the next 8 weeks.");
+    expect(seasonChoices(html)).toEqual([["1", "Season 1, not scheduled yet", true]]);
   });
 
   it("while a change is being sent, holds every button and says so", async () => {
@@ -393,6 +404,16 @@ describe("the schedule on the Organiser page", () => {
     expect(buttons).toHaveLength(8); // six to skip, one to undo, one to set a start
     for (const button of buttons) expect(button).toContain('disabled=""');
     expect(text(part)).toContain("Saving…");
+  });
+
+  it("marks what a change said as needing the Organiser when it does, and leaves it quiet when it went well", async () => {
+    const problem = "The site couldn't cancel the tournament for Sunday 29 November: cancel it on Lichess yourself.";
+    actionState.said = { text: problem, problem: true };
+    expect(section(await openPage(), "schedule")).toContain(`<p role="alert" class="${styles.needs}">${problem.replace("'", "&#x27;")}</p>`);
+    actionState.said = { text: "Season 2 now starts on Sunday 24 January.", problem: false };
+    const part = section(await openPage(), "schedule")!;
+    expect(part).toContain(`<p role="status" class="${styles.notice}">Season 2 now starts on Sunday 24 January.</p>`);
+    expect(part).not.toContain(styles.needs);
   });
 });
 
@@ -501,6 +522,8 @@ describe("skipping a Sunday", () => {
     // Above the schedule, where the sentence says it is.
     expect(html.indexOf('aria-labelledby="cancellations"')).toBeLessThan(html.indexOf('aria-labelledby="schedule"'));
     expect(part).toContain("<h2 id=\"cancellations\">Cancel on Lichess</h2>");
+    // A list of things to do by hand, so its section is marked as needing the Organiser.
+    expect(part).toMatch(new RegExp(`^<section aria-labelledby="cancellations" class="${styles.section} ${styles.byHand}">`));
     expect(text(part)).toContain(
       "The site couldn't cancel these Sundays' tournaments on Lichess. Cancel each there, signed in as the account that created it, then press Done.",
     );
@@ -679,7 +702,7 @@ describe("setting a Season's start", () => {
     expect(lichess.calls).toEqual([]);
     const page = await openPage();
     expect(sundays(page).at(-1)).toBe("Sunday 17 January No Matchday");
-    expect(section(page, "schedule")).toContain('<option value="2">Season 2, now from Sunday 24 January</option>');
+    expect(seasonChoices(page)).toContainEqual(["2", "Season 2, now from Sunday 24 January", false]);
   });
 
   it("cancels on Lichess the tournament of a Matchday it moves", async () => {

@@ -29,6 +29,8 @@ import { organiserPermission, organiserToken } from "@/lib/organiser-lichess";
 import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/organiser-callback/route";
 import { connectOrganiserLichess, testTelegram } from "./organiser/actions";
+import styles from "./organiser/organiser.module.css";
+import ui from "./ui.module.css";
 import OrganiserPage, { generateMetadata } from "./organiser/page";
 
 const { getSession, jar } = vi.hoisted(() => {
@@ -93,9 +95,13 @@ async function openPage(searchParams: Record<string, string> = {}) {
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
 
-// A message the page shows as an alert, as it appears in the markup (apostrophes escaped).
-const alertSaying = (text: string) =>
-  new RegExp(`role="alert"[^>]*>${text.replaceAll("'", "&#x27;").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+// Text as it appears in the markup (apostrophes escaped), as a pattern.
+const inMarkup = (text: string) => text.replaceAll("'", "&#x27;").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A message the page shows as an alert.
+const alertSaying = (text: string) => new RegExp(`role="alert"[^>]*>${inMarkup(text)}`);
+// A message the page marks (organiser.module.css) as needing the Organiser, or as what failed; its section's heading
+// takes the same mark.
+const marked = (as: "needs" | "failed", text: string) => new RegExp(`class="${styles[as]}">${inMarkup(text)}`);
 
 const pressConnect = async () => new URL(await redirectedTo(() => connectOrganiserLichess()));
 
@@ -169,8 +175,8 @@ describe("who the Organiser is", () => {
   it("is the configured Member, who sees their page", async () => {
     const html = await openPage();
     expect(html).toMatch(/^<main id="main"/);
-    expect(html).toContain("<h1>Organiser</h1>");
-    expect(html).toContain("Not connected, so Matchdays aren&#x27;t being created.");
+    expect(html).toContain("<em>Organiser</em></h1>");
+    expect(html).toMatch(marked("needs", "Not connected, so Matchdays aren't being created."));
     expect(html).toContain("<button>Connect Lichess</button>");
     expect(html).toContain("No job has failed.");
   });
@@ -279,7 +285,8 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(html).toMatch(/<dt>Expires<\/dt><dd><time dateTime="[^"]+">\d{1,2} \w+ \d{4}<\/time><\/dd>/);
     expect(html).not.toContain("can&#x27;t be read");
     expect(html).toMatch(/<p role="status"[^>]*>Lichess is connected\.<\/p>/);
-    expect(html).toContain("<button>Connect Lichess again</button>");
+    // Working, so reconnecting is the quiet choice.
+    expect(html).toContain(`<button class="${ui.quiet}">Connect Lichess again</button>`);
     expect(html).not.toContain(token);
     expect(html).not.toContain(organiserLichess.get("singleton")!.token);
     expect(JSON.stringify(await organiserPermission())).not.toContain(organiserLichess.get("singleton")!.token);
@@ -302,6 +309,9 @@ describe("connecting the Organiser's Lichess account", () => {
     const html = await openPage();
     expect(html).toMatch(/<dt>Expired<\/dt>/);
     expect(html).toMatch(alertSaying("Matchdays aren't being created until you connect again."));
+    expect(html).toMatch(marked("needs", "Matchdays aren't being created until you connect again."));
+    // Needed, so the filled button.
+    expect(html).toContain("<button>Connect Lichess again</button>");
     expect(html).not.toContain("Connect again before it expires");
   });
 
@@ -322,7 +332,9 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(html).not.toContain("Connect again before it expires");
     expect(html).toMatch(/<dt>Valid until<\/dt>/);
     expect(html).toContain("can&#x27;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&#x27;t being created.");
-    expect(html).toMatch(/<div role="alert"[^>]*><p>This permission can&#x27;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&#x27;t being created\. To end it and connect again:<\/p>/);
+    expect(html).toContain(
+      `<div role="alert" class="${styles.needs} ${styles.steps}"><p>This permission can&#x27;t be read with the current LICHESS_TOKEN_KEY, so Matchdays aren&#x27;t being created. To end it and connect again:</p>`,
+    );
     expect(html).toContain("<li>Sign in to Lichess as boss.</li>");
     expect(html).toContain('Open <a href="https://lichess.org/account/security" target="_blank" rel="noopener noreferrer">Security');
     expect(html).toContain("revoking afterwards would end the new permission too.");
@@ -408,7 +420,9 @@ describe("connecting the Organiser's Lichess account", () => {
     vi.stubEnv("LICHESS_TEAM_ID", "");
     expect(await redirectedTo(() => connectOrganiserLichess())).toBe("/organiser?lichess=unset");
     expect(jar.sets).toEqual([]);
-    expect(await openPage({ lichess: "unset" })).toMatch(alertSaying("Lichess can't be connected until LICHESS_TEAM_ID and LICHESS_TOKEN_KEY are set."));
+    const html = await openPage({ lichess: "unset" });
+    expect(html).toMatch(alertSaying("Lichess can't be connected until LICHESS_TEAM_ID and LICHESS_TOKEN_KEY are set."));
+    expect(html).toMatch(marked("needs", "Lichess can't be connected until LICHESS_TEAM_ID and LICHESS_TOKEN_KEY are set."));
   });
 
   it.each([
@@ -541,11 +555,14 @@ describe("the scheduled jobs on the Organiser page", () => {
       expect(html.indexOf("<dt>Outcome</dt>")).toBeLessThan(html.indexOf("<dt>Last run</dt>"));
       expect(html).toContain(`>What ${job} did.</p>`);
       expect(html).not.toContain('role="alert"');
+      // Fine, so unmarked.
+      for (const mark of [styles.needs, styles.failed, styles.flag]) expect(html).not.toContain(mark);
       expect(html).not.toContain(SECRET);
     });
 
-    it("flags plainly a job that has never run", async () => {
+    it("flags plainly a job that has never run, as needing the Organiser", async () => {
       expect(await part()).toMatch(alertSaying(neverRun));
+      expect(await part()).toMatch(marked("needs", neverRun));
     });
 
     it(`flags plainly a last run more than ${late} old, and marks its time`, async () => {
@@ -555,17 +572,18 @@ describe("the scheduled jobs on the Organiser page", () => {
       expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+">/);
       ran(lateAfter + 1, "skipped", "Nothing to do.", job);
       html = await part();
-      expect(html).toMatch(
-        alertSaying(`It hasn't run for over ${late}. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled.`),
-      );
-      expect(html).toMatch(/<dt>Last run<\/dt><dd><time dateTime="[^"]+" class="[^"]+">/);
+      const lateLine = `It hasn't run for over ${late}. Check that CRON_SECRET is set on Vercel and that cron jobs are enabled.`;
+      expect(html).toMatch(alertSaying(lateLine));
+      expect(html).toMatch(marked("failed", lateLine));
+      expect(html).toMatch(new RegExp(`<dt>Last run</dt><dd><time dateTime="[^"]+" class="${styles.flag}">`));
     });
 
-    it("shows a failed last run as failed, and why in an alert", async () => {
+    it("shows a failed last run as failed, and why in an alert, marked as failed", async () => {
       ran(30, "failed", "It went wrong.", job);
       const html = await part();
-      expect(html).toMatch(/<dt>Outcome<\/dt><dd><span class="[^"]+">Failed<\/span><\/dd>/);
+      expect(html).toContain(`<dt>Outcome</dt><dd><span class="${styles.flag}">Failed</span></dd>`);
       expect(html).toMatch(alertSaying("It went wrong.</p>"));
+      expect(html).toMatch(marked("failed", "It went wrong.</p>"));
     });
   });
 
@@ -783,6 +801,7 @@ describe("Telegram on the Organiser page", () => {
     for (const [name, value] of Object.entries(settings)) vi.stubEnv(name, value);
     const html = await telegram();
     expect(html).toMatch(alertSaying(line));
+    expect(html).toMatch(marked("needs", line));
     if (settings.TELEGRAM_BOT_TOKEN) expect(html).not.toContain(settings.TELEGRAM_BOT_TOKEN);
   });
 
@@ -809,7 +828,9 @@ describe("the Matchdays whose results are not in, on the Organiser page", () => 
     return from < 0 ? null : html.slice(from, html.indexOf("<h3>", from + 1));
   };
   const items = (html: string | null) =>
-    [...(html ?? "").matchAll(/<li>(.*?)<\/li>/g)].map(([, item]) => item.replace(/<[^>]+>/g, "").replaceAll("&#x27;", "'"));
+    [...(html ?? "").matchAll(/<li[^>]*>(.*?)<\/li>/g)].map(([, item]) => item.replace(/<[^>]+>/g, "").replaceAll("&#x27;", "'"));
+  // Those no longer checked, which need the Organiser, as the page marks them.
+  const marks = (html: string | null) => [...(html ?? "").matchAll(/<li( class="[^"]+")?>/g)].map(([, mark]) => mark === ` class="${styles.needs}"`);
 
   it("lists those of the last eight Sundays that have started, latest first, each with its date and what to do", async () => {
     played("2026-12-06", "NextWeek"); // not started
@@ -819,11 +840,13 @@ describe("the Matchdays whose results are not in, on the Organiser page", () => 
     played("2026-11-08", "LeftOut1"); // runs have left it
     played("2026-10-11", "EightWk1"); // the eighth Sunday, counting this one
     played("2026-10-04", "NineWks1"); // the ninth: too long ago
-    expect(items(await part())).toEqual([
+    const html = await part();
+    expect(items(html)).toEqual([
       "Sunday 29 November Checked until Sunday 6 December at 20:00.",
       "Sunday 8 November No longer checked. If Lichess still has its tournament, run pnpm ingest LeftOut1.",
       "Sunday 11 October No longer checked. If Lichess still has its tournament, run pnpm ingest EightWk1.",
     ]);
+    expect(marks(html)).toEqual([false, true, true]);
   });
 
   it("lists a Matchday whose tournament Lichess deleted too, which only Lichess can tell", async () => {
@@ -870,17 +893,19 @@ describe("the next Matchday on the Organiser page", () => {
     expect(html).not.toContain('role="alert"');
   });
 
-  it("says it is due for the first two hours, then flags it plainly", async () => {
+  it("says it is due for the first two hours, then flags it plainly, as failed", async () => {
     at("2026-11-23T19:59:00Z");
     expect(await panel()).toContain("It&#x27;s due on Lichess now. The next hourly run should create it.");
     at("2026-11-23T20:01:00Z");
     expect(await panel()).toMatch(alertSaying("It should be on Lichess by now. See Creating Matchdays below."));
+    expect(await panel()).toMatch(marked("failed", "It should be on Lichess by now. See Creating Matchdays below."));
   });
 
-  it("promises no creation while nothing is connected, but names the day it is due", async () => {
+  it("promises no creation while nothing is connected, but names the day it is due, as needing the Organiser", async () => {
     organiserLichess.clear();
     at("2026-11-20T12:00:00Z");
     const html = await panel();
+    expect(html).toContain(`<p role="alert" class="${styles.needs}">It&#x27;s due on Lichess on <time`);
     expect(html).toMatch(/<p role="alert"[^>]*>It&#x27;s due on Lichess on <time dateTime="2026-11-23T18:00:00.000Z">Monday 23 November<\/time>, but can&#x27;t be created until you fix the problem below\.<\/p>/);
     expect(html).not.toMatch(/<p class="[^"]+">It&#x27;s due on Lichess on/);
   });

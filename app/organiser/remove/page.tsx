@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
-import profile from "../../profile/profile.module.css";
+import { RuledLinks } from "../../ruled-links";
 import ui from "../../ui.module.css";
 import { removeFromClub } from "../actions";
 import { RemoveActions } from "../forms";
+import styles from "../organiser.module.css";
 import { getProfile, getSession, requireOrganiser } from "@/lib/auth";
 import { MEMBER_ID_MAX, NOT_YOURSELF } from "@/lib/leaving";
 import { isOrganiser } from "@/lib/organiser";
@@ -37,38 +37,42 @@ async function Confirm({ searchParams }: Pick<PageProps<"/organiser/remove">, "s
   const chosen = typeof member === "string" && member.length <= MEMBER_ID_MAX ? member : null;
   const person = chosen && chosen !== id ? await getProfile(chosen) : null;
   return (
-    <main id="main" className={`${ui.page} ${ui.arrive}`}>
-      <div className={ui.intro}>
-        <h1>Remove a Member</h1>
-        {person && <p className={ui.lede}>This can&apos;t be undone.</p>}
+    <main id="main" className={styles.page}>
+      <div className={styles.top}>
+        <div>
+          <h1 className={ui.display}>
+            <em>Remove</em> a Member
+          </h1>
+          {person && <p className={styles.lede}>This can&apos;t be undone.</p>}
+        </div>
+        {person ? (
+          // What goes and what stays, as when a Member deletes their own account (app/profile/leave), then the choice.
+          <form action={removeFromClub} className={styles.confirm}>
+            <input type="hidden" name="memberId" value={person.id} />
+            <p className={styles.question}>
+              Remove <strong>{person.name}</strong>
+              {person.company && <>, {person.company.name}</>}, {person.lichessUsername} on Lichess?
+            </p>
+            <ul role="list" className={styles.list}>
+              <li>They disappear from every Leaderboard and Recap, including past ones.</li>
+              <li>Their name, photo and Profile are deleted.</li>
+              <li>The site asks Lichess to remove their account from the Club&apos;s team.</li>
+              <li>Other Members keep their Games against them, shown as &ldquo;a&nbsp;former member&rdquo;.</li>
+            </ul>
+            <p>Nothing stops them signing up again.</p>
+            <RemoveActions name={person.name} />
+          </form>
+        ) : (
+          <>
+            <p role="alert" className={styles.needs}>
+              {chosen === id ? NOT_YOURSELF : "That Member isn't in the Club."}
+            </p>
+            <nav aria-label="More">
+              <RuledLinks links={[["/organiser", "Back to the Organiser page"]]} />
+            </nav>
+          </>
+        )}
       </div>
-      {person ? (
-        // What goes and what stays, as when a Member deletes their own account (app/profile/leave), then the choice.
-        <form action={removeFromClub} className={`${ui.panel} ${profile.confirm}`}>
-          <input type="hidden" name="memberId" value={person.id} />
-          <p>
-            Remove <strong>{person.name}</strong>
-            {person.company && <>, {person.company.name}</>}, {person.lichessUsername} on Lichess?
-          </p>
-          <ul className={profile.consequences}>
-            <li>They disappear from every Leaderboard and Recap, including past ones.</li>
-            <li>Their name, photo and Profile are deleted.</li>
-            <li>The site asks Lichess to remove their account from the Club&apos;s team.</li>
-            <li>Other Members keep their Games against them, shown as &ldquo;a&nbsp;former member&rdquo;.</li>
-          </ul>
-          <p>Nothing stops them signing up again.</p>
-          <RemoveActions name={person.name} />
-        </form>
-      ) : (
-        <>
-          <p role="alert" className={ui.alert}>
-            {chosen === id ? NOT_YOURSELF : "That Member isn't in the Club."}
-          </p>
-          <nav aria-label="More" className={ui.backLinks}>
-            <Link href="/organiser">Back to the Organiser page</Link>
-          </nav>
-        </>
-      )}
     </main>
   );
 }

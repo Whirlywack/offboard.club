@@ -280,7 +280,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  min-height: 57px;
+  min-height: 66px; /* a row with its 54px button */
   padding-block: 6px;
 }
 
@@ -289,7 +289,7 @@
 }
 
 .row > button {
-  min-width: 88px;
+  min-width: 96px; /* Skip and Undo as wide as each other */
 }
 
 .row .when {
@@ -369,13 +369,6 @@
   flex-direction: column;
   gap: 12px;
   margin-top: 32px;
-}
-
-.choose > a,
-.choose > button {
-  min-height: 54px;
-  padding: 0 28px;
-  font-size: 16px;
 }
 
 /* Removing: outlined in the error colour, never filled, so it is found at once without being the easy press */

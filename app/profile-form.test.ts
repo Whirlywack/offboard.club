@@ -9,10 +9,10 @@ import type { ProfileFormState } from "./actions";
 import { ProfileForm } from "./profile/profile-form";
 import { OPEN_TO_MAX, POSITION_MAX, readProfileForm } from "@/lib/profile";
 
-const returned = vi.hoisted(() => ({ state: null as ProfileFormState }));
+const returned = vi.hoisted(() => ({ state: null as ProfileFormState, pending: false }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
-  useActionState: () => [returned.state, () => {}, false],
+  useActionState: () => [returned.state, () => {}, returned.pending],
 }));
 vi.mock("./actions", () => ({ saveProfile: () => null }));
 
@@ -60,5 +60,45 @@ describe("a refused Profile", () => {
     const { html } = refused({ openTo });
     expect(html).toMatch(/<textarea[^>]*id="openTo"[^>]*rows="4"[^>]*>A coffee &amp; &quot;talks&quot; o+<\/textarea>/);
     expect(html).toContain('value="Backend engineer"');
+  });
+});
+
+// The open-to box is four lines tall, but Enter in it saves the form, as it did when it was one line: a line break
+// would only be saved as a space. Its key is pressed here as the browser hands it to the form, a phone's return key
+// included, which says so (enterkeyhint).
+describe("Enter in the open-to box", () => {
+  type Element = { type: unknown; props: { children?: unknown; onKeyDown?: (event: unknown) => void } };
+  const find = (node: unknown, type: string): Element | undefined => {
+    if (Array.isArray(node)) return node.map((child) => find(child, type)).find(Boolean);
+    if (!node || typeof node !== "object" || !("props" in node)) return undefined;
+    return (node as Element).type === type ? (node as Element) : find((node as Element).props.children, type);
+  };
+
+  function press(key: string, { shiftKey = false, isComposing = false } = {}) {
+    const box = find(ProfileForm({ saved: null }), "textarea")!;
+    const requestSubmit = vi.fn();
+    const preventDefault = vi.fn();
+    box.props.onKeyDown!({ key, shiftKey, nativeEvent: { isComposing }, preventDefault, currentTarget: { form: { requestSubmit } } });
+    return { saved: requestSubmit.mock.calls.length, lineStopped: preventDefault.mock.calls.length > 0 };
+  }
+
+  it("saves the form instead of starting a line, with Shift as without", () => {
+    returned.state = null;
+    returned.pending = false;
+    expect(press("Enter")).toEqual({ saved: 1, lineStopped: true });
+    expect(press("Enter", { shiftKey: true })).toEqual({ saved: 1, lineStopped: true });
+    expect(renderToStaticMarkup(createElement(ProfileForm, { saved: null }))).toMatch(/<textarea[^>]*enterKeyHint="go"/i);
+  });
+
+  it("leaves any other key, and the Enter that chooses a word being composed, to the box", () => {
+    returned.pending = false;
+    expect(press("a")).toEqual({ saved: 0, lineStopped: false });
+    expect(press("Enter", { isComposing: true })).toEqual({ saved: 0, lineStopped: false });
+  });
+
+  it("does not save again while a save is under way, as a disabled button stops Enter in a field", () => {
+    returned.pending = true;
+    expect(press("Enter")).toEqual({ saved: 0, lineStopped: true });
+    returned.pending = false;
   });
 });

@@ -179,7 +179,7 @@ describe("the Profile page", () => {
     signedInAs("another");
     const html = renderToStaticMarkup((await open("member")) as ReactElement);
     expect(html).toContain("<dt>Matchdays played</dt>");
-    expect(html).toContain('<h2 id="games">Games</h2>');
+    expect(html).toMatch(/<h2 id="games"[^>]*>(<em>)?Games(<\/em>)?<\/h2>/);
   });
 
   it("shows a Member to a Member, and nobody else", async () => {

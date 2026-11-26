@@ -15,16 +15,16 @@ export function Attendance({ history }: { history: History }) {
   return (
     <>
       {history.played > 0 && (
-        <div>
+        <div className={styles.figure}>
           <dt>Matchdays played</dt>
-          <dd className={styles.number}>{history.played}</dd>
+          <dd>{history.played}</dd>
         </div>
       )}
       {history.streak >= STREAK_SHOWN_FROM && (
-        <div>
+        <div className={styles.figure}>
           <dt>Streak</dt>
           <dd>
-            <span className={styles.number}>{history.streak}</span> Matchdays in a row
+            {history.streak} <span>Matchdays in a row</span>
           </dd>
         </div>
       )}
@@ -95,62 +95,69 @@ export function Games({
   const firstMore = showingAll ? games[GAMES_SHOWN]?.lichessGameId : undefined;
   return (
     <section aria-labelledby="games" className={styles.games}>
-      <h2 id="games">Games</h2>
-      {headToHead && (
-        <p className={styles.together}>{together(firstName, headToHead)}</p>
-      )}
-      {games.length === 0 ? (
-        <p className={ui.muted}>
-          {played > 0
-            ? "No Games against other Members yet."
-            : own
-              ? "Your Games appear here after your first Matchday."
-              : `${firstName} hasn't played a Matchday yet.`}
-        </p>
-      ) : (
-        <ol className={styles.evenings} role="list">
-          {byMatchday(games).map((evening) => (
-            <li key={evening.date}>
-              <h3 className={styles.evening}>
-                <Link href={`/recaps/${evening.date}`}>
-                  <span className="visually-hidden">Recap of </span>
-                  <time dateTime={evening.date}>{longDate(evening.date)}</time>
-                </Link>
-              </h3>
-              <ol className={styles.played} role="list">
-                {evening.games.map((game) => (
-                  <li key={game.lichessGameId} id={game.lichessGameId === firstMore ? "more" : undefined}>
-                    <p>
-                      {said[game.result]} {joining[game.result]} <Opponent game={game} />
-                    </p>
-                    {/* Lichess's page for a Game names both accounts, and someone who has left asked to be removed. */}
-                    {game.opponent && (
-                      <ExternalLink href={lichessGameUrl(game.lichessGameId, game.colour)}>
-                        <span className="visually-hidden">Game against {game.opponent.name} on </span>
-                        Lichess
-                      </ExternalLink>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </li>
-          ))}
-        </ol>
-      )}
-      {hidden > 0 && !showingAll && (
-        <p>
-          {/* To the first Game not shown before, so the next Tab carries on from there. */}
-          <Link className={ui.quiet} href={`/profiles/${memberId}?games=all#more`}>
-            Show all {total} Games
-          </Link>
-        </p>
-      )}
-      {hidden > 0 && showingAll && (
-        <p className={`${ui.small} ${ui.muted}`}>
-          {/* Not "on their Lichess profile": after a swap of account, the older Games are on the old one. */}
-          Showing the latest {GAMES_MOST} of {total} Games. Older ones are on Lichess.
-        </p>
-      )}
+      <div>
+        <h2 id="games" className={`${styles.gamesTitle} ${ui.display}`}>
+          <em>Games</em>
+        </h2>
+        {headToHead && <p className={styles.together}>{together(firstName, headToHead)}</p>}
+      </div>
+      <div className={styles.record}>
+        {games.length === 0 ? (
+          <p className={styles.none}>
+            {played > 0
+              ? "No Games against other Members yet."
+              : own
+                ? "Your Games appear here after your first Matchday."
+                : `${firstName} hasn't played a Matchday yet.`}
+          </p>
+        ) : (
+          <ol className={styles.evenings} role="list">
+            {byMatchday(games).map((evening) => (
+              <li key={evening.date}>
+                <h3 className={styles.evening}>
+                  <Link href={`/recaps/${evening.date}`}>
+                    <span className="visually-hidden">Recap of </span>
+                    <time dateTime={evening.date}>{longDate(evening.date)}</time>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                      <path d="M3 12h17M14 6l6 6-6 6" />
+                    </svg>
+                  </Link>
+                </h3>
+                <ol className={styles.played} role="list">
+                  {evening.games.map((game) => (
+                    <li key={game.lichessGameId} id={game.lichessGameId === firstMore ? "more" : undefined}>
+                      <p>
+                        {said[game.result]} {joining[game.result]} <Opponent game={game} />
+                      </p>
+                      {/* Lichess's page for a Game names both accounts, and someone who has left asked to be removed. */}
+                      {game.opponent && (
+                        <ExternalLink href={lichessGameUrl(game.lichessGameId, game.colour)}>
+                          <span className="visually-hidden">Game against {game.opponent.name} on </span>
+                          Lichess
+                        </ExternalLink>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </li>
+            ))}
+          </ol>
+        )}
+        {hidden > 0 && !showingAll && (
+          <p className={styles.all}>
+            {/* To the first Game not shown before, so the next Tab carries on from there. */}
+            <Link className={ui.quiet} href={`/profiles/${memberId}?games=all#more`}>
+              Show all {total} Games
+            </Link>
+          </p>
+        )}
+        {hidden > 0 && showingAll && (
+          <p className={styles.note}>
+            {/* Not "on their Lichess profile": after a swap of account, the older Games are on the old one. */}
+            Showing the latest {GAMES_MOST} of {total} Games. Older ones are on Lichess.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

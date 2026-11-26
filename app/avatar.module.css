@@ -21,11 +21,21 @@
   font-size: 1.125rem;
 }
 
+/* A Profile's: 100px, the size LinkedIn gives the photo, so it is never shown larger than it is. Without one, the
+   initials in an empty frame, in the colours of the plate it is on. */
 .large {
-  width: 7rem;
-  height: 7rem;
-  border-radius: var(--radius-md);
-  font-size: 2.5rem;
+  width: 100px;
+  height: 100px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-size: 42px;
+  font-style: italic;
+  letter-spacing: -0.02em;
+}
+
+.large .photo {
+  filter: grayscale(1);
 }
 
 .photo {

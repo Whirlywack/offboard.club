@@ -43,13 +43,13 @@ function ingested(date: string, rows: [userId: string, points: number, companyDo
 // The page is a static shell; what reads the database is the element inside <Suspense>, first in <main>.
 async function open(date: string) {
   const page = RecapPage({ params: Promise.resolve({ date }), searchParams: Promise.resolve({}) });
-  const inner = page.props.children[0].props.children;
+  const inner = [page.props.children].flat()[0].props.children;
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
 
 async function list() {
   const page = RecapsPage();
-  const inner = page.props.children[2].props.children;
+  const inner = page.props.children[1].props.children;
   return renderToStaticMarkup((await inner.type(inner.props)) as ReactElement);
 }
 
@@ -80,10 +80,11 @@ beforeEach(() => {
 describe("a Recap", () => {
   it("shows the Matchday Leaderboard in Lichess's order with names, Companies of that night and points", async () => {
     const html = await open(DATE);
-    expect(html).toContain('<h1>Recap of <time dateTime="2026-11-29">Sunday, 29 November 2026</time></h1>');
-    // The marked account is left out and everyone after it moves up. ana was at Vinted that night, wherever she is now.
+    expect(html).toMatch(/<h1[^>]*><em>Recap<\/em> of <time dateTime="2026-11-29">Sunday, 29 November 2026<\/time><\/h1>/);
+    // The marked account is left out and everyone after it moves up. ana was at Vinted that night, wherever she is now:
+    // under her name for a phone, and in the Company column for a desktop.
     expect(rows(html)).toEqual([
-      ["1", "Ana Petraitė", "Vinted (vinted.com)", "4.5"],
+      ["1", "Ana Petraitė Vinted (vinted.com)", "Vinted (vinted.com)", "4.5"],
       ["2", "Ben Kazlauskas", "", "3"],
       ["3", "Cora Jonaitė", "", "0.5"],
     ]);
@@ -119,7 +120,9 @@ describe("a Recap", () => {
 
   it("shows nothing else about anyone: no email, photo, LinkedIn link, position or open-to line", async () => {
     const html = await open(DATE);
-    for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee", "<img"]) expect(html).not.toContain(hidden);
+    for (const hidden of ["@", "licdn", "linkedin", "lichess.org", "Lichess-", "CTO", "coffee"]) expect(html).not.toContain(hidden);
+    // Its one picture is the Club's photograph of the queen over the fallen king, which needs no words.
+    expect([...html.matchAll(/<img [^>]*>/g)].map(([img]) => img)).toEqual([expect.stringMatching(/^<img alt="".* src="[^"]*queen-king\.webp/)]);
   });
 
   it("is not found for a Sunday with no ingested Matchday", async () => {
@@ -160,7 +163,7 @@ describe("a Recap", () => {
     );
     const html = await open(DATE);
     db.query.mockImplementation(real);
-    expect(html).toContain("<h1>Recap of");
+    expect(html).toMatch(/<h1[^>]*><em>Recap<\/em> of/);
     expect(html).not.toContain("Season 1");
     await settled();
     expect(recorded()).toEqual([{ route: "/recaps/[date]", kind: "page", reason: "the database couldn't be reached" }]);
@@ -385,9 +388,11 @@ describe("a Recap's Awards", () => {
     played("BENMATES", "ben", null, { status: "mate", plies: 21, winnerClockCentis: 9_000 });
     played("CORAWINS", "cora", "ana", { whiteRating: 1450, blackRating: 1500, winnerClockCentis: 4_000 });
 
+    // A visitor gets nothing under an Award, not even why its Game is not there.
     let html = await open(DATE);
     expect(html).not.toContain("Replay the Game");
     expect(html).not.toMatch(/BENMATES|CORAWINS/);
+    expect(html).not.toContain("has since left");
 
     asMember();
     html = await open(DATE);
@@ -397,6 +402,8 @@ describe("a Recap's Awards", () => {
       { title: "Fastest checkmate", winner: "Ben Kazlauskas", feat: "Checkmated their opponent in 11 moves.", game: null },
     ]);
     expect(html).toContain("Their opponent has since left the Club, so the Game isn&#x27;t shown.");
+    // Under that Award alone: the other two were won against someone still in the Club.
+    expect(html.match(/has since left/g)).toHaveLength(1);
     expect(html).not.toContain("BENMATES");
     expect(html).toMatch(/<details[^>]*><summary>.*Replay the Game<span class="visually-hidden"> of the biggest upset<\/span>/);
     expect(html).not.toContain("of the fastest checkmate</span>");

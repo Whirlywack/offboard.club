@@ -1,6 +1,7 @@
 // Privacy and terms (#34): the page, the link to it in every page's footer and beside the sign-in button, and the welcome
 // step, which says who runs the Club before anyone agrees. Faked: the session and the database (lib/fake-db.ts).
 // Everything else is the app's own code.
+import { readFileSync } from "node:fs";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,6 +113,30 @@ describe("the privacy and terms page", () => {
     expect(leaving).toContain("its Game is no longer shown");
     expect(section(html, "rights")).toContain("a copy of your data");
     expect(section(html, "complaints")).toContain('href="https://vdai.lrv.lt/en"');
+  });
+
+  // A reader on a phone finds what is kept, for how long, who sees it or how to leave without reading all that is above
+  // it (#82): the headings, in the page's words and order, each a link to its section, above the first of them.
+  it("lists its sections' headings before the first section, each leading to its section", () => {
+    const html = privacyPage();
+    const headings = [...html.matchAll(/<h2 id="([^"]+)">([^<]+)<\/h2>/g)].map(([, id, heading]) => [`#${id}`, heading]);
+    const list = html.match(/<nav aria-label="Privacy and terms"[^>]*>(.*?)<\/nav>/)!;
+    const links = [...list[1].matchAll(/<a href="([^"]+)"><span>([^<]+)<\/span>/g)].map(([, href, label]) => [href, label]);
+    expect(headings.map(([, heading]) => heading)).toEqual(
+      ["Who runs Offboard", "Who sees what", "Leaving", "What Offboard keeps", "Why it's kept", "Who else handles it", "How long it's kept", "Your rights", "Complaints", "Cookies", "Fair play", "Terms of membership"].map(markup),
+    );
+    expect(links).toEqual(headings);
+    expect(list.index).toBeLessThan(html.indexOf("<h2"));
+    // On a desktop the list stands beside every section, however many there are.
+    expect(list[0]).toContain(`style="grid-row-end:span ${headings.length}"`);
+  });
+
+  // A link in the text is padded to a 44px target, which drew its keyboard focus ring 56px tall, through the lines
+  // above and below it (#82 review). Nothing in these tests lays a page out, so this one reads the stylesheet.
+  it("drops a link's padding while it has keyboard focus, so that its ring stays on its line", () => {
+    const css = readFileSync(new URL("./privacy/privacy.module.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.section a \{\s*padding-block: 12px;\s*\}/);
+    expect(css).toMatch(/\.section a:focus-visible \{\s*padding-block: 0;\s*\}/);
   });
 
   it("discloses the sign-in cookie and its 7 days, which use does not extend", () => {
@@ -313,6 +338,23 @@ describe("the welcome step", () => {
     signedIn = null;
     await expect(welcomeStep()).rejects.toThrow(/^redirect \/$/);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["has agreed but not connected Lichess", { lichessId: null, lichessUsername: null }],
+    ["is a Member", {}],
+  ])("sends someone who %s home, as there is nothing left to agree to", async (_, details) => {
+    addPerson("agreed", details);
+    signedIn = "agreed";
+    await expect(welcomeStep()).rejects.toThrow(/^redirect \/$/);
+  });
+
+  it("will not send the form until both boxes are ticked, the browser checking before the site does", async () => {
+    const boxes = [...(await welcomeStep()).matchAll(/<input type="checkbox"[^>]*>/g)].map(([box]) => box);
+    expect(boxes).toEqual([
+      '<input type="checkbox" required="" name="publicDisplay" value="yes"/>',
+      '<input type="checkbox" required="" name="houseRules" value="yes"/>',
+    ]);
   });
 
   it("says names and Companies are public everywhere they are, as a condition of membership, and how to leave", async () => {

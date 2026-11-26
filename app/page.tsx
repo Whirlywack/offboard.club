@@ -1,6 +1,6 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { headers } from "next/headers";
-import Image from "next/image";
+import Image, { getImageProps } from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 import { cache, Suspense } from "react";
@@ -14,6 +14,7 @@ import pawnEmpty from "./photos/pawn-empty.webp";
 import pawnLong from "./photos/pawn-long.webp";
 import pawn from "./photos/pawn.webp";
 import queenKing from "./photos/queen-king.webp";
+import queenPhone from "./photos/queen-phone.webp";
 import queen from "./photos/queen.webp";
 import row from "./photos/row.webp";
 import { RuledLinks } from "./ruled-links";
@@ -40,7 +41,7 @@ export default function Home({ searchParams }: PageProps<"/">) {
     <>
       <Masthead
         strip={
-          <Suspense>
+          <Suspense fallback={<div className={styles.stripSpace} />}>
             <WhatIsNextStrip />
           </Suspense>
         }
@@ -52,7 +53,7 @@ export default function Home({ searchParams }: PageProps<"/">) {
       <main id="main">
         <section className={`${styles.hero} ${ui.grain}`} aria-labelledby="title">
           <div className={`${styles.stage} ${ui.grain}`}>
-            <Image className={styles.queen} src={queen} alt="" sizes="(min-width: 900px) 96vw, 245vw" preload />
+            <Queen />
             <h1 id="title" className={`${styles.title} ${ui.display}`}>
               <em>Sunday</em>
               <br className={styles.phoneOnly} /> chess
@@ -91,7 +92,13 @@ export default function Home({ searchParams }: PageProps<"/">) {
             <em>The</em> <span>chess</span>
           </h2>
           <div className={styles.figure}>
-            <Image className={styles.king} src={king} alt="" sizes="(min-width: 900px) 72vw, 512px" quality={90} />
+            <Image
+              className={styles.king}
+              src={king}
+              alt=""
+              sizes="(min-width: 1438px) 1024px, (min-width: 900px) 72vw, 512px"
+              quality={90}
+            />
           </div>
           <p className={styles.chessText}>
             Matchdays start at 20:00 Vilnius time, on Lichess. Games are 5 minutes a side plus 3 seconds a move. Knowing
@@ -142,6 +149,26 @@ export default function Home({ searchParams }: PageProps<"/">) {
         </div>
       </main>
     </>
+  );
+}
+
+// The queen, as much of her photograph as the screen shows. On a phone under 441px wide a third of it is in sight, so a
+// phone is sent that part alone, cut at the same scale (queen-phone.webp, 846 x 1512 from x 396 of the 1800px
+// photograph), which home.module.css places where it falls. Each `sizes` is the width the photograph is drawn at there.
+function Queen() {
+  const shared = { alt: "", loading: "eager", fetchPriority: "high" } as const;
+  const phone = getImageProps({ ...shared, src: queenPhone, sizes: "(max-width: 315px) 363px, (max-width: 398px) 115vw, 459px" });
+  const { props } = getImageProps({
+    ...shared,
+    src: queen,
+    sizes: "(min-width: 1559px) 1482px, (min-width: 1292px) 95vw, (min-width: 900px) 1229px, 975px",
+  });
+  return (
+    <picture>
+      <source media="(max-width: 440px)" srcSet={phone.props.srcSet} sizes={phone.props.sizes} />
+      {/* next/image's own props, through getImageProps, as next/image draws no <picture> */}
+      <img {...props} alt="" className={styles.queen} />
+    </picture>
   );
 }
 
@@ -242,7 +269,7 @@ export async function NextMatchday() {
         )}
       </div>
       {standing === null ? (
-        <Image className={styles.row} src={row} alt="" sizes="(min-width: 900px) 44vw, 100vw" />
+        <Image className={styles.row} src={row} alt="" sizes="(min-width: 900px) 44vw, calc(100vw - 32px)" />
       ) : (
         <ol className={styles.pawns} aria-hidden="true">
           {Array.from({ length: MEMBERS_TO_START }, (_, place) => (

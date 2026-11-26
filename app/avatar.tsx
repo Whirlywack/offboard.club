@@ -25,8 +25,8 @@ export function Avatar({ name, src, size }: { name: string; src: string | null; 
           className={styles.photo}
           src={photo}
           alt=""
-          width={size === "large" ? 112 : 48}
-          height={size === "large" ? 112 : 48}
+          width={size === "large" ? 100 : 48}
+          height={size === "large" ? 100 : 48}
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailed(photo)}

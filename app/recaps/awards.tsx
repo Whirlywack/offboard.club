@@ -22,38 +22,48 @@ function feat({ kind, value }: RecapAward): ReactNode {
   return <>Checkmated their opponent in {n} {plural(value, "move", "moves")}.</>;
 }
 
-// A Recap's Awards: what each was for, who won it and the number that won it, and, when `showGames`, the Game on
-// Lichess's own board, unless the loser has since left the Club. Nothing about a Game reaches a viewer who is not shown
-// it: not its board, its link or its id. Nothing at all is shown when no Game won anything.
+// A Recap's Awards, on black: what each was for, its first word in italic as a heading's is, who won it and the number
+// that won it, and, when `showGames`, the Game on Lichess's own board, unless the loser has since left the Club. Nothing
+// about a Game reaches a viewer who is not shown it: not its board, its link or its id. Nothing at all is shown when no
+// Game won anything.
 export function Awards({ awards, showGames }: { awards: RecapAward[]; showGames: boolean }) {
   if (awards.length === 0) return null;
   return (
-    <section aria-labelledby="awards" className={styles.awards}>
-      <div className={styles.heading}>
-        <h2 id="awards">Awards</h2>
-        <p className={`${ui.small} ${ui.muted}`}>Any Member can win one, whatever their rating.</p>
+    <section aria-labelledby="awards" className={`${styles.awards} ${ui.black}`}>
+      <div>
+        <h2 id="awards" className={`${styles.awardsTitle} ${ui.display}`}>
+          <em>Awards</em>
+        </h2>
+        <p className={styles.anyone}>Any Member can win one, whatever their rating.</p>
       </div>
       <ul className={styles.list} role="list">
-        {awards.map((award) => (
-          <li key={award.kind} className={styles.award}>
-            <h3 className={styles.title}>{TITLES[award.kind]}</h3>
-            <p className={styles.winner}>
-              <Link href={`/profiles/${award.memberId}`}>{award.name}</Link>
-            </p>
-            <p className={styles.feat}>{feat(award)}</p>
-            {showGames && !award.opponentLeft && (
-              <Replay label={`of the ${inText(award)}`} board={<GameBoard award={award} />}>
-                <p className={styles.source}>
-                  <ExternalLink href={awardGameUrl(award)}>Open the Game on Lichess</ExternalLink>
+        {awards.map((award) => {
+          const [first, ...rest] = TITLES[award.kind].split(" ");
+          return (
+            <li key={award.kind} className={styles.award}>
+              <h3 className={`${styles.title} ${ui.display}`}>
+                <em>{first}</em> {rest.join(" ")}
+              </h3>
+              <div className={styles.body}>
+                <p className={styles.winner}>
+                  <Link href={`/profiles/${award.memberId}`}>{award.name}</Link>
                 </p>
-              </Replay>
-            )}
-            {/* Lichess's board and page for the Game name both accounts, and someone who has left asked to be removed. */}
-            {showGames && award.opponentLeft && (
-              <p className={styles.noGame}>Their opponent has since left the Club, so the Game isn&apos;t shown.</p>
-            )}
-          </li>
-        ))}
+                <p className={styles.feat}>{feat(award)}</p>
+                {showGames && !award.opponentLeft && (
+                  <Replay label={`of the ${inText(award)}`} board={<GameBoard award={award} />}>
+                    <p className={styles.source}>
+                      <ExternalLink href={awardGameUrl(award)}>Open the Game on Lichess</ExternalLink>
+                    </p>
+                  </Replay>
+                )}
+                {/* Lichess's board and page for the Game name both accounts, and someone who has left asked to be removed. */}
+                {showGames && award.opponentLeft && (
+                  <p className={styles.noGame}>Their opponent has since left the Club, so the Game isn&apos;t shown.</p>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

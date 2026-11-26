@@ -189,7 +189,7 @@ describe.concurrent("a check", () => {
     const { status, stdout } = await check(root, { FAKE_LOG: log, FAKE_FAIL: "lint,build,seed" });
     expect(stdout).toContain("\npnpm check failed: lint, build, seeds, in ");
     expect(stdout).toContain("✓ typecheck\n");
-    expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states");
+    expect(stdout).toContain("✗ seeds: club 2 of 3 states, season-over 2 of 3 states, empty 2 of 3 states, scheduled 2 of 3 states");
     expect(status).toBe(1);
     expect(leftovers(root)).toEqual([]);
   }, 60_000);

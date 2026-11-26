@@ -174,9 +174,10 @@
       "purpose": "Tells someone deciding whether to sign in, or a Member, what Offboard keeps about them, who sees it, how long it is kept, their rights, how to leave, and the terms of membership.",
       "should_be_able_to": "Learn that only their name and Company are public and that everything else is for Members, and how to leave.",
       "on_it_now": [
-        "Heading 'Privacy and terms', 'Last changed 26 November 2026'.",
-        "Twelve sections of running text with bulleted lists: Who runs Offboard (with the Organiser's email address when set); Who sees what; Leaving; What Offboard keeps; Why it's kept; Who else handles it (links to Vercel's and Databricks' data processing terms); How long it's kept; Your rights; Complaints (link to vdai.lrv.lt); Cookies; Fair play; Terms of membership.",
-        "Back link 'Home'."
+        "Heading 'Privacy and terms' in the display serif, 'Privacy' in italic on a line of its own; 'Last changed 26 November 2026'.",
+        "The twelve section headings, one to a ruled row, each a link to its section: on a phone after the heading, each row ending in a down arrow; on a desktop in a column of their own beside the text, in view while it scrolls.",
+        "Twelve sections of running text with lists, each opening on a rule with its heading in the display serif: Who runs Offboard (with the Organiser's email address when set); Who sees what; Leaving; What Offboard keeps; Why it's kept; Who else handles it (links to Vercel's and Databricks' data processing terms); How long it's kept; Your rights; Complaints (link to vdai.lrv.lt); Cookies; Fair play; Terms of membership.",
+        "Ruled link 'Home'."
       ],
       "leads_from": [
         "Footer of every page.",
@@ -187,14 +188,16 @@
         "mailto: the Organiser.",
         "'Edit your Profile' → /profile (a visitor following it is sent home).",
         "Vercel and Databricks legal pages, vdai.lrv.lt (new tabs).",
+        "Each of its twelve sections, from the list of headings.",
         "Home."
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "7,551 px tall on a phone (about 9 screens), the longest page captured.",
-        "Links inside running text are 20 px tall: the email address 198.5 x 20, 'Edit your Profile' 120 x 20, 'Vercel's' 75 x 20, 'Databricks'' 100.5 x 20.",
-        "'Home' 40.7 x 44 px.",
-        "No text under 14 px outside the footer."
+        "8,857 px tall on a phone (about 10.5 screens).",
+        "The list of headings is twelve rows 44 px tall and ends 840 px down, inside the first screen.",
+        "Links inside running text are 46 px tall to the touch, 12 px of padding above and below their line, which keyboard focus drops so that the ring stays on its line: the email address 199 x 46, 'Edit your Profile' 121 x 46, 'Vercel's' 75 x 46, 'Databricks'' 101 x 46, 'vdai.lrv.lt' 86 x 46; a link that wraps onto a second line is 72 px tall over both.",
+        "'Home' 358 x 68 px.",
+        "No text under 14 px outside the footer: the smallest is the cookies' names, 14.6 px."
       ],
       "differs_from_spec": [
         "Not in the spec (#1); added by ticket #34.",
@@ -409,9 +412,9 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "Each date link is at least 44 px tall; only 'Home' (40.7 x 44) is under 44 px.",
-        "No text under 14 px outside the footer.",
-        "1,593 px tall with 16 Recaps."
+        "Each date link is a 68 px row; 'Home' is 44 px tall. No control is under 44 px.",
+        "No text under 15 px outside the footer.",
+        "1,767 px tall with 16 Recaps."
       ],
       "differs_from_spec": [
         "The list shows dates only: no winner, Award or number of players per Matchday."
@@ -449,10 +452,10 @@
       "purpose": "The summary of one Matchday: that night's Leaderboard and its Awards. It gives the evening an ending and shows the public the Club's tone.",
       "should_be_able_to": "See where everyone finished that night and who won each Award; a Member can replay an Award's Game.",
       "on_it_now": [
-        "Heading 'Recap of Sunday, 15 November 2026'; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
-        "'Leaderboard': table Rank / Name / Company (with domain) / Points, in Lichess's final order; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
-        "'Awards' with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
+        "Heading 'Recap of Sunday, 15 November 2026' over the photograph of the queen standing above the fallen king; 'Matchday 2 of Season 3' with a link to the Season (absent for a Matchday outside every Season); for Members, 'Open this Matchday on Lichess'.",
+        "'Awards', on black, with 'Any Member can win one, whatever their rating.', then up to three: 'Biggest upset' (beat someone rated N points higher), 'Closest call' (won with N seconds left), 'Fastest checkmate' (checkmated in N moves); each with the winner's name. An Award nothing qualified for is left out; with none, the section is left out.",
         "Members: under each Award a 'Replay the Game' button that opens Lichess's board in the page, with 'Open the Game on Lichess'; for an Award won against someone who has since left, 'Their opponent has since left the Club, so the Game isn't shown.' Visitors get nothing under the Awards.",
+        "'Leaderboard', on the Leaderboards' table: Rank / Name / Company (with domain) / Points, in Lichess's final order, the Company under the name on a phone; or 'Nobody is on this Matchday's Leaderboard.' For anyone but a Member, the note about Profiles.",
         "Back links: All Recaps, Home."
       ],
       "leads_from": [
@@ -469,11 +472,10 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The table fits: 347 px, columns Rank 44, Name 135, Company 111, Points 57 px. The 111 px Company column wraps a long Company name to five lines plus its domain: the tallest row is 210 px, the shortest 51 px. Names wrap to two or three lines.",
-        "Name links are 20 px tall, Award winners 22.5 px; 'Open this Matchday on Lichess' 227.5 x 17.5; 'Open the Game on Lichess' 174.5 x 15; 'Season 3' 63.6 x 17.5 (in running text). 10 of 26 controls (visitor) and 14 of 33 (Member) are under 44 px.",
-        "'Replay the Game' buttons are at least 44 px tall.",
-        "13 px text: column headings, domains, Award titles ('Biggest upset', 'Closest call', 'Fastest checkmate'), the note under an opened board.",
-        "2,441 to 3,516 px tall (the opened board adds about 570 px)."
+        "The table fits: 358 px, columns Rank 42, Name 256, Points 60 px, each Company under its name (its own column from 900 wide). The tallest row is 136 px (a long Company over three lines and its domain), the shortest 55 px. A name breaks only between words; from 300 wide nothing scrolls sideways, a 16-letter surname and a 20-character domain included.",
+        "No control is under 44 px: a name in the table is its whole cell; Award winners, 'Season 3', 'Open this Matchday on Lichess' and 'Open the Game on Lichess' are padded to 44 px or more; 'Replay the Game' is 54 px.",
+        "11 px column headings (labels in capitals) and 13.5 px Companies; everything else 15 px or more.",
+        "992 px (nobody on it) to 3,900 px tall (a Member with a board opened, which adds about 580 px)."
       ],
       "differs_from_spec": [
         "The spec's 'Least time left' Award is titled 'Closest call'.",
@@ -731,6 +733,24 @@
           "as": "ana",
           "path": "/profile?lichess=taken",
           "note": "Added. /profile?lichess=taken: 'That Lichess account is already connected to another Member...' above 'Switch Lichess account'."
+        },
+        {
+          "name": "profile-edit-open-to-refused",
+          "label": "An open-to line over 140 characters",
+          "seed": "club",
+          "as": "ana",
+          "path": "/profile",
+          "steps": [
+            {
+              "fill": "#openTo",
+              "value": "A coffee after Sunday's Games, a chat about hiring, mentoring someone starting out, and hearing about platform roles in Vilnius, or remote ones too."
+            },
+            {
+              "click": "button:has-text('Save changes')",
+              "waitFor": "#openTo-error"
+            }
+          ],
+          "note": "Added with #80, when Open to became a box of four lines: its refusal beside it, what was typed kept."
         }
       ]
     },
@@ -846,10 +866,10 @@
         "'Delete your account' → /welcome/leave."
       ],
       "phone_facts": [
-        "No sideways scroll.",
-        "The checkboxes are 20 x 20 px, inside labels of 311 x 157 px and 311 x 46 px that also tick them.",
-        "'Privacy and terms' (136.5 x 20) and 'Delete your account' (137.8 x 17.5) are links in running text.",
-        "13 px text: the step indicator's numbers and labels, and the footer."
+        "No sideways scroll, at 320 wide too, with a name of 56 letters.",
+        "The checkboxes are 28 x 28 px, inside labels of 358 x 177 px and 358 x 58 px that also tick them.",
+        "'Privacy and terms' (137 x 46) and 'Delete your account' (136 x 44) are links in running text, with room above and below to make them full-size targets.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [
         "Both boxes are marked required, so the browser stops the form itself and the site's own refusal beside a box ('To join, please tick the box accepting the house rules.') shows only if the browser's check is bypassed; it was not captured.",
@@ -862,6 +882,23 @@
           "seed": "club",
           "as": "step1",
           "path": "/welcome"
+        },
+        {
+          "name": "welcome-agree-ticked",
+          "label": "Both boxes ticked",
+          "seed": "club",
+          "as": "step1",
+          "path": "/welcome",
+          "steps": [
+            {
+              "click": "label:has([name=publicDisplay])"
+            },
+            {
+              "click": "label:has([name=houseRules])",
+              "waitFor": "[name=houseRules]:checked"
+            }
+          ],
+          "note": "Added (#81): what a ticked box looks like, just before 'Agree and continue'."
         }
       ]
     },
@@ -894,8 +931,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "'Make one on Lichess' is a link in running text that wraps over two lines (258.7 x 40.8 px); 'Delete your account' 137.8 x 17.5 px.",
-        "13 px text: the step indicator and the footer."
+        "'Make one on Lichess' (139 x 44) and 'Delete your account' (136 x 44) are links in running text, with room above and below to make them full-size targets.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [
@@ -939,9 +976,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The Open to field's placeholder 'e.g. A coffee, mentoring, hearing about jobs' needs 333 px and the field has 261 px, so it is cut off.",
-        "'Join the Telegram group' is a link 346.5 x 26.3 px.",
-        "13 px text: the step indicator and the footer."
+        "'Join the Telegram group' is a link of 202.5 x 44 px on a line of its own.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [

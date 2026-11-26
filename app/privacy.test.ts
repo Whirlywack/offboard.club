@@ -1,6 +1,7 @@
 // Privacy and terms (#34): the page, the link to it in every page's footer and beside the sign-in button, and the welcome
 // step, which says who runs the Club before anyone agrees. Faked: the session and the database (lib/fake-db.ts).
 // Everything else is the app's own code.
+import { readFileSync } from "node:fs";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -126,6 +127,16 @@ describe("the privacy and terms page", () => {
     );
     expect(links).toEqual(headings);
     expect(list.index).toBeLessThan(html.indexOf("<h2"));
+    // On a desktop the list stands beside every section, however many there are.
+    expect(list[0]).toContain(`style="grid-row-end:span ${headings.length}"`);
+  });
+
+  // A link in the text is padded to a 44px target, which drew its keyboard focus ring 56px tall, through the lines
+  // above and below it (#82 review). Nothing in these tests lays a page out, so this one reads the stylesheet.
+  it("drops a link's padding while it has keyboard focus, so that its ring stays on its line", () => {
+    const css = readFileSync(new URL("./privacy/privacy.module.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.section a \{\s*padding-block: 12px;\s*\}/);
+    expect(css).toMatch(/\.section a:focus-visible \{\s*padding-block: 0;\s*\}/);
   });
 
   it("discloses the sign-in cookie and its 7 days, which use does not extend", () => {

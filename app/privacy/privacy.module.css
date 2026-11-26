@@ -102,7 +102,7 @@
   font-optical-sizing: auto;
   line-height: 1;
   letter-spacing: -0.015em;
-  scroll-margin-top: 30px; /* the rule above it shows too */
+  scroll-margin-top: 23px; /* with the page's 24px, its rule lands 24px from the top, as the list's does */
 }
 
 .section ul,
@@ -130,9 +130,14 @@
   font-weight: 600;
 }
 
-/* A link in the text is a 44px target without moving the lines around it */
+/* A link in the text is a 44px target without moving the lines around it. The padding goes while it has keyboard
+   focus, so that its ring stays on its own line. */
 .section a {
   padding-block: 12px;
+}
+
+.section a:focus-visible {
+  padding-block: 0;
 }
 
 .section code {
@@ -169,10 +174,10 @@
     font-size: 16px;
   }
 
-  /* Beside the twelve sections and the link home */
+  /* Beside the sections: page.tsx gives it as many rows as there are */
   .contents {
     grid-column: 1;
-    grid-row: 2 / span 13;
+    grid-row-start: 2;
     align-self: start;
     margin-top: 0;
   }

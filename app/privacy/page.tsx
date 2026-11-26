@@ -53,7 +53,11 @@ export default function PrivacyPage() {
         </p>
       </div>
 
-      <nav aria-label="Privacy and terms" className={styles.contents}>
+      <nav
+        aria-label="Privacy and terms"
+        className={styles.contents}
+        style={{ gridRowEnd: `span ${Object.keys(SECTIONS).length}` }}
+      >
         <ul>
           {Object.entries(SECTIONS).map(([id, heading]) => (
             <li key={id}>

@@ -402,10 +402,10 @@ describe.concurrent("a run of pnpm guards", () => {
     expect(stdout).toContain("the changed migrations do not apply to an empty database (pnpm db:start failed)\n");
     expect(status).toBe(1);
     const databases = runs().filter((run) => run.name === "db:start").map((run) => run.args.at(-1)!.split("/").pop());
-    expect(databases).toEqual(["db-tests-1", "db-change-1-1", "db-change-2-1"]);
+    expect(databases).toEqual(["db-tests", "db-change-1", "db-change-2"]);
     // The change is judged on its own database; the test that noticed it, again on the one migrated without it.
     const urls = runs().filter((run) => run.name === "test").map((run) => run.url?.split("/").pop());
-    expect(urls).toEqual(["db-tests-1", "db-change-1-1", "db-tests-1"]);
+    expect(urls).toEqual(["db-tests", "db-change-1", "db-tests"]);
     expect(filters()).toEqual(["bail", "bail lib/a.postgres.test.ts", "all lib/a.postgres.test.ts"]);
     expect(left()).toEqual(AS_IT_WAS);
   }, 60_000);

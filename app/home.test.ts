@@ -1,20 +1,24 @@
-// The next Matchday on the home page: its time for everyone, and its Lichess tournament for Members once the site has
-// created it; and who is signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts).
-// Everything else is the app's own code.
+// The home page: its words as each reader meets it, and its description in search results and link previews; the next
+// Matchday, its time for everyone, and its Lichess tournament for Members once the site has created it; and who is
+// signed in, when that cannot be read. Faked: the session and the database (lib/fake-db.ts). Everything else is the
+// app's own code.
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { prerenderToNodeStream } from "react-dom/static";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { alertOrganiser } from "@/lib/alerts";
-import { addPerson, db, fromDatabase, matchdays, people, requestFailures, resetDb, seasons } from "@/lib/fake-db";
+import { addPerson, db, fromDatabase, matchdays, people, requestFailures, resetDb, results, seasons } from "@/lib/fake-db";
 import { createFakeTelegram } from "@/lib/fixtures/fake-telegram";
 import { keepWaitUntil } from "@/lib/fixtures/wait-until";
-import { NextMatchday, SeasonChampions, You } from "./page";
+import { metadata } from "./layout";
+import Home, { NextMatchday, SeasonChampions, You } from "./page";
 
 const { getSession, request } = vi.hoisted(() => ({ getSession: vi.fn(), request: { headers: new Headers() } }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
 vi.mock("next/headers", () => ({ headers: async () => request.headers }));
 vi.mock("next/server", () => ({ connection: async () => {} }));
+vi.mock("next/font/google", () => ({ Newsreader: () => ({ variable: "newsreader" }) }));
 vi.mock("@/lib/db", () => import("@/lib/fake-db"));
 
 const DATE = "2026-11-29";
@@ -40,7 +44,149 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+// The whole page as its reader gets it once every streamed part has arrived, as the text they read, top to bottom.
+async function page(query: Record<string, string> = {}) {
+  const { prelude } = await prerenderToNodeStream(Home({ params: Promise.resolve({}), searchParams: Promise.resolve(query) }));
+  let html = "";
+  for await (const chunk of prelude) html += chunk;
+  return html
+    .replace(/<script>[\s\S]*?<\/script>/g, "") // React's own, for a form sent before the page is interactive
+    .replace(/<[^>]+>/g, " ")
+    .replaceAll("&#x27;", "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// The words of the home page's deck (#74). Initials stand in for a photo, and "(opens in a new tab)" is for screen
+// readers: neither is the deck's.
+describe("the home page as each reader meets it", () => {
+  const TOP =
+    "Free chess Club · Vilnius Sunday chess for people in tech Working in tech keeps you busy, and busy gets lonely. We " +
+    "think that's worth fixing. So every Sunday evening we play chess online, five Games against other people in tech. " +
+    "With luck some of us become friends, and end up across a real board.";
+  const SEASON_1 = "Season 1 15 more Members to go It starts once there are sixteen of us, on the first Sunday at least a week later.";
+  const SIGN_IN =
+    "Sign in with LinkedIn Signing in lets Offboard store your LinkedIn name, photo and email, updated each time you " +
+    "sign in. Privacy and terms";
+  const MEMBER =
+    "PM Signed in as Person member Sign out Your Profile Edit your Profile Telegram group (opens in a new tab)";
+  const JOIN = "Join this Matchday on Lichess (opens in a new tab)";
+  const below = ({ telegram = "There's a Telegram group to talk in.", champion = "" } = {}) =>
+    "The chess Matchdays start at 20:00 Vilnius time, on Lichess. Games are 5 minutes a side plus 3 seconds a move. " +
+    "Knowing how the pieces move is enough. A Season is six Matchdays and your best four count, so you can miss two. " +
+    "Meeting people Profiles can say where Members work and what they're open to, like a coffee or hearing about jobs. " +
+    `${telegram} Nobody may sell to you or recruit you unless your Profile invites it. Leaderboards and Recaps Both ` +
+    `are public and show your name. ${champion}This Season's Leaderboard All-time Leaderboard Recaps`;
+  // Season 1 played to its sixth Matchday, its results in: the champion is named until Season 2's first, 17 January.
+  const seasonOver = (winners: string[]) => {
+    for (const date of ["2026-11-29", "2026-12-06", "2026-12-13", "2026-12-20", "2026-12-27", "2027-01-03"]) {
+      matchdays.set(date, { date, lichessTournamentId: `T${date.replaceAll("-", "")}`, ingestedAt: new Date() });
+      for (const userId of winners)
+        results.set(`${date} ${userId}`, { matchdayDate: date, userId, rank: 1, points: 4, rating: 1500, companyDomain: null });
+    }
+    vi.setSystemTime(new Date("2027-01-06T12:00:00Z"));
+  };
+
+  beforeEach(() => vi.stubEnv("TELEGRAM_INVITE_LINK", "https://t.me/+a-pretend-invite"));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    db.query.mockReset();
+  });
+
+  it("is the deck's page for a first-time visitor before Season 1", async () => {
+    seasons.clear();
+    expect(await page()).toBe(`${TOP} ${SEASON_1} ${SIGN_IN} ${below()}`);
+  });
+
+  it("gives a Member before Season 1 the same card, and their own links in place of the button", async () => {
+    seasons.clear();
+    signedIn = "member";
+    expect(await page()).toBe(`${TOP} ${SEASON_1} ${MEMBER} ${below()}`);
+  });
+
+  it("shows a visitor the next Matchday's time alone once a Season is scheduled", async () => {
+    expect(await page()).toBe(`${TOP} Next Matchday Sunday 29 November at 20:00 ${SIGN_IN} ${below()}`);
+  });
+
+  it("gives someone part-way through signing up the way to finish, and no Profile or Telegram links", async () => {
+    signedIn = "newcomer";
+    expect(await page()).toBe(
+      `${TOP} Next Matchday Sunday 29 November at 20:00 PN Signed in as Person newcomer Sign out Finish signing up ${below()}`,
+    );
+  });
+
+  it("gives a Member the Matchday coming up on Lichess once its tournament exists", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    signedIn = "member";
+    expect(await page()).toBe(`${TOP} Next Matchday Sunday 29 November at 20:00 ${JOIN} ${MEMBER} ${below()}`);
+  });
+
+  it("gives a Member the Matchday under way, and until when Lichess lets them join", async () => {
+    matchdays.set(DATE, { date: DATE, lichessTournamentId: "AbCd1234", ingestedAt: null });
+    vi.setSystemTime(new Date(`${DATE}T20:40:00+02:00`));
+    signedIn = "member";
+    expect(await page()).toBe(
+      `${TOP} Matchday under way Sunday 29 November at 20:00 Lichess lets you join until round 3 starts. ${JOIN} ${MEMBER} ${below()}`,
+    );
+  });
+
+  it("names the Season's champion below what is public and above the links, once a Season is over", async () => {
+    seasonOver(["member"]);
+    const next = "Next Matchday Sunday 17 January at 20:00";
+    const champion = "Person member is the Season 1 champion. ";
+    expect(await page()).toBe(`${TOP} ${next} ${SIGN_IN} ${below({ champion })}`);
+    signedIn = "member";
+    expect(await page()).toBe(`${TOP} ${next} ${MEMBER} ${below({ champion })}`);
+  });
+
+  it("says that two share the title", async () => {
+    addPerson("other");
+    seasonOver(["member", "other"]);
+    expect(await page()).toContain("Both are public and show your name. Person member and Person other share the Season 1 title. This Season's Leaderboard");
+  });
+
+  it("leaves out the card and the champion when the database is down, and says so to someone with a session", async () => {
+    seasonOver(["member"]);
+    const settled = keepWaitUntil();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.query.mockRejectedValue(fromDatabase(new Error("Connection terminated due to connection timeout")));
+    expect(await page()).toBe(`${TOP} ${SIGN_IN} ${below()}`);
+    request.headers = new Headers({ cookie: "better-auth.session_token=a-pretend-session-token" });
+    getSession.mockRejectedValue(new Error("Failed to get session"));
+    expect(await page()).toBe(`${TOP} Your sign-in can't be checked right now. Please try again in a minute. ${below()}`);
+    await settled();
+  });
+
+  it("says beside the button that LinkedIn sign-in failed", async () => {
+    expect(await page({ signin: "failed" })).toContain(
+      "Sign in with LinkedIn LinkedIn sign-in isn't working right now. Please try again in a few minutes. Signing in lets",
+    );
+  });
+
+  it("says the Telegram group is still to come while no invite link is set", async () => {
+    vi.stubEnv("TELEGRAM_INVITE_LINK", "");
+    expect(await page()).toBe(
+      `${TOP} Next Matchday Sunday 29 November at 20:00 ${SIGN_IN} ${below({ telegram: "A Telegram group to talk in is still to come." })}`,
+    );
+  });
+});
+
+describe("the site's description in search results and link previews", () => {
+  it("is the home page deck's", () => {
+    const description =
+      "Working in tech keeps you busy, and busy gets lonely. Offboard is free Sunday chess on Lichess for people in tech " +
+      "in and around Vilnius.";
+    expect(metadata.description).toBe(description);
+    expect(metadata.openGraph?.description).toBe(description);
+  });
+});
 
 describe("the next Matchday's tournament on the home page", () => {
   it("is linked for a Member once the site has created it", async () => {

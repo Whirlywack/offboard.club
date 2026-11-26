@@ -136,7 +136,7 @@ async function Organiser({ searchParams }: Pick<PageProps<"/organiser">, "search
           and &ldquo;Remove&rdquo; permissions.
         </p>
         <form action={connectOrganiserLichess} className={`${ui.actions} ${styles.fill}`}>
-          <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} />
+          <ConnectButton label={permission ? "Connect Lichess again" : "Connect Lichess"} quiet={usable} />
         </form>
       </section>
 

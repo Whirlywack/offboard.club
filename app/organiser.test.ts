@@ -30,6 +30,7 @@ import { connectLichess } from "./actions";
 import { GET as comeBackFromLichess } from "./api/lichess/organiser-callback/route";
 import { connectOrganiserLichess, testTelegram } from "./organiser/actions";
 import styles from "./organiser/organiser.module.css";
+import ui from "./ui.module.css";
 import OrganiserPage, { generateMetadata } from "./organiser/page";
 
 const { getSession, jar } = vi.hoisted(() => {
@@ -284,7 +285,8 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(html).toMatch(/<dt>Expires<\/dt><dd><time dateTime="[^"]+">\d{1,2} \w+ \d{4}<\/time><\/dd>/);
     expect(html).not.toContain("can&#x27;t be read");
     expect(html).toMatch(/<p role="status"[^>]*>Lichess is connected\.<\/p>/);
-    expect(html).toContain("<button>Connect Lichess again</button>");
+    // Working, so reconnecting is the quiet choice.
+    expect(html).toContain(`<button class="${ui.quiet}">Connect Lichess again</button>`);
     expect(html).not.toContain(token);
     expect(html).not.toContain(organiserLichess.get("singleton")!.token);
     expect(JSON.stringify(await organiserPermission())).not.toContain(organiserLichess.get("singleton")!.token);
@@ -308,6 +310,8 @@ describe("connecting the Organiser's Lichess account", () => {
     expect(html).toMatch(/<dt>Expired<\/dt>/);
     expect(html).toMatch(alertSaying("Matchdays aren't being created until you connect again."));
     expect(html).toMatch(marked("needs", "Matchdays aren't being created until you connect again."));
+    // Needed, so the filled button.
+    expect(html).toContain("<button>Connect Lichess again</button>");
     expect(html).not.toContain("Connect again before it expires");
   });
 

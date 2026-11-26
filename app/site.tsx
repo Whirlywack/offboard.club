@@ -50,7 +50,8 @@ export function Strip({
   return (
     <a href={href} className={`${site.strip} ${ui.black} ${stacked ? site.stacked : ""}`}>
       <span className={site.mark} aria-hidden="true" />
-      <span className={ui.caps}>{label}</span>
+      {/* The space is for the words, "Season 1 2 more Members to go": between the strip's items it takes no room */}
+      <span className={ui.caps}>{label}</span>{" "}
       <span className={site.stripText}>{children}</span>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
         <path d="M8 2.5v11M3.5 9 8 13.5 12.5 9" />

@@ -44,7 +44,7 @@ it("sends someone back from LinkedIn home, where the sign-in form says it isn't 
   const back = "/callback/linkedin?code=a-pretend-code&state=a-pretend-state";
   const sentHome = (response: Response) => {
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("https://offboard.test/?signin=failed");
+    expect(response.headers.get("location")).toBe("https://offboard.test/?signin=failed#season");
   };
   // Its tables cannot be checked, so it throws, which Next.js would answer with an empty 500.
   sentHome(await get(back));

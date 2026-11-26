@@ -47,18 +47,19 @@
 }
 
 /* A strip whose text is too long for a phone's line: the label and its mark on the first line, the text under the
-   label, the arrow beside both */
+   label, the arrow beside both, in the one-line strip's 44px */
 @media (max-width: 479px) {
   .stacked {
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 3px 12px;
-    padding-block: 10px;
+    padding-block: 4px;
   }
 
   .stacked .stripText {
     grid-area: 2 / 2;
+    line-height: 1.3;
   }
 
   .stacked svg {

@@ -8,6 +8,7 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -769,6 +770,83 @@ describe("db:start beside others starting at the same time", () => {
       if (holder) process.kill(holder);
     }
   }, 60_000);
+
+  it("keeps a folder it made again resumable when the ports it then finds taken cannot be left, as with --port", async () => {
+    const { root, block } = await stoppedButHeld();
+    const dir = join(root, ".local-db");
+    const script = join(root, "scripts/local-db.mjs");
+    const postgres = String(portIn(block, "DATABASE_URL"));
+    rmSync(join(dir, "offboard.initdb")); // as a folder made with another sort before has none
+    const release = await squat(portIn(block, "BETTER_AUTH_URL"));
+    let failed: ReturnType<typeof run>;
+    try {
+      failed = run(process.execPath, [script, "start", "--port", postgres]);
+    } finally {
+      await release();
+    }
+    expect([failed.status, failed.stderr.trim().split("\n").at(-1)]).toEqual([1, expect.stringMatching(new RegExp(`^Port ${postgres}, .* is taken\\.$`))]);
+    expect([existsSync(join(dir, "PG_VERSION")), blockIn(dir)]).toEqual([true, block]);
+    const again = run(process.execPath, [script, "start", "--port", postgres]);
+    expect(again.status, again.stderr).toBe(0);
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 60_000);
+
+  it("leaves a --dir that is a link, or a folder made beforehand, where it is: after a failed start, resumable, and when made again", async () => {
+    const root = repository();
+    const script = join(root, "scripts/local-db.mjs");
+    const target = join(root, "target");
+    const link = join(root, "link");
+    const premade = join(root, "premade");
+    mkdirSync(target);
+    symlinkSync(target, link);
+    mkdirSync(premade);
+    const failing = join(root, "failing");
+    mkdirSync(failing);
+    writeFileSync(join(failing, "pg_ctl"), `#!/bin/sh\ncase " $* " in *" start "*) echo 'pretend failure' >&2; exit 1 ;; esac\nexec "${bin}/pg_ctl" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(failing, "initdb"), `#!/bin/sh\nexec "${bin}/initdb" "$@"\n`, { mode: 0o755 });
+    for (const dir of [link, premade]) {
+      // A start that fails once initdb is done, as one stopped there would.
+      const failed = run(process.execPath, [script, "start", "--dir", dir], { PATH: `${failing}:${process.env.PATH}` });
+      expect([failed.status, existsSync(join(dir, "PG_VERSION")), existsSync(join(dir, "offboard.env"))], failed.stderr).toEqual([1, true, true]);
+      const again = run(process.execPath, [script, "start", "--dir", dir]);
+      expect(again.status, again.stderr).toBe(0);
+    }
+    expect([lstatSync(link).isSymbolicLink(), existsSync(join(target, "PG_VERSION")), existsSync(join(premade, "PG_VERSION"))]).toEqual([true, true, true]);
+    // Made again through the link: emptied, not removed.
+    expect(tool(root, "stop", "--dir", link).status).toBe(0);
+    rmSync(join(link, "offboard.initdb"));
+    const remade = run(process.execPath, [script, "start", "--dir", link]);
+    expect([remade.status, remade.stdout], remade.stderr).toEqual([0, expect.stringContaining("so it was made again, empty.")]);
+    expect([lstatSync(link).isSymbolicLink(), existsSync(join(target, "offboard.initdb"))]).toEqual([true, true]);
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 90_000);
+
+  it("makes a folder again that a start left unfinished, through a link or in a folder made beforehand, and refuses no such folder", async () => {
+    const root = repository();
+    const script = join(root, "scripts/local-db.mjs");
+    const target = join(root, "target");
+    const link = join(root, "link");
+    const premade = join(root, "premade");
+    mkdirSync(target);
+    symlinkSync(target, link);
+    mkdirSync(premade);
+    for (const dir of [link, premade]) {
+      // What a start that failed, or was stopped, after initdb and before choosing its ports leaves.
+      execFileSync(`${bin}/initdb`, ["-D", dir, "-U", "offboard", "--auth=trust", "--no-locale", "-E", "UTF8"], { stdio: "ignore", env: childEnv() });
+      writeFileSync(join(dir, "offboard.initdb"), "as an earlier start made it\n");
+      const started = run(process.execPath, [script, "start", "--dir", dir]);
+      expect([started.status, started.stdout], started.stderr).toEqual([0, expect.stringContaining(`${dir} was left unfinished by a start that ended before choosing its ports, so it was made again.`)]);
+      expect(existsSync(join(dir, "offboard.env"))).toBe(true);
+    }
+    expect([lstatSync(link).isSymbolicLink(), existsSync(join(target, "offboard.env")), existsSync(premade)]).toEqual([true, true, true]);
+    // A folder of someone else's, with neither mark, is not emptied: initdb refuses it, as it is not empty.
+    const theirs = join(root, "theirs");
+    mkdirSync(theirs);
+    writeFileSync(join(theirs, "notes.txt"), "someone's\n");
+    const refused = run(process.execPath, [script, "start", "--dir", theirs]);
+    expect([refused.status, readFileSync(join(theirs, "notes.txt"), "utf8")]).toEqual([1, "someone's\n"]);
+    expect(tool(root, "stop-all", "--dir", root).status).toBe(0);
+  }, 90_000);
 
   it("moves to another free set when its Postgres port is taken between its choice and its start", async () => {
     const { root } = await stoppedButHeld();

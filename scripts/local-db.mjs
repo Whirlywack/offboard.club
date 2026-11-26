@@ -192,12 +192,14 @@ function envLocal() {
   }
 }
 
-// <dir>'s block, or null if db:start has not used <dir>. A directory holding a Postgres that db:start did not make,
-// such as the owner's own, is refused.
+// <dir>'s block, or null if db:start has not used <dir>, or left it unfinished. A directory holding a Postgres that
+// db:start did not make, such as the owner's own, is refused. One whose initdb db:start ran (offboard.initdb), and that
+// has no block yet, was left by a start that failed, or was stopped, before choosing its ports: it is made again.
+const unfinished = (dir) => !existsSync(`${dir}/offboard.env`) && existsSync(`${dir}/offboard.initdb`);
 function blockOf(dir) {
   const file = `${dir}/offboard.env`;
   const text = existsSync(file) ? readFileSync(file, "utf8") : null;
-  if (text === null ? existsSync(`${dir}/PG_VERSION`) : !text.startsWith(HEADER))
+  if (text === null ? existsSync(`${dir}/PG_VERSION`) && !unfinished(dir) : !text.startsWith(HEADER))
     throw new Error(`${dir} holds a Postgres that db:start did not make, so it is left alone.`);
   return text;
 }
@@ -367,17 +369,22 @@ async function start(dir, port) {
     const fresh = made !== pg.major || madeAs(dir) !== madeAsNow(pg.major);
     if (fresh) {
       // A data folder opens only in the major version that made it, and keeps the sort it was made with. This one is
-      // throwaway, so it is made again, empty.
-      if (saved) rmSync(dir, { recursive: true, force: true });
+      // throwaway, so it is made again, empty, as one left unfinished is. Only db:start's own is emptied, and through
+      // its real path, so that a --dir that is a link, or a folder made beforehand, stays where it is.
+      const left = !saved && unfinished(dir);
+      if (saved || left) for (const entry of readdirSync(realpathSync(dir))) rmSync(`${realpathSync(dir)}/${entry}`, { recursive: true, force: true });
       if (made && made !== pg.major) say(`${dir} was made by Postgres ${made}, which Postgres ${pg.major} cannot open, so it was made again, empty.`);
       else if (made) say(`${dir} was made to sort or keep time otherwise than the live database does, so it was made again, empty.`);
+      else if (left) say(`${dir} was left unfinished by a start that ended before choosing its ports, so it was made again.`);
       run(`${pg.dir}/initdb`, ["-D", dir, ...initdb(pg.major)], { ...process.env, TZ: "UTC" });
       writeFileSync(`${dir}/offboard.initdb`, `${madeAsNow(pg.major)}\n`);
+      // A folder made again has its block back at once, so that a start that fails after this resumes it.
+      if (saved) writeFileSync(`${dir}/offboard.env`, saved, { mode: 0o600 });
     }
     // The ports are chosen, or checked, only now, just before Postgres takes them, not before initdb: ports chosen a
     // second before Postgres took them were free that second for another db:start to choose as well, and to take once
-    // this folder's Postgres had stopped.
-    if (!saved) text = await freeSet(port).then(block, (error) => (rmSync(dir, { recursive: true, force: true }), Promise.reject(error)));
+    // this folder's Postgres had stopped. A new folder that fails here is unfinished, and made again by the next start.
+    if (!saved) text = block(await freeSet(port));
     // A port this worktree's own site or fakes hold is not taken by anyone else.
     const own = new Set(recorded().flatMap((each) => (each.worktree === root && each.kind !== "Postgres" ? [each.port] : [])));
     const takenNow = saved ? (await Promise.all(portsOf(saved).map(async (each) => !own.has(each) && (await held(each)) && each))).filter(Boolean) : [];

@@ -128,7 +128,7 @@ describe("a Season's Leaderboard", () => {
     // Ana: 4.5 + 4 + 3 + 3 = 14.5 from six. Ben: 12 from three, joined mid-Season. The marked account and the person
     // part-way through signing up are left out.
     expect(rows(html)).toEqual([
-      ["1", "Ana Petraitėbolt.eu", "14.5", "6"],
+      ["1", "Ana Petraitė bolt.eu", "14.5", "6"],
       ["2", "Benas Kazlauskas", "12", "3"],
     ]);
     for (const hidden of ["Marked Account", "Not Yet"]) expect(html).not.toContain(hidden);
@@ -249,7 +249,7 @@ describe("the all-time Leaderboard", () => {
     seasonOne();
     ingested(WEEK_OFF, [["cid", 5], ["ben", 1]]);
     expect(rows(await allTime())).toEqual([
-      ["1", "Ana PetraitėVinted (vinted.com)", "6"],
+      ["1", "Ana Petraitė Vinted (vinted.com)", "6"],
       ["2", "Benas Kazlauskas", "4"],
       ["3", "Cidas Jonaitis", "1"],
     ]);
@@ -259,12 +259,13 @@ describe("the all-time Leaderboard", () => {
   it("leaves out a closed account while it stays closed", async () => {
     seasonOne();
     people.get("ben")!.lichessClosed = true;
-    expect(rows(await allTime()).map((r) => r[1])).toEqual(["Ana PetraitėVinted (vinted.com)"]);
+    expect(rows(await allTime()).map((r) => r[1])).toEqual(["Ana Petraitė Vinted (vinted.com)"]);
   });
 
   it("tells a visitor, and nobody else, that Profiles are for signed-in Members, once there are names on it", async () => {
     const note = "Only signed-in Members can open Profiles.";
     expect(await allTime()).not.toContain(note);
+    expect(await season("1")).not.toContain(note);
     seasonOne();
     expect(await allTime()).toContain(note);
     expect(await season("1")).toContain(note);

@@ -31,6 +31,12 @@
   font-variant-numeric: tabular-nums lining-nums;
 }
 
+/* On the Season and all-time pages the heads set the columns and the name takes the rest, so a name too long for it
+   breaks instead of widening the page. A Recap's table, with a Company column as well, is laid out by what is in it. */
+.board > .table {
+  table-layout: fixed;
+}
+
 .table thead th {
   padding: 0 0 10px;
   border-bottom: 1px solid var(--ink);
@@ -61,7 +67,8 @@
   font-size: 15px;
 }
 
-/* The name. A long one breaks at its spaces and hyphens, so a Recap's Company column cannot squeeze it into pieces */
+/* The name. A long one breaks at its spaces and hyphens, so a Recap's Company column cannot squeeze it into pieces;
+   inside a word only when the word is longer than its column */
 .table tbody th {
   position: relative;
   padding-right: 12px;
@@ -69,7 +76,8 @@
   overflow-wrap: break-word;
 }
 
-/* On the narrowest phones it breaks inside a word when nothing else fits, so the numbers stay in view */
+/* A Recap's table on the narrowest phones: a name breaks inside a word when nothing else fits, so the numbers stay in
+   view */
 @media (max-width: 359px) {
   .table tbody th {
     overflow-wrap: anywhere;
@@ -260,9 +268,10 @@
   }
 
   /* The Company follows the name on its line */
+  /* The Company follows the name on its line, 10px from it with the space between them */
   th .company {
     display: inline;
-    margin: 0 0 0 10px;
+    margin: 0 0 0 6px;
     font-size: 14px;
   }
 

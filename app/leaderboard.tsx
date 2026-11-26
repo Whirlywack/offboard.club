@@ -5,12 +5,18 @@ import { companyLabel } from "@/lib/companies";
 import type { Member } from "@/lib/leaderboards";
 
 // A Member's cell on the Season and all-time Leaderboards: their name, linking to their Profile, with their Company
-// under it as companyLabel names it, "Vinted (vinted.com)", the domain kept in one piece.
+// under it as companyLabel names it, "Vinted (vinted.com)", the domain kept in one piece. The space keeps the two
+// apart for a screen reader where the Company follows the name on its line.
 export function MemberCell({ member }: { member: Member }) {
   return (
     <th scope="row">
       <Link href={`/profiles/${member.memberId}`}>{member.name}</Link>
-      {member.company && <CompanyName company={member.company} />}
+      {member.company && (
+        <>
+          {" "}
+          <CompanyName company={member.company} />
+        </>
+      )}
     </th>
   );
 }

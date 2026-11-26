@@ -73,19 +73,18 @@
   color: var(--muted);
 }
 
+/* Each line is at least 44px, and a name is as tall as its line: a full-size target that never reaches into the
+   next line's, when a shared title takes two */
 .championNames {
   margin-top: 10px;
   font-size: clamp(30px, 8.9vw, 40px);
-  line-height: 1.06;
+  line-height: max(1.06em, 44px);
   letter-spacing: -0.015em;
 }
 
-/* A name is a full-size target without moving the lines apart; like a name in the table, it is underlined under the
-   pointer */
+/* Like a name in the table, it is underlined under the pointer */
 .championNames a {
   display: inline-block;
-  margin: -5px 0;
-  padding: 5px 0;
   text-decoration: none;
 }
 

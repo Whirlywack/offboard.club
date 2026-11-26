@@ -273,7 +273,7 @@ The Season Leaderboard (`app/seasons/`), the all-time Leaderboard (`app/all-time
 ### Leaderboard table
 - **Where:** `app/leaderboard.tsx` (`MemberCell`, `CompanyName`, `ScoreCell`) with `board.table` in `app/leaderboards.module.css`; a Recap's table uses the same class.
 - **Style:** no lines but rules: 1px of ink under the column heads, a 1px `--line` under each row. Heads in capitals, 600 11px, 0.1em, muted, the numbers' heads on the right. Rank 15px muted in a 42px column (64px on a desktop); the name 17px 500 (18px), not underlined until the pointer is on it, its whole cell the link's target; the Company 13.5px muted under the name on a phone, after it on its line on a desktop (14px), its domain kept whole. The figure a Leaderboard is ranked by (`board.score`) 19px 600 (21px) in a 60px column (120px); a secondary count (`board.number`) 15px muted (16px) in 58px (110px). A whole score keeps 0.74em on its right, the width of ".5", so scores line up on the point (`ScoreCell`).
-- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px; a name breaks between words, and inside one only below 360px wide.
+- **On a phone** the table fits as it stands: Rank, the name with its Company, and two numbers, in 358px. The Season and all-time tables take their columns from their heads (`table-layout: fixed`), so a name breaks between words, and inside one only when the word is longer than its column; a Recap's table, laid out by what is in it, breaks a name inside a word only below 360px wide.
 - **Empty:** a muted line between the head's ink rule and a row's rule.
 
 ### Leaderboard plate

@@ -362,7 +362,7 @@ function ResultsNotIn({ matchdays, now }: { matchdays: Uncollected[]; now: Date 
   return (
     <div className={styles.part}>
       <h3>Results not in</h3>
-      <ul className={styles.list}>
+      <ul role="list" className={styles.list}>
         {matchdays.map(({ date, lichessTournamentId }) => (
           <li key={date} className={date === latest ? undefined : styles.needs}>
             <Time at={matchdayStart(date)} as={WEEKDAY} className={styles.when} />{" "}

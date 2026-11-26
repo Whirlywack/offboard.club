@@ -286,6 +286,8 @@ Three states, told by form and never by colour alone:
 - **A section's heading** takes the mark of the worst thing in it: the square before it when anything needs the Organiser, and the heading itself turned over, on a black band from the screen's edge, when anything failed. A list of things to do by hand needs the Organiser by being there at all (`.byHand`). The heading's words wrap on their own edge, never under the square; on a desktop the square hangs in the gutter, so that every heading's words start on one edge.
 - **Nothing heavy where all is well:** a button that can always be pressed but is needed only when something is wrong (Connect Lichess again) is `ui.quiet` while things work, and the ink block only when they do not.
 - Contrast: ink on the ground 11.9:1, paper on the black 16.4:1.
+- **Forced colours** repaint every ground, so there the squares are drawn in `CanvasText` and what failed (the band, the flag, the heading) takes a 2px `CanvasText` border.
+- A heading or a paragraph that can print a Lichess account or a Member's name breaks a word where it must (`overflow-wrap: anywhere`), so a 30-character account never runs into what stands beside it or off a phone.
 
 ### Forms
 - A field's label above it, the grotesque at 600; the field as `globals.css` draws it, at most 28rem wide.

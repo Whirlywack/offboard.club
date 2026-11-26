@@ -32,7 +32,7 @@ export function Sundays({ sundays }: { sundays: SundayRow[] }) {
     <form action={action} className={styles.part}>
       <h3>Upcoming Sundays</h3>
       <Outcome said={said} pending={pending} />
-      <ul className={styles.list}>
+      <ul role="list" className={styles.list}>
         {sundays.map(({ date, day, matchday, skipped }) => (
           <li key={date} className={styles.row}>
             <span>

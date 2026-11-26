@@ -53,7 +53,7 @@ async function Confirm({ searchParams }: Pick<PageProps<"/organiser/remove">, "s
               Remove <strong>{person.name}</strong>
               {person.company && <>, {person.company.name}</>}, {person.lichessUsername} on Lichess?
             </p>
-            <ul className={styles.list}>
+            <ul role="list" className={styles.list}>
               <li>They disappear from every Leaderboard and Recap, including past ones.</li>
               <li>Their name, photo and Profile are deleted.</li>
               <li>The site asks Lichess to remove their account from the Club&apos;s team.</li>

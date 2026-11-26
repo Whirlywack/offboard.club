@@ -39,7 +39,7 @@ const { getSession, refresh, formStatus, actionState } = vi.hoisted(() => ({
   getSession: vi.fn(),
   refresh: vi.fn(),
   formStatus: { pending: false },
-  actionState: { pending: false },
+  actionState: { pending: false, said: undefined as unknown },
 }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
 vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
@@ -62,7 +62,7 @@ vi.mock("react", async (original) => {
     ...react,
     useActionState: (action: unknown, initial: unknown) => {
       const [state, run] = react.useActionState(action as () => unknown, initial);
-      return [state, run, actionState.pending];
+      return [actionState.said ?? state, run, actionState.pending];
     },
   };
 });
@@ -191,6 +191,7 @@ beforeEach(async () => {
   signedIn = "organiser";
   formStatus.pending = false;
   actionState.pending = false;
+  actionState.said = undefined;
   getSession.mockReset().mockImplementation(async () => {
     const person = signedIn ? people.get(signedIn) : undefined;
     return person ? { user: { ...person } } : null;
@@ -254,6 +255,8 @@ describe("removing a Member", () => {
     expect(html).toContain("<em>Remove</em> a Member</h1>");
     expect(text(html)).toContain("This can't be undone. Remove Ana Petraitė , Pretend Robotics, Ana-Plays on Lichess?");
     expect(text(html)).toContain("They disappear from every Leaderboard and Recap, including past ones.");
+    // A list, whatever its bullets: Safari stops announcing one drawn without them unless it says so.
+    expect(html).toMatch(/<ul role="list"[^>]*><li>They disappear/);
     expect(text(html)).toContain("The site asks Lichess to remove their account from the Club's team.");
     expect(text(html)).toContain("Nothing stops them signing up again.");
     // Keeping them comes first, then removing, both inside the form that removes.
@@ -328,10 +331,11 @@ describe("removing a Member", () => {
     expect(await remove("ana")).toBe("/organiser?member=gone");
     expect(lichess.calls).toEqual([]);
     expect(people.size).toBe(5);
-    expect(await openPage({ member: "gone" })).toMatch(/<p role="alert"[^>]*>That Member has already left the Club\.<\/p>/);
+    // Marked as needing the Organiser, as a refusal is.
+    expect(await openPage({ member: "gone" })).toContain(`<p role="alert" class="${styles.needs}">That Member has already left the Club.</p>`);
     // Nor is a confirmation step shown for them.
     const html = await confirmPage({ member: "ana" });
-    expect(html).toMatch(/<p role="alert"[^>]*>That Member isn&#x27;t in the Club\.<\/p>/);
+    expect(html).toContain(`<p role="alert" class="${styles.needs}">That Member isn&#x27;t in the Club.</p>`);
     expect(html).not.toContain("memberId");
   });
 
@@ -341,7 +345,9 @@ describe("removing a Member", () => {
     expect(organiserLichess.size).toBe(1);
     expect(lichess.calls).toEqual([]);
     for (const html of [await openPage({ member: "self" }), await confirmPage({ member: "organiser" })]) {
-      expect(html).toMatch(/<p role="alert"[^>]*>You can&#x27;t remove yourself here\. To leave the Club, delete your account on Edit your Profile\.<\/p>/);
+      expect(html).toContain(
+        `<p role="alert" class="${styles.needs}">You can&#x27;t remove yourself here. To leave the Club, delete your account on Edit your Profile.</p>`,
+      );
       expect(html).not.toContain("memberId");
     }
   });
@@ -398,6 +404,16 @@ describe("the schedule on the Organiser page", () => {
     expect(buttons).toHaveLength(8); // six to skip, one to undo, one to set a start
     for (const button of buttons) expect(button).toContain('disabled=""');
     expect(text(part)).toContain("Saving…");
+  });
+
+  it("marks what a change said as needing the Organiser when it does, and leaves it quiet when it went well", async () => {
+    const problem = "The site couldn't cancel the tournament for Sunday 29 November: cancel it on Lichess yourself.";
+    actionState.said = { text: problem, problem: true };
+    expect(section(await openPage(), "schedule")).toContain(`<p role="alert" class="${styles.needs}">${problem.replace("'", "&#x27;")}</p>`);
+    actionState.said = { text: "Season 2 now starts on Sunday 24 January.", problem: false };
+    const part = section(await openPage(), "schedule")!;
+    expect(part).toContain(`<p role="status" class="${styles.notice}">Season 2 now starts on Sunday 24 January.</p>`);
+    expect(part).not.toContain(styles.needs);
   });
 });
 

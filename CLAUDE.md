@@ -7,6 +7,7 @@ This is Next.js 16, which has breaking changes from older versions: APIs, conven
 - **Running, testing, databases**, and the traps no config file shows: `docs/agents/dev-environment.md`. Read it before the first command.
 - **Taking a ticket from issue to merged pull request** (stages, agents, hand-offs): `docs/agents/ticket-workflow.md`. For the session that orchestrates; an agent given one stage has its own definition in `.claude/agents/`.
 - **Reviewing**: `CODING_STANDARDS.md`.
+- **Production**: `docs/agents/production.md`, before diagnosing anything on the live site or saying what it does.
 
 ## Agent skills
 

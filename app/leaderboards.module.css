@@ -262,7 +262,6 @@
     font-size: 18px;
   }
 
-  /* The Company follows the name on its line */
   /* The Company follows the name on its line, 10px from it with the space between them */
   th .company {
     display: inline;

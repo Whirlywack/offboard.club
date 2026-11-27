@@ -74,11 +74,11 @@ describe("Enter in the open-to box", () => {
     return (node as Element).type === type ? (node as Element) : find((node as Element).props.children, type);
   };
 
-  function press(key: string, { shiftKey = false, isComposing = false } = {}) {
+  function press(key: string, { shiftKey = false, isComposing = false, keyCode = key === "Enter" ? 13 : 65 } = {}) {
     const box = find(ProfileForm({ saved: null }), "textarea")!;
     const requestSubmit = vi.fn();
     const preventDefault = vi.fn();
-    box.props.onKeyDown!({ key, shiftKey, nativeEvent: { isComposing }, preventDefault, currentTarget: { form: { requestSubmit } } });
+    box.props.onKeyDown!({ key, keyCode, shiftKey, nativeEvent: { isComposing }, preventDefault, currentTarget: { form: { requestSubmit } } });
     return { saved: requestSubmit.mock.calls.length, lineStopped: preventDefault.mock.calls.length > 0 };
   }
 
@@ -94,6 +94,8 @@ describe("Enter in the open-to box", () => {
     returned.pending = false;
     expect(press("a")).toEqual({ saved: 0, lineStopped: false });
     expect(press("Enter", { isComposing: true })).toEqual({ saved: 0, lineStopped: false });
+    // As Safari sends it: composing, said by key code 229 alone.
+    expect(press("Enter", { keyCode: 229 })).toEqual({ saved: 0, lineStopped: false });
   });
 
   it("does not save again while a save is under way, as a disabled button stops Enter in a field", () => {

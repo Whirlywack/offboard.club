@@ -1,7 +1,7 @@
 {
   "shared": {
-    "how_captured": "`pnpm capture` (scripts/capture.ts), in a copy of the checkout with a throwaway Postgres and a local site of its own (`pnpm dev:local`, every setting pretend), seeded with each state's `seed` and signed in as its `as` with `pnpm seed:cookies`. Google Chrome through Playwright, light colour scheme, Europe/Vilnius time zone, en-GB. Phone: 390 x 844, device scale factor 3, mobile and touch, as an iPhone of that width renders a page (PNG 1170 px wide). Desktop: 1280 x 800, scale 1. Full-page screenshots taken after every streamed part had arrived, fonts had loaded and animations had finished. Next.js's development badge is hidden; nothing else is changed. Requests to anywhere but the local site are answered with a blank stand-in page, so an opened Award board shows an empty frame. A path's {sunday} is the latest Sunday whose Matchday has started, and {sunday-N} the Sunday N weeks before it, as the seed dates every scenario from the day it runs. A state with `databaseStopped` is taken with the local database stopped; one with `minutesIntoLatestMatchday` with the local site's clock moved to that many minutes after the latest Matchday's start, as a Matchday starts only on Sunday at 20:00 and no seed can put one under way at another time. The notes and the descriptions were written from the screenshots of 25 November 2026, and their dates are that day's. Settings that are set locally but may not be on the live site change some pages: the Telegram invite link (home page, /welcome/profile), the Organiser's contact address (footer, /privacy) and the scheduled jobs (/organiser).",
-    "page_frame": "Every page is a header, the page's <main> and a black footer, in the look of DESIGN.md (#77): the grey ground (#d0cfcb) with film grain, ink text (#141310), black sections (#0d0b07) with paper text (#edeae4), Bodoni Moda for headings and Hanken Grotesk for text, body text 17 px. The header, the footer and the home page share a side gutter of 16 px on a phone and clamp(40px, 3.9vw, 64px) from 900 px. Pages not yet redesigned keep their content in a centred column at most 1088 px wide (68rem), which does not share the header's left edge on a desktop. There is no dark colour scheme.",
+    "how_captured": "`pnpm capture` (scripts/capture.ts), in a copy of the checkout with a throwaway Postgres and a local site of its own (`pnpm dev:local`, every setting pretend), seeded with each state's `seed` and signed in as its `as` with `pnpm seed:cookies`. Google Chrome through Playwright, light colour scheme, Europe/Vilnius time zone, en-GB. Phone: 390 x 844, device scale factor 3, mobile and touch, as an iPhone of that width renders a page (PNG 1170 px wide). Desktop: 1280 x 800, scale 1. Full-page screenshots taken after every streamed part had arrived, fonts had loaded and animations had finished. Next.js's development badge is hidden; nothing else is changed. Requests to anywhere but the local site are answered with a blank stand-in page, so an opened Award board shows an empty frame. A path's {sunday} is the latest Sunday whose Matchday has started, and {sunday-N} the Sunday N weeks before it, as the seed dates every scenario from the day it runs. A state with `databaseStopped` is taken with the local database stopped; one with `minutesIntoLatestMatchday` with the local site's clock moved to that many minutes after the latest Matchday's start, as a Matchday starts only on Sunday at 20:00 and no seed can put one under way at another time. The notes and the descriptions were first written from the screenshots of 25 November 2026, and their dates are that day's; pages redesigned since were described again from later ones. The phone facts were measured on 25 November 2026 and again as pages changed, the last on 27 November 2026 (#93): those shared by every page, the home page's heights, and those of the Leaderboards, a Profile, Edit your Profile, After you leave the Club, Page not found and Error. Settings that are set locally but may not be on the live site change some pages: the Telegram invite link (home page, /welcome/profile), the Organiser's contact address (footer, /privacy) and the scheduled jobs (/organiser).",
+    "page_frame": "Every page is a header, the page's <main> and a black footer, in the look of DESIGN.md (#77): the grey ground (#d0cfcb) with film grain, ink text (#141310), black sections (#0d0b07) with paper text (#edeae4), Bodoni Moda for headings and Hanken Grotesk for text, body text 17 px. The header, the footer and every page share a side gutter of 16 px on a phone and clamp(40px, 3.9vw, 64px) from 900 px. There is no dark colour scheme.",
     "header": {
       "contents": [
         "Skip link 'Skip to content', off screen until it has keyboard focus.",
@@ -16,7 +16,7 @@
         "No marking of the current section: the link to the page being viewed looks like the others."
       ]
     },
-    "back_links": "Most pages end with a row of plain links labelled for screen readers as 'More' (for example 'All-time Leaderboard  Recaps  Home'), 15 px, each 44 px tall. 'Home' alone is 40.7 px wide.",
+    "back_links": "Most pages end with links labelled for screen readers as 'More', each with an arrow. Under a Leaderboard and on the Recaps list, links of 16 px, each 44 px tall, side by side on a phone where they fit and one to a line on a desktop (for example 'All-time Leaderboard  Recaps  Home'). Elsewhere a ruled list, one link to a row in the display serif, 25 px on a phone and 34.56 px at 1280, each row at least 68 px tall (92 px on a desktop).",
     "footer": {
       "contents": [
         "'Offboard is a free chess Club for people who work in tech in and around Vilnius.'",
@@ -28,8 +28,8 @@
       "desktop": "From 900 px, three columns: the two sentences, then the two links at the right."
     },
     "phone_facts_every_page": [
-      "No page or state scrolls sideways at 390 px: document.documentElement.scrollWidth was 390 and clientWidth 390 in all 59 states, and no element reaches past either edge.",
-      "The smallest text is the 11 px label in tracked capitals, on the home page (#77); on the other pages 13 px. The footer is 14 px on every page.",
+      "No page or state scrolls sideways at 390 px: document.documentElement.scrollWidth was 390 and clientWidth 390 in all 62 states, and no element reaches past either edge.",
+      "The smallest text is the 11 px label in tracked capitals, on the home page, the Leaderboards, a Recap, a Profile and the Organiser page; all other text is 13 px or more. The footer is 14 px on every page.",
       "Header and footer links are all at least 44 px tall."
     ]
   },
@@ -71,7 +71,7 @@
       ],
       "phone_facts": [
         "No sideways scroll in any state (scrollWidth 390, clientWidth 390), measured 26 November 2026 (#77).",
-        "3,863 to 4,128 px tall on a phone (4.6 to 4.9 screens of 844 px); 3,569 px with the database down.",
+        "3,849 to 4,115 px tall on a phone (4.6 to 4.9 screens of 844 px); 3,569 px with the database down.",
         "The strip is one line 44 px tall before Season 1, and two lines 57 px tall in the Matchday states.",
         "'Recaps' is in the ruled list of Leaderboard links, 358 x 68 px.",
         "'Telegram group' (Members) is 135 x 44 px; 'Privacy and terms' inside the sign-in note (visitors) is 109 x 46 px, in running text.",
@@ -99,7 +99,7 @@
           "seed": "empty",
           "as": "ana",
           "path": "/",
-          "note": "Added: what a Member sees on the live site today. Countdown card, 'You' panel with the Telegram link."
+          "note": "Added: what a Member sees on the live site today. The Season block counting Members to go; 'Signed in as' with the Telegram group link."
         },
         {
           "name": "home-visitor-season-1-scheduled",
@@ -129,7 +129,7 @@
           "seed": "club",
           "as": "ana",
           "path": "/",
-          "note": "Card shows 'Join this Matchday on Lichess'. The Organiser's home page is identical apart from the name and photo, so it was not captured separately."
+          "note": "The Season block shows 'Join this Matchday on Lichess'. The Organiser's home page is identical apart from the name and photo, so it was not captured separately."
         },
         {
           "name": "home-member-matchday-under-way",
@@ -138,7 +138,7 @@
           "as": "ana",
           "path": "/",
           "minutesIntoLatestMatchday": 40,
-          "note": "No seed can put now inside a Matchday, so the local site is run with its clock moved to 20:40 on the latest Sunday (scripts/capture-clock.cjs). Card reads 'Matchday under way' with the join link; the champion line shows."
+          "note": "No seed can put now inside a Matchday, so the local site is run with its clock moved to 20:40 on the latest Sunday (scripts/capture-clock.cjs). The Season block reads 'Matchday under way' with the join link; the champion line shows."
         },
         {
           "name": "home-visitor-champion-named",
@@ -161,7 +161,7 @@
           "seed": "club",
           "path": "/",
           "databaseStopped": true,
-          "note": "Added. The status card is left out with nothing in its place; the rest of the page shows."
+          "note": "Added. The Season block is left out with nothing in its place; the rest of the page shows."
         }
       ]
     },
@@ -221,7 +221,7 @@
       "purpose": "Shows how the current Season stands: who is ahead on their best four Matchdays, how far through its six Matchdays it is and, once it is over, its champion. The current Season is the latest one with a collected Matchday, until the next Season's first is collected.",
       "should_be_able_to": "See where each Member, and their Company, stands this Season.",
       "on_it_now": [
-        "Eyebrow 'Season Leaderboard', heading 'Season N', one sentence on where the Season stands ('Matchday 3 of 6 is done. The next one is on Sunday, 29 November 2026.', or that it is over, or how Season 1 starts).",
+        "Heading 'Season N' and the six pieces; the label 'Season Leaderboard' over one sentence on where the Season stands ('Matchday 3 of 6 is done. The next one is on Sunday, 29 November 2026.', or that it is over, or how Season 1 starts).",
         "When the Season is over: a champion block, 'Season champion' (or 'Season champions'), the name(s) as links, and their points (or that they finished level).",
         "'Leaderboard': a table Rank / Name (with Company and domain under the name) / Score / Played; or an empty box 'It fills in after the first Matchday.'",
         "A note on how the Season score works and how ties are broken; for anyone but a Member, 'Only signed-in Members can open Profiles.'",
@@ -242,11 +242,11 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The table fits: 347 px wide in a 347 px column, columns Rank 44, Name 187, Score 58, Played 58 px.",
-        "Long names and Company names wrap inside the Name column: the tallest row is 174 px (a three-line name and a three-line Company), the shortest 51 px.",
-        "Every name is a link 20 px tall (champion names 22.5 px): 15 of 31 controls on the Season 3 page are under 44 px.",
-        "13 px text: the eyebrow, the table's column headings, the Company and domain under each name, and the Matchday labels on the tiles.",
-        "2,332 to 2,487 px tall with a full Leaderboard."
+        "The table fits: 358 px wide, the width between the gutters, columns Rank 42, Name 198, Score 60, Played 58 px.",
+        "Long names and Company names wrap inside the Name column: the tallest row is 179 px, the shortest 54.5 px.",
+        "A name on one line is a link 22 px tall whose target is its whole cell, 54.5 px or more: the names are the only controls under 44 px, 15 of 25 on the Season 3 page.",
+        "11 px text, in tracked capitals: 'Season Leaderboard', 'Season champion(s)', the table's column headings and the Matchday labels on the tiles. 13.5 px: the Company and domain under each name.",
+        "2,875 to 3,087 px tall with a full Leaderboard."
       ],
       "differs_from_spec": [
         "Names link to Profiles for everyone, visitors included, who are then sent to the home page; ticket #14 said names link to Profiles 'for signed-in Members'. ADR 0002 accepts this: 'A visitor sees names on a Leaderboard that link to Profiles they cannot open; the page says so.'",
@@ -292,8 +292,8 @@
       "purpose": "A Season's Leaderboard at an address that never changes, so a finished Season and its champion stay findable.",
       "should_be_able_to": "See who won a past Season and how everyone finished.",
       "on_it_now": [
-        "The same page as /seasons for that Season: eyebrow, 'Season N', where it stands, champion block when over, Leaderboard table, note, six Matchday tiles, row of Seasons, back links.",
-        "For a Season with no dates yet: eyebrow 'Season Leaderboard', heading 'That Season's dates aren't set yet', links This Season's Leaderboard / All-time Leaderboard / Home."
+        "The same page as /seasons for that Season: 'Season N', its label and where it stands, champion block when over, Leaderboard table, note, six Matchday tiles, row of Seasons, back links.",
+        "For a Season with no dates yet: heading 'That Season's dates aren't set yet', the label 'Season Leaderboard' under it, links This Season's Leaderboard / All-time Leaderboard / Home one to a ruled row, and the pawn in outline."
       ],
       "leads_from": [
         "'Season N' links on Season pages.",
@@ -306,8 +306,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "Same table as /seasons: fits 347 px; the tallest row 174 px; 15 to 17 of 33 to 35 controls under 44 px, all of them name links 20 to 22.5 px tall, plus 'Home' 40.7 x 44.",
-        "13 px text: eyebrow, 'Season champion(s)' label, column headings, Company and domain, Matchday tile labels."
+        "Same table as /seasons: fits 358 px; the tallest row 179 px; 14 to 15 of 27 to 29 controls under 44 px, all of them name links 22 px tall whose target is their whole cell.",
+        "11 px text: 'Season Leaderboard', 'Season champion(s)', column headings, Matchday tile labels. 13.5 px: Company and domain. 13 px: 'Not played' on a tile."
       ],
       "differs_from_spec": [
         "The spec records the champion when the sixth Matchday is collected. When one Matchday's results never come in (Season 2 in club), the Season still ends after its sixth Sunday, says 'with five of its six Matchdays played', names its champions, and shows that Matchday's tile as 'Not played' although it was played on Lichess."
@@ -367,9 +367,9 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "The table fits: 347 px, columns Rank 44, Name 245, Played 58 px; tallest row 130 px.",
-        "Name links are 20 px tall: 17 of 26 controls are under 44 px.",
-        "13 px text: eyebrow, column headings, Company and domain under names."
+        "The table fits: 358 px, columns Rank 42, Name 256, Played 60 px; tallest row 136 px.",
+        "Name links are 22 px tall, each with its whole cell as its target: 16 of 20 controls are under 44 px, all of them names.",
+        "11 px text: column headings. 13.5 px: Company and domain under names."
       ],
       "differs_from_spec": [],
       "states": [
@@ -560,7 +560,7 @@
       "purpose": "Lets one Member see who another Member is (photo, position, Company, what they are open to, LinkedIn) and their chess record in the Club, so a Game can lead to a conversation; on their own Profile, how others see them.",
       "should_be_able_to": "Learn who someone they just played is, what they are open to, and how to reach them on LinkedIn.",
       "on_it_now": [
-        "Large photo (or initials on a grey square when there is none or it does not load), name as the heading, position under it.",
+        "On a black plate: the photo, 100 px square in greyscale (or initials in an empty frame when there is none or it does not load), name as the heading, position under it.",
         "Facts list, each only when there is something: Company ('Pretend Robotics (example.com)'), Open to, LinkedIn ('LinkedIn profile'), Lichess (username, links to Lichess), Blitz rating, Matchdays played, Streak ('8 Matchdays in a row', from two in a row).",
         "When nothing optional is filled in: 'Jonas hasn't added anything else yet.' (own: 'You haven't added anything else yet.').",
         "Own Profile only: 'Edit your Profile' button.",
@@ -585,11 +585,11 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "Each Game's 'Lichess' link is 65 x 23.3 px, and the arrow after it sits 8 px outside the link's box (content 73 px in a 65 px box): 30 such links on a first view, up to 300 with all Games.",
-        "Opponent names are links 20 px tall in running text; 'LinkedIn profile' 130.6 x 20 and the Lichess username about 119 x 20 px. 60 to 61 of 74 to 77 controls on a full Profile are under 44 px; 143 of 167 with all Games.",
-        "3,266 to 3,384 px tall with 30 Games; 5,809 px with all 74.",
-        "No text under 14 px outside the footer.",
-        "The longest name (Aleksandra Bishopsonaitė-Kingsidecastle) wraps onto two lines in the heading without overflowing."
+        "Each Game's 'Lichess' link is 63.2 x 22.5 px: 30 such links on a first view, up to 300 with all Games. They are the only controls under 44 px: 29 to 30 of 68 to 71 on a full Profile, 71 of 161 with all 74 Games.",
+        "Opponent names are links 46 px tall in running text; 'LinkedIn profile' 131.6 x 47.5 and the Lichess username 115 to 141 x 47.5 px.",
+        "3,746 to 3,747 px tall with 30 Games; 6,719 px with all 74.",
+        "11 px text, in tracked capitals: the facts' labels. No other text under 14 px outside the footer.",
+        "The longest name (Aleksandra Bishopsonaitė-Kingsidecastle) wraps onto three lines in the heading without overflowing."
       ],
       "differs_from_spec": [
         "Ticket #5: 'A visitor who is not signed in cannot open any Profile and is sent to sign in.' A visitor is sent to the home page, after a 1-second refresh, with nothing saying why; the sign-in button is there.",
@@ -671,7 +671,7 @@
       "should_be_able_to": "Change their Company, position, LinkedIn link or open-to line and save.",
       "on_it_now": [
         "Heading 'Edit your Profile', lede (Members see the name and photo from LinkedIn and anything added here).",
-        "A panel with four fields, each with a label and all but LinkedIn profile link with a hint: Company website, Position (up to 80 characters), LinkedIn profile link, Open to (up to 140 characters); 'Save changes'. A refused entry shows a red message above its field and keeps what was typed.",
+        "Four fields, each with a label and all but LinkedIn profile link with a hint: Company website, Position (up to 80 characters), LinkedIn profile link, Open to (up to 140 characters); 'Save changes'. A refused entry shows a red message above its field and keeps what was typed.",
         "'Your Lichess account': 'You play as <username> on Lichess.', how switching works, a problem message after a failed switch, 'Switch Lichess account' button.",
         "'Leave the Club': 'Delete your account' button.",
         "Back links: 'See your Profile as Members see it', Home."
@@ -691,8 +691,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "Text fields are 285 px wide with 261 px for text: the saved LinkedIn link needs 525 px and the saved open-to line 406 px, so both are cut off at the field's edge.",
-        "'Pretend--Ana' (the Lichess username) is a link 118.8 x 20 px in running text; 'Home' 40.7 x 44.",
+        "Text fields are 358 x 54 px with 300 px for text: the saved LinkedIn link needs 520 px, so it is cut off at the field's edge. The open-to box is four lines of 328 px, so the saved open-to line (403 px) shows whole on two.",
+        "'Pretend--Ana' (the Lichess username) is a link 115.5 x 44 px in running text; 'Home' is a ruled row 358 x 68.",
         "Every button and field is at least 44 px tall.",
         "No text under 14 px outside the footer."
       ],
@@ -764,7 +764,7 @@
       "should_be_able_to": "Understand what deleting removes and then delete, or keep the account.",
       "on_it_now": [
         "Heading 'Leave the Club', 'This can't be undone.'",
-        "A panel: 'When you delete your account:' and four bullets (name, photo, email and Profile deleted; off every Leaderboard and Recap; Lichess disconnected and removed from the team; opponents keep Games against 'a former member'); a sentence on what happens if the team removal fails.",
+        "'When you delete your account:' and four items, one to a ruled row (name, photo, email and Profile deleted; off every Leaderboard and Recap; Lichess disconnected and removed from the team; opponents keep Games against 'a former member'); a sentence on what happens if the team removal fails.",
         "For the Organiser only, a red warning that Matchdays stop being created once they leave.",
         "Buttons 'Keep my account' (filled, first) and 'Delete my account' (outlined in red); while deleting, 'Deleting…'."
       ],
@@ -821,7 +821,7 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "'Home' 40.7 x 44 px is the only control under 44 px.",
+        "No control under 44 px: 'Home' is a ruled row 358 x 68.",
         "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [
@@ -848,8 +848,8 @@
         "Step indicator '1 Agree · 2 Lichess · 3 Profile (optional)', step 1 marked.",
         "Heading 'Welcome to Offboard'.",
         "'Offboard is run by one volunteer, <Organiser's name>, the Organiser...' with a link to Privacy and terms.",
-        "Panel 'Your name in public': how they will appear, that being listed is part of membership, and a checkbox to accept.",
-        "Panel 'House rules': the two rules as a numbered list and a checkbox 'I accept the house rules.'",
+        "'Your name in public', under a rule: how they will appear, that being listed is part of membership, and a checkbox to accept.",
+        "'House rules', under a rule: the two rules as a numbered list and a checkbox 'I accept the house rules.'",
         "'Agree and continue' button.",
         "'Rather not join? Delete your account.'"
       ],
@@ -914,7 +914,7 @@
         "Step indicator, step 2 marked, step 1 done.",
         "Heading 'Connect your Lichess account', lede.",
         "One paragraph: what Lichess will ask, and the one permission, given back once the account is in the team.",
-        "Panel: a red problem message when the last try failed; 'Connect Lichess' button; 'No Lichess account yet? Make one on Lichess (it's free) and come back.'",
+        "A red problem message when the last try failed; 'Connect Lichess' button; 'No Lichess account yet? Make one on Lichess (it's free) and come back.'",
         "'Rather not join? Delete your account.'"
       ],
       "leads_from": [
@@ -1000,7 +1000,7 @@
       "should_be_able_to": "Delete their account, or go back to the step they were on.",
       "on_it_now": [
         "Heading 'Delete your account', 'This can't be undone.'",
-        "A panel: 'Your name, photo, email address and anything you've agreed to will be deleted.'",
+        "'Your name, photo, email address and anything you've agreed to will be deleted.'",
         "Buttons 'Keep my account' (filled) and 'Delete my account' (outlined in red)."
       ],
       "leads_from": [
@@ -1184,8 +1184,8 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "'Home' 40.7 x 44 px.",
-        "13 px text: the eyebrow and the footer."
+        "No control under 44 px: 'Home' and 'Recaps' are ruled rows 358 x 68.",
+        "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],
       "states": [
@@ -1221,10 +1221,10 @@
       "phone_facts": [
         "No sideways scroll.",
         "No control under 44 px.",
-        "13 px text: the eyebrow and the footer."
+        "No text under 14 px: the error reference and the footer are 14 px."
       ],
       "differs_from_spec": [
-        "Pages that can say so plainly show a one-line message instead (Season and all-time Leaderboards, Recaps list, Recap); the home page drops its status card silently."
+        "Pages that can say so plainly show a one-line message instead (Season and all-time Leaderboards, Recaps list, Recap); the home page drops its Season block silently."
       ],
       "states": [
         {

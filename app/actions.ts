@@ -12,9 +12,16 @@ import { mustConnectLichess } from "@/lib/members";
 import { readProfileForm } from "@/lib/profile";
 import { noticeLater } from "@/lib/request-failures";
 
-// Returns a message to show when sign-in cannot start; otherwise goes to LinkedIn.
-export async function signIn(): Promise<string> {
-  if (!linkedInConfigured) return "Signing in with LinkedIn isn't set up yet. Please try again later.";
+// What the sign-in form says, and how many of its presses have come back, so that a press that fails as the last one
+// did is told so again.
+type SignInState = { problem: string; tries: number };
+
+// Returns a message to show when sign-in cannot start, counting the press; otherwise goes to LinkedIn. The count comes
+// back from the browser, so anything but a whole number from 0 to 999 counts from one again.
+export async function signIn(previous: SignInState): Promise<SignInState> {
+  const before: unknown = previous?.tries;
+  const tries = typeof before === "number" && Number.isInteger(before) && before >= 0 && before < 1000 ? before + 1 : 1;
+  if (!linkedInConfigured) return { problem: "Signing in with LinkedIn isn't set up yet. Please try again later.", tries };
   let url: string | undefined;
   try {
     ({ url } = await auth.api.signInSocial({
@@ -25,7 +32,7 @@ export async function signIn(): Promise<string> {
     console.error("LinkedIn sign-in could not start", error);
     noticeLater(error, "/", "action");
   }
-  if (!url) return SIGN_IN_FAILED;
+  if (!url) return { problem: SIGN_IN_FAILED, tries };
   redirect(url);
 }
 

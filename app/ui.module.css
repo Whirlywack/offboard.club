@@ -132,27 +132,12 @@
   max-width: var(--measure);
 }
 
-.prose {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  max-width: var(--measure);
-}
-
 .muted {
   color: var(--muted);
 }
 
 .small {
   font-size: var(--text-sm);
-}
-
-/* A raised panel, for a form or a block that belongs together */
-.panel {
-  padding: var(--space-panel);
-  border-radius: var(--radius-lg);
-  background: var(--raised);
-  box-shadow: var(--shadow-raised);
 }
 
 /* A link that does a button's job, the same size and type as a <button> (globals.css), so the two sit side by side */
@@ -239,54 +224,14 @@
   background: currentColor;
 }
 
-/* The ink square: what is happening now */
-.marker {
-  flex: none;
-  display: inline-block;
-  width: 0.625em;
-  height: 0.625em;
-  background: var(--accent);
-  transform: rotate(14deg);
-}
-
-/* Back to where you came from, at the foot of a page. Space, not a rule, sets it apart: lists above it end in one. */
-.backLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  font-size: var(--text-sm);
-}
-
-.backLinks a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
-}
-
-/* Content that streams in after the page's frame fades in instead of popping into place. Keyframe names are local
-   to this module, so other modules use the .arrive class rather than the keyframes. */
-@keyframes arrive {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
+/* An alert fades in where it arrives, moving nothing */
 @keyframes arrive-still {
   from {
     opacity: 0;
   }
 }
 
-.arrive {
-  animation: arrive var(--duration-enter) var(--ease-out) both;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .arrive {
-    animation-name: arrive-still;
-  }
-
   .button:active,
   .quiet:active:not(:disabled) {
     transform: none;

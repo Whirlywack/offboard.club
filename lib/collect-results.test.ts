@@ -305,7 +305,11 @@ describe("a failure to collect", () => {
   // The run's hold on the job taking `hold` ms, and its record of how it went `record` ms, as a connection to the
   // database tried twice may (lib/db.ts).
   const fakeQuery = db.query.getMockImplementation()!;
-  afterEach(() => void db.query.mockImplementation(fakeQuery));
+  const fakeConnect = db.connect.getMockImplementation()!;
+  afterEach(() => {
+    db.query.mockImplementation(fakeQuery);
+    db.connect.mockImplementation(fakeConnect);
+  });
   const slowDatabase = (hold: number, record: number) =>
     db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
       const wait = sql.startsWith(`insert into "scheduledJob"`) ? hold : sql.startsWith(`update "scheduledJob"`) ? record : 0;
@@ -349,6 +353,28 @@ describe("a failure to collect", () => {
     expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: run.detail, lockedBy: null });
     expect(results.size + games.size).toBe(0);
     expect(ended).toBe(260_000);
+    expect(ended).toBeLessThanOrEqual(maxDuration * 1000);
+  });
+
+  // The longest a run can take: Lichess gives its last answer at 239 s, and the database is reached after the run's
+  // time, by the connection that stores the results and then by the record, each taking 20 s.
+  it.each([
+    ["fails, storing nothing", true],
+    ["is slow but works, storing the results", false],
+  ])("is recorded by 280 s when the connection after Lichess's last answer %s", async (_, fails) => {
+    slowDatabase(20_000, 20_000);
+    slowLichess([[29, 429], [29], [29], [29], [29], [3], [1]]);
+    db.connect.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
+      if (fails) throw new Error("timeout exceeded when trying to connect");
+      return fakeConnect();
+    });
+    const { run, ended } = await timedRun();
+    if (fails) expect(run).toEqual(cannot("timeout exceeded when trying to connect."));
+    else expect(run.outcome).toBe("done");
+    expect(results.size).toBe(fails ? 0 : 3);
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastDetail: run.detail, lockedBy: null });
+    expect(ended).toBe(279_000);
     expect(ended).toBeLessThanOrEqual(maxDuration * 1000);
   });
 

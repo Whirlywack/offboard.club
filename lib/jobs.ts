@@ -15,9 +15,9 @@ export type JobRun = { outcome: Outcome; detail: string; matchdayDate: string | 
 export const OVERDUE_MS = 2 * 3_600_000;
 
 // Lichess may take two minutes a request when it rate-limits; a run gives up on it after 240 s, within its route's
-// maxDuration of 300 s, so that it can still record why. Creating Matchdays and Collecting results count the 240 s from
-// the run's first line, so that the 60 s left hold what each writes after Lichess, a connection to the database of up to
-// 20 s (lib/db.ts) included.
+// maxDuration of 300 s, so that it can still record why. Creating Matchdays, Collecting results and the backup count the
+// 240 s from the run's first line, so that the 60 s left hold what each writes after it, connections to the database
+// of up to 20 s each (lib/db.ts) included.
 export const JOB_DEADLINE_MS = 240_000;
 
 // A reason without its closing full stop, to go inside a sentence.

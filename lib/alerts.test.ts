@@ -27,7 +27,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const SUNDAY = new Date("2026-11-29T18:00:00Z"); // 20:00 in Vilnius, a Matchday's start
 
-const COULD_NOT = "Couldn't collect the results of Sunday 29 November: Lichess took more than 4 minutes. The site keeps trying until Sunday 6 December at 20:00. If it hasn't worked by then, run pnpm ingest PreTend1.";
+const COULD_NOT = "Couldn't collect the results of Sunday 29 November: Lichess didn't answer within the run's 240 s. The site keeps trying until Sunday 6 December at 20:00. If it hasn't worked by then, run pnpm ingest PreTend1.";
 
 let telegram: ReturnType<typeof createFakeTelegram>;
 

@@ -32,8 +32,8 @@ export const JOB = "collect-results";
 // standings are read no sooner, and the pause ends with the run's time.
 export const SETTLE_MS = 10_000;
 
-// One run of the job at `now`: what it did and why. It gives up on Lichess, and starts no post to Telegram, once
-// JOB_DEADLINE_MS have passed since its first line. Throws only if the database cannot record the run.
+// One run of the job at `now`: what it did and why. It gives up on Lichess JOB_DEADLINE_MS after its first line, and
+// starts no post to Telegram that would end after then. Throws only if the database cannot record the run.
 export const collectResults = (now: Date) => {
   const by = Date.now() + JOB_DEADLINE_MS;
   return runJob(JOB, () => collect(now, by));

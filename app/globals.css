@@ -41,6 +41,7 @@
      next/font in app/layout.tsx. Each falls back inside its var() too, for a page whose own <html> has no font
      variables, as global-error.tsx's has not. */
   --font-display: var(--font-bodoni, "Bodoni 72"), Didot, serif;
+  --font-display-opsz: 26; /* its optical size at every size: DESIGN.md says why */
   --font-text: var(--font-hanken, system-ui), system-ui, sans-serif;
   --text-xs: 0.8125rem; /* 13px */
   --text-sm: 0.9375rem; /* 15px */
@@ -89,6 +90,9 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  /* The display serif at its one optical size, on every element, as its font-family can come from anywhere; important,
+     as the font shorthand resets this. The text face has no optical-size axis, so it is left as it is. */
+  font-variation-settings: "opsz" var(--font-display-opsz) !important;
 }
 
 html {

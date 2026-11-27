@@ -46,7 +46,7 @@
 }
 
 /* "Recap of", then the date on lines of its own, broken after the day: "September 2026", the longest month and year,
-   is 7.25em wide, which sets the size on a phone, on one line from 300 wide, and the measure at every width */
+   is 7.26em wide, which sets the size on a phone, on one line from 300 wide, and the measure at every width */
 .head .title {
   position: relative;
   z-index: 1;

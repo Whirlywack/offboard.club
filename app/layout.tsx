@@ -10,9 +10,9 @@ import ui from "./ui.module.css";
 import { organiserEmail } from "@/lib/contact";
 
 // Both self-hosted by next/font at build time: the browser never asks Google for anything. The display serif keeps its
-// optical-size axis, which draws the hairlines finer as the type grows: the large headings are made of it. Only the
-// Latin files are preloaded: Latin Extended, which Lithuanian names need for ą, č, ė, š and ž, is fetched when a page
-// has one.
+// optical-size axis so that globals.css can hold it at one size (--font-display-opsz): left to follow the type's size,
+// the axis draws a large heading's hairlines too fine to see. Only the Latin files are preloaded: Latin Extended, which
+// Lithuanian names need for ą, č, ė, š and ž, is fetched when a page has one.
 const bodoni = Bodoni_Moda({
   subsets: ["latin"],
   style: ["normal", "italic"],

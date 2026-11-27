@@ -679,10 +679,10 @@
     font-size: 18px;
   }
 
-  /* Plate 3: the two words face each other like the knights, which stand at their own size. "Meeting" is 3.4 times
+  /* Plate 3: the two words face each other like the knights, which stand at their own size. "Meeting" is 3.42 times
      its size wide, and is kept inside the gutter on a narrow desktop; from about 1300 wide it is the mock-up's. */
   .meet {
-    --size: min(9.6vw, 150px, (50vw - 176px - var(--gutter)) / 3.4);
+    --size: min(9.6vw, 150px, (50vw - 176px - var(--gutter)) / 3.42);
     padding-bottom: 0;
   }
 

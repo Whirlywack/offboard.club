@@ -16,7 +16,6 @@
 .head h1 {
   max-width: 4.7em;
   font-size: clamp(60px, 20vw, 88px);
-  font-optical-sizing: auto;
   line-height: 0.9;
   letter-spacing: -0.025em;
 }
@@ -99,7 +98,6 @@
 .section h2 {
   margin-bottom: 6px;
   font-size: 34px;
-  font-optical-sizing: auto;
   line-height: 1;
   letter-spacing: -0.015em;
   scroll-margin-top: 23px; /* with the page's 24px, its rule lands 24px from the top, as the list's does */

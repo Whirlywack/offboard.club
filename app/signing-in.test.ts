@@ -114,6 +114,19 @@ it("says signing in isn't working again at each press that fails, and brings it 
   await settled();
 });
 
+// The count comes back from the browser, which may send anything in its place.
+it("counts from one again when the browser sends back anything but a small whole number", async () => {
+  const settled = keepWaitUntil();
+  const { signIn } = await import("./actions");
+  const { SIGN_IN_FAILED } = await import("@/lib/auth");
+  const sent = [null, "abc", -5, 1.5, 1000, Number.MAX_SAFE_INTEGER, "x".repeat(900_000), {}, BigInt(10)];
+  for (const tries of sent) {
+    const state = tries === null ? null : { problem: SIGN_IN_FAILED, tries };
+    expect(await signIn(state as never)).toEqual({ problem: SIGN_IN_FAILED, tries: 1 });
+  }
+  await settled();
+});
+
 it("says signing in isn't set up, counting the press, where LinkedIn's keys are not", async () => {
   vi.resetModules();
   vi.stubEnv("LINKEDIN_CLIENT_ID", "");

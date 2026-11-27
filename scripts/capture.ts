@@ -286,7 +286,7 @@ export function inventoryPage() {
 ${list("On it now, top to bottom", p.on_it_now)}
 ${list("Ways in", p.leads_from)}
 ${list("Ways out", p.leads_to)}
-${list("On a phone, measured on 25 November 2026", p.phone_facts)}
+${list("On a phone, measured from 25 to 27 November 2026", p.phone_facts)}
 ${list("Differs from the spec", p.differs_from_spec)}
 ${p.states.map(state).join("")}
 </section>`;

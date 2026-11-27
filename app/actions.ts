@@ -16,9 +16,12 @@ import { noticeLater } from "@/lib/request-failures";
 // did is told so again.
 type SignInState = { problem: string; tries: number };
 
-// Returns a message to show when sign-in cannot start, counting the press; otherwise goes to LinkedIn.
-export async function signIn({ tries }: SignInState): Promise<SignInState> {
-  if (!linkedInConfigured) return { problem: "Signing in with LinkedIn isn't set up yet. Please try again later.", tries: tries + 1 };
+// Returns a message to show when sign-in cannot start, counting the press; otherwise goes to LinkedIn. The count comes
+// back from the browser, so anything but a whole number from 0 to 999 counts from one again.
+export async function signIn(previous: SignInState): Promise<SignInState> {
+  const before: unknown = previous?.tries;
+  const tries = typeof before === "number" && Number.isInteger(before) && before >= 0 && before < 1000 ? before + 1 : 1;
+  if (!linkedInConfigured) return { problem: "Signing in with LinkedIn isn't set up yet. Please try again later.", tries };
   let url: string | undefined;
   try {
     ({ url } = await auth.api.signInSocial({
@@ -29,7 +32,7 @@ export async function signIn({ tries }: SignInState): Promise<SignInState> {
     console.error("LinkedIn sign-in could not start", error);
     noticeLater(error, "/", "action");
   }
-  if (!url) return { problem: SIGN_IN_FAILED, tries: tries + 1 };
+  if (!url) return { problem: SIGN_IN_FAILED, tries };
   redirect(url);
 }
 

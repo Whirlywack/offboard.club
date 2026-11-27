@@ -1,15 +1,15 @@
 // pnpm capture (scripts/capture.ts) and the one list it reads, design/inventory.json: every page the site has is on the
 // list, each state is named for its page and taken in a seed scenario, a run takes only the pages and states named, a
-// Recap's address follows the day it is taken on, its browser is a phone or a desktop that reaches only the local site,
-// the clock it moves for one state moves, and the page it writes shows every state. Taking the pictures takes a few
-// minutes, so that is not done here: run pnpm capture.
+// Recap's address follows the day it is taken on, its browser is a phone or a desktop that reaches only the local site
+// and photographs a page of any height whole, the clock it moves for one state moves, and the page it writes shows every
+// state. Taking the site's pictures takes a few minutes, so that is not done here: run pnpm capture.
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join, relative } from "node:path";
-import { chromium } from "playwright-core";
-import { describe, expect, it } from "vitest";
-import { address, browserFor, chosen, inventory, inventoryPage } from "./capture";
+import { chromium, type Browser } from "playwright-core";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { address, browserFor, chosen, inventory, inventoryPage, wholePage } from "./capture";
 import { root, SCENARIOS } from "./check.mjs";
 
 const states = inventory.pages.flatMap((page) => page.states);
@@ -70,9 +70,18 @@ describe("a state's address", () => {
   });
 });
 
-// Capture's browser, Google Chrome as capture starts it, on a page served here: the site at one address, and "outside"
+// Capture's browser, Google Chrome as capture starts it, on pages served here: the site at one address, and "outside"
 // at another, which stands for every other site and must hear nothing.
 describe("capture's browser", () => {
+  // Started once, before the tests and outside their time limits, which are for what each test does: how long Chrome
+  // takes to start depends on the machine, and on a shared runner it has taken more than 30 s. Its one limit is
+  // Playwright's, 3 minutes, which stops that Chrome and fails the tests; the hook has none of its own (0).
+  let browser: Browser;
+  beforeAll(async () => {
+    browser = await chromium.launch({ channel: "chrome", timeout: 180_000 });
+  }, 0);
+  afterAll(() => browser?.close());
+
   it("is a phone 390 wide, or a desktop, and reaches nothing but the local site", async () => {
     let outsideHeard = 0;
     const outside = createServer((_, res) => (outsideHeard++, res.end("outside")));
@@ -80,7 +89,6 @@ describe("capture's browser", () => {
       res.setHeader("content-type", "text/html").end(`<meta name="viewport" content="width=device-width, initial-scale=1"><iframe src="${addressOf(outside)}/board"></iframe>`),
     );
     await Promise.all([outside, site].map((server) => new Promise((done) => server.listen(0, "127.0.0.1", () => done(null)))));
-    const browser = await chromium.launch({ channel: "chrome" });
     try {
       for (const [size, seen] of [["phone", [390, 3, true]], ["desktop", [1280, 1, false]]] as const) {
         const context = await browserFor(browser, addressOf(site), size);
@@ -91,10 +99,46 @@ describe("capture's browser", () => {
         await context.close();
       }
     } finally {
-      await browser.close();
       for (const server of [outside, site]) server.close();
     }
     expect(outsideHeard).toBe(0);
+  }, 30_000);
+
+  it("photographs a page too tall for Chrome to take at once whole, top to bottom, once", async () => {
+    // Seven bands of 1,000 px, each its own colour: 21,000 device pixels on the phone, past the 16,384 Chrome can take.
+    const colours = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255], [128, 128, 128]];
+    const site = createServer((_, res) =>
+      res
+        .setHeader("content-type", "text/html")
+        .end(`<meta name="viewport" content="width=device-width, initial-scale=1"><body style="margin:0">${colours.map((c) => `<div style="height:1000px;background:rgb(${c})"></div>`).join("")}`),
+    );
+    await new Promise((done) => site.listen(0, "127.0.0.1", () => done(null)));
+    const context = await browserFor(browser, addressOf(site), "phone");
+    try {
+      const page = await context.newPage();
+      await page.goto(`${addressOf(site)}/`);
+      // The image as the browser shows it: its size, the colour in the middle of each band, and either side of the row
+      // where the parts meet, 16,383 device pixels down.
+      const rows = [...colours.map((_, i) => (i * 1000 + 500) * 3), 16_382, 16_383];
+      const seen = await page.evaluate(
+        async ({ png, rows }) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${png}`;
+          await image.decode();
+          const pixel = new OffscreenCanvas(1, 1).getContext("2d")!;
+          return [
+            image.naturalWidth,
+            image.naturalHeight,
+            rows.map((y) => (pixel.drawImage(image, 600, y, 1, 1, 0, 0, 1, 1), [...pixel.getImageData(0, 0, 1, 1).data.slice(0, 3)])),
+          ];
+        },
+        { png: (await wholePage(page)).toString("base64"), rows },
+      );
+      expect(seen).toEqual([1170, 21_000, [...colours, colours[5], colours[5]]]);
+    } finally {
+      await context.close();
+      site.close();
+    }
   }, 30_000);
 });
 

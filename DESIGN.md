@@ -175,7 +175,7 @@ Square. Every corner is 0: buttons, fields, photographs, panels. Rules are 1px. 
 The pieces several pages share, and where they live:
 
 - `app/globals.css`: every token, and the base look of headings, links, buttons, fields, the focus ring, selection and the skip link.
-- `app/ui.module.css`: `black`, `grain`, `display`, `caps`, `ruled`, and the older pieces (`page`, `intro`, `lede`, `prose`, `panel`, `button`, `quiet`, `actions`, `alert`, `backLinks`, `arrive`).
+- `app/ui.module.css`: `black`, `grain`, `display`, `caps`, `ruled`, `button`, `quiet`, `actions`, `alert`, `muted` and `small`, and the old look's `page`, `intro`, `eyebrow` and `lede` (Kept from the old look, below).
 - `app/site.tsx` with `app/site.module.css`: `Masthead` (the header) and `Strip`. The footer is in `app/layout.tsx`.
 - `app/ruled-links.tsx`: `RuledLinks`.
 - `app/photos/`: every photograph and cut-out the site shows; `design/photographs/`: the Organiser's originals they are made from.
@@ -264,13 +264,9 @@ How a photograph meets the page is most of this look.
 - **Don't** put a blend mode on text unless it crosses a photograph on purpose: "The chess" is set by difference so that it turns dark where it crosses the white king; nothing else is.
 - **Don't** show a sign-in button on a page without the note about what signing in stores.
 
-## Kept for the pages not yet redesigned
+## Kept from the old look
 
-`--raised`, `--sunken`, `--accent`, `--image-outline`, `--shadow-raised`, `--error-wash` (which `ui.alert` no longer reads), the `--radius-*` tokens (now 0), the `--text-*` scale, and in `ui.module.css` `panel`, `eyebrow`, `marker`, `arrive` and `backLinks` (a row of small underlined links at a page's foot, where a redesigned page has `RuledLinks`) are the old look's, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
-
-## Adding to this file
-
-When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.
+`app/global-error.tsx`, the last-resort page that replaces the whole document when the root layout fails, is the one page not yet redesigned, and the only one that reads `page`, `intro`, `eyebrow` and `lede` in `ui.module.css`. `--raised`, `--sunken`, `--image-outline`, `--error-wash` (which `ui.alert` no longer reads), the `--radius-*` tokens (now 0) and the `--text-*` scale are the old look's too, given values that read in this one. A redesigned page uses the pieces above instead, and the last page to stop using one removes it.
 
 ## Privacy and terms: a long text
 
@@ -300,7 +296,7 @@ What a Member's Profile, Edit your Profile, Leave the Club and the page after le
 
 ## Signing up
 
-The three steps after signing in (agree, connect Lichess, the optional Profile) and deleting an account part-way: `app/welcome/`, styled in `app/welcome/welcome.module.css`. Three short steps on a phone, straight after the home page, so they are the same place, quieter.
+The three steps after signing in (agree, connect Lichess, the optional Profile) and deleting an account part-way: `app/welcome/`, styled in `app/welcome/welcome.module.css`, and deleting part-way in `app/profile/profile.module.css`. Three short steps on a phone, straight after the home page, so they are the same place, quieter.
 
 - **The plate.** One grey plate under the header, with the grain where the steps' pawn stands. On a phone: the steps, the heading, then what there is to do, all at the gutter. On a desktop (`.page`, a grid of `5fr` and `6fr`, `6vw` apart): the steps over the heading on the left, and what there is to do on the right, at most 600px wide against the right gutter, its top level with the heading's.
 - **The heading.** The display serif at `clamp(44px, 13.4vw, 60px)` on a phone and `min(6.4vw, 108px)` on a desktop, line-height 0.92 and 0.9, its first word in italic. A line under it in the body size (18px on a desktop), in ink.
@@ -374,3 +370,7 @@ Three states, told by form and never by colour alone:
 - Two or three choices are radio buttons, a 44px row each, not a list to open: a closed list cuts long choices off on a phone.
 - A form's own action is a primary button, the full width of a phone. The quieter actions beside a row (Skip, Undo, Done) are `ui.quiet`.
 - **Removing someone:** keeping them first, the ink block; removing outlined in `--error`, never filled, 54px tall like the other. Stacked at full width on a phone.
+
+## Adding to this file
+
+When a page brings a piece another page will want (a table, a form, a plate of its own), add it under Components: what it looks like, in words and values, and the file it lives in. A new token goes into `app/globals.css` and into the frontmatter above in the same commit; `globals.css` is the one the site reads. Write what is built, not what is planned, and keep each rule to the page that proved it.

@@ -23,6 +23,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "playwright-core";
 import { cleanUp, copyCheckout, git, root, run, SCENARIOS, scratch, start, tail } from "./check.mjs";
 import { addDays, latestSunday, matchdayStart } from "@/lib/schedule";
@@ -161,12 +162,76 @@ async function image(browser: Browser, origin: string, cookie: Cookie | undefine
     // has them all. One that fails to load is complete too.
     await page.evaluate(() => document.querySelectorAll("img").forEach((img) => (img.loading = "eager")));
     await page.waitForFunction(() => [...document.images].every((img) => img.complete), null, { timeout: 30_000 });
-    // Next.js's development badge is not part of the site.
-    const path = join(OUT, `${state.name}-${size}.png`);
-    await page.screenshot({ path, fullPage: true, animations: "disabled", style: "nextjs-portal { display: none !important; }" });
+    writeFileSync(join(OUT, `${state.name}-${size}.png`), await wholePage(page));
   } finally {
     await context.close();
   }
+}
+
+// Chrome takes no image taller than this many device pixels: a taller one has its top repeated from there down.
+const TALLEST = 16_384;
+
+// The whole page as one PNG. A page taller than Chrome can take at once (5,461 px on the phone) is taken in parts that
+// each fit, from the top down, and they are joined.
+export async function wholePage(page: Page) {
+  const size = () => page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight, devicePixelRatio]);
+  const [width, height, scale] = await size();
+  const step = Math.floor(TALLEST / scale);
+  const parts: Buffer[] = [];
+  for (let y = 0; y < height; y += step)
+    // Next.js's development badge is not part of the site.
+    parts.push(await page.screenshot({ fullPage: true, clip: { x: 0, y, width, height: Math.min(step, height - y) }, animations: "disabled", style: "nextjs-portal { display: none !important; }" }));
+  // A page that changed size meanwhile would be joined from two layouts, or cut short.
+  const [widthAfter, heightAfter] = await size();
+  if (widthAfter !== width || heightAfter !== height)
+    throw new Error(`The page changed size while it was photographed, from ${width} x ${height} to ${widthAfter} x ${heightAfter}`);
+  return parts.length === 1 ? parts[0] : joined(parts);
+}
+
+// The data of each chunk of a PNG of that type, in order.
+function chunks(png: Buffer, type: string) {
+  const found: Buffer[] = [];
+  for (let at = 8; at < png.length; at += 12 + png.readUInt32BE(at))
+    if (png.toString("latin1", at + 4, at + 8) === type) found.push(png.subarray(at + 8, at + 8 + png.readUInt32BE(at)));
+  return found;
+}
+
+// A PNG chunk: its length, its type and data, and their checksum.
+function chunk(type: string, data: Buffer) {
+  const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, checksum]);
+}
+
+// Chrome's PNGs of one width (8-bit RGB, not interlaced) as one, one under the other. A PNG keeps each row as its
+// difference from the row above, and its first row from a row of zeros, so each part's first row but the first part's is
+// put back to the bytes it stands for before it goes under another part's last. Parts of any other kind are refused.
+export function joined(parts: Buffer[]) {
+  const header = Buffer.from(chunks(parts[0], "IHDR")[0]);
+  const width = header.readUInt32BE(0);
+  parts.forEach((png, i) => {
+    const part = chunks(png, "IHDR")[0];
+    if (part.readUInt32BE(0) !== width || part.subarray(8, 13).join() !== "8,2,0,0,0")
+      throw new Error(`Part ${i + 1} of ${parts.length} is ${part.readUInt32BE(0)} px wide, its IHDR ${part.subarray(8, 13).join()}: only parts ${width} px wide, 8-bit RGB and not interlaced (8,2,0,0,0), can be joined`);
+  });
+  const row = 1 + 3 * width; // the filter's byte, then each pixel's three
+  const rows = Buffer.concat(
+    parts.map((png, i) => {
+      const data = inflateSync(Buffer.concat(chunks(png, "IDAT")));
+      if (i) {
+        // Over zeros, Sub (1) and Paeth (4) add the byte a pixel to the left, Average (3) half of it, None and Up nothing.
+        const filter = data[0];
+        for (let x = 4; x < row; x++) data[x] += filter === 1 || filter === 4 ? data[x - 3] : filter === 3 ? data[x - 3] >> 1 : 0;
+        data[0] = 0;
+      }
+      return data;
+    }),
+  );
+  header.writeUInt32BE(rows.length / row, 4);
+  return Buffer.concat([parts[0].subarray(0, 8), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
 }
 
 async function capture(states: State[]): Promise<number> {

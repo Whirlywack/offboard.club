@@ -46,9 +46,9 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
     );
   // Enter in the open-to box saves the form, as it did when the box was one line, rather than start a line that would
   // be saved as a space. Not while a save is under way, as a disabled button stops Enter in a field, and not while a
-  // keyboard is still composing a word, whose Enter chooses it.
+  // keyboard is still composing a word, whose Enter chooses it: Safari says so of that Enter by key code 229 alone.
   const saveOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     if (!pending) event.currentTarget.form?.requestSubmit();
   };

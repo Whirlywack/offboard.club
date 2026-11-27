@@ -26,10 +26,16 @@ vi.mock("@/lib/db", async () => {
     if (!pool) throw new Error("no database chosen");
     return pool;
   };
-  const test = { between: null as ((sql: string) => Promise<void>) | null };
+  // `statements`: each the app sent through the pool, with when it was sent and when it was answered.
+  const test = { between: null as ((sql: string) => Promise<void>) | null, statements: [] as { text: string; sent: number; answered: number }[] };
   return {
     db: {
-      query: (...args: unknown[]) => (current().query as (...a: unknown[]) => Promise<unknown>)(...args),
+      query: async (...args: unknown[]) => {
+        const sent = Date.now();
+        const result = await (current().query as (...a: unknown[]) => Promise<unknown>)(...args);
+        test.statements.push({ text: String(args[0]), sent, answered: Date.now() });
+        return result;
+      },
       connect: async () => {
         const client = await current().connect();
         const query = client.query.bind(client) as (...a: unknown[]) => Promise<unknown>;
@@ -75,7 +81,20 @@ vi.mock("@/lib/db", async () => {
 const DEADLINE_MS = 500;
 vi.mock("./jobs", async (original) => ({ ...(await original<typeof import("./jobs")>()), JOB_DEADLINE_MS: 500 }));
 
-const { use, test: hooks } = db as unknown as { use: (url: string | null) => Promise<void>; test: { between: ((sql: string) => Promise<void>) | null } };
+const { use, test: hooks } = db as unknown as {
+  use: (url: string | null) => Promise<void>;
+  test: { between: ((sql: string) => Promise<void>) | null; statements: { text: string; sent: number; answered: number }[] };
+};
+
+// How long the last run worked between its hold on the job and its record of how it went, which is the time its
+// deadline counts (lib/backup.ts). The statements on either side take longer on a busy machine: on CI a whole run once
+// took 971 ms against its 500.
+function worked() {
+  const { statements } = hooks;
+  const hold = statements.findLastIndex((s) => s.text.startsWith(`insert into "scheduledJob"`));
+  const record = statements.findIndex((s, i) => i > hold && /^(insert into "jobFailure"|update "scheduledJob" set "lastRunAt")/.test(s.text));
+  return statements[record].sent - statements[hold].answered;
+}
 
 const PREFIX = "offboard_backup_test_";
 const TOKEN = "vercel_blob_rw_pretendstore_a-pretend-blob-token";
@@ -429,7 +448,7 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
           const took = Date.now() - started;
           expect(run).toEqual({ outcome: "failed", detail: "The backup failed: it took more than 0.5 s.", matchdayDate: null });
           expect(took).toBeGreaterThanOrEqual(DEADLINE_MS);
-          expect(took).toBeLessThan(DEADLINE_MS + 400);
+          expect(worked()).toBeLessThan(DEADLINE_MS + 400);
           expect(await lastRun()).toEqual({ lastOutcome: "failed", lastDetail: run.detail });
           expect(blob.blobs.size).toBe(count);
         } finally {
@@ -441,9 +460,8 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     it("ends at the run's deadline when the database is what keeps it", async () => {
       hooks.between = async () => void (await new Promise((resolve) => setTimeout(resolve, 3000)));
       try {
-        const started = Date.now();
         expect((await backUp(new Date(NOW.getTime() + 5 * 86_400_000))).detail).toBe("The backup failed: it took more than 0.5 s.");
-        expect(Date.now() - started).toBeLessThan(DEADLINE_MS + 400);
+        expect(worked()).toBeLessThan(DEADLINE_MS + 400);
       } finally {
         hooks.between = null;
         // The dump that was kept waiting ends, and lets go of its connection.
@@ -516,9 +534,8 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
           await setBack();
           store = answering;
           try {
-            const started = Date.now();
             const run = await backUp(LATER);
-            expect(Date.now() - started).toBeLessThan(DEADLINE_MS + 400);
+            expect(worked()).toBeLessThan(DEADLINE_MS + 400);
             expect(run).toEqual({
               outcome: "failed",
               detail: expect.stringMatching(/^Backed up the database \(\d+ kB\), but couldn't delete the backups over 13 days old: it took more than 0\.5 s\.$/),

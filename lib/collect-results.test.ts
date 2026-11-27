@@ -5,7 +5,7 @@
 // Creating Matchdays leaves it; everything else is the app's own code.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GET as cronRequest } from "@/app/api/jobs/collect-results/route";
+import { GET as cronRequest, maxDuration } from "@/app/api/jobs/collect-results/route";
 import { addPerson, db, games, jobFailures, matchdays, people, resetDb, results, scheduledJobs } from "@/lib/fake-db";
 import { createFakeLichess, type FakeSwiss } from "@/lib/fixtures/fake-lichess";
 import { collectResults, JOB, SETTLE_MS } from "./collect-results";
@@ -286,8 +286,42 @@ describe("a failure to collect", () => {
 
   // Lichess answers the requests in turn, each after so many seconds, with a 429 where marked, after which the client
   // waits a minute and asks again: 118 s for [29, 429], [29]. Every attempt is within the client's own 30 s, and the
-  // Games export within its 300 s, so only the run's own limit stops it at 240 s, wherever it has got to.
-  const slow: [string, ([seconds: number] | [seconds: number, status: 429])[], number?][] = [
+  // Games export within its 300 s, so only the run's own limit stops it at 240 s, wherever it has got to. What it was
+  // asked, in turn.
+  type Answers = ([seconds: number] | [seconds: number, status: 429])[];
+  function slowLichess(answers: Answers) {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      asked.push(new URL(String(input)).pathname);
+      const [seconds, status] = answers[asked.length - 1] ?? [0];
+      await new Promise((resolve, reject) => {
+        setTimeout(resolve, seconds * 1000);
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      });
+      return status === 429 ? new Response(null, { status }) : lichess.fetch(input, init);
+    });
+    return asked;
+  }
+  // The run's hold on the job taking `hold` ms, and its record of how it went `record` ms, as a connection to the
+  // database tried twice may (lib/db.ts).
+  const fakeQuery = db.query.getMockImplementation()!;
+  afterEach(() => void db.query.mockImplementation(fakeQuery));
+  const slowDatabase = (hold: number, record: number) =>
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      const wait = sql.startsWith(`insert into "scheduledJob"`) ? hold : sql.startsWith(`update "scheduledJob"`) ? record : 0;
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      return fakeQuery(sql, params);
+    });
+  // A run, and when it ended from its first line.
+  async function timedRun() {
+    const started = Date.now();
+    let ended = 0;
+    const running = collectResults(OVER).then((run) => ((ended = Date.now() - started), run));
+    await vi.advanceTimersByTimeAsync(600_000);
+    return { run: await running, ended };
+  }
+
+  const slow: [string, Answers, number?][] = [
     ["behind two of the site's other requests to Lichess", [[29, 429], [29], [29, 429], [29], [29]], 2],
     ["asking whether the tournament has finished", [[29, 429], [29], [29, 429], [29]]],
     ["asking for the team's tournaments", [[29, 429], [29], [29], [29, 429], [29]]],
@@ -296,24 +330,57 @@ describe("a failure to collect", () => {
     ["asking for the Members' accounts", [[29, 429], [29], [29], [29], [29], [20], [29]]],
   ];
   it.each(slow)("is recorded at 240 s, within the 300 s Vercel gives the run, when Lichess is slow %s", async (_, answers, others = 0) => {
-    let n = 0;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const [seconds, status] = answers[n++] ?? [0];
-      await new Promise((resolve, reject) => {
-        setTimeout(resolve, seconds * 1000);
-        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
-      });
-      return status === 429 ? new Response(null, { status }) : lichess.fetch(input, init);
-    });
+    slowLichess(answers);
     for (let i = 0; i < others; i++) void getSwiss("Other123").catch(() => {});
-    const started = Date.now();
-    let finished = 0;
-    const run = collectResults(OVER).finally(() => (finished = Date.now()));
-    await vi.advanceTimersByTimeAsync(300_000);
-    expect(await run).toEqual(cannot("Lichess took more than 4 minutes."));
-    expect(finished - started).toBe(240_000);
+    const { run, ended } = await timedRun();
+    expect(run).toEqual(cannot("Lichess didn't answer within the run's 240 s."));
+    expect(ended).toBe(240_000);
     expect(results.size + games.size).toBe(0);
     expect(jobFailures.size).toBe(1);
+  });
+
+  it("gives up on Lichess 240 s after the run's first line, so that it is recorded inside its 300 s", async () => {
+    // The hold takes until 20 s; Lichess says the tournament has finished at 138 s, and is asked again from 148 s,
+    // answering 429 and then nothing by 240 s; the record takes until 260 s.
+    slowDatabase(20_000, 20_000);
+    slowLichess([[29, 429], [29], [29, 429], [29]]);
+    const { run, ended } = await timedRun();
+    expect(run).toEqual(cannot("Lichess didn't answer within the run's 240 s."));
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: run.detail, lockedBy: null });
+    expect(results.size + games.size).toBe(0);
+    expect(ended).toBe(260_000);
+    expect(ended).toBeLessThanOrEqual(maxDuration * 1000);
+  });
+
+  it("records a failure that stands once, however long each run's hold took", async () => {
+    const details: string[] = [];
+    for (const hold of [16_000, 18_000, 20_000]) {
+      slowDatabase(hold, 0);
+      slowLichess([[29, 429], [29], [29, 429], [29]]);
+      details.push((await timedRun()).run.detail);
+    }
+    expect(details).toEqual(Array(3).fill(cannot("Lichess didn't answer within the run's 240 s.").detail));
+    expect(jobFailures.size).toBe(1);
+  });
+
+  it("asks Lichess nothing once the run's 240 s have gone, and says so", async () => {
+    slowDatabase(241_000, 0);
+    const asked = slowLichess([]);
+    const { run } = await timedRun();
+    expect(run).toEqual(cannot("There was no time left to ask Lichess."));
+    expect(asked).toEqual([]);
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "failed", lastDetail: run.detail });
+  });
+
+  it("stops waiting for the final standings at the run's 240 s", async () => {
+    // Behind another of the site's requests, which takes until 118 s, Lichess says at 236 s that the tournament has
+    // finished.
+    const asked = slowLichess([[29, 429], [29], [29, 429], [29]]);
+    void getSwiss("Other123").catch(() => {});
+    const { run, ended } = await timedRun();
+    expect(run).toEqual(cannot("Lichess didn't answer within the run's 240 s."));
+    expect(ended).toBe(240_000);
+    expect(asked).toEqual(["/api/swiss/Other123", "/api/swiss/Other123", `/api/swiss/${TOURNAMENT}`, `/api/swiss/${TOURNAMENT}`]);
   });
 });
 

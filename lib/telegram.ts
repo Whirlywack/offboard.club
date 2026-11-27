@@ -160,11 +160,12 @@ async function deliverOne(group: string, now: Date, prefix: string): Promise<Del
   return { posted: 0, failed: { text: post.text, problem: sent.problem, perhaps: sent.posted === "perhaps" } };
 }
 
-// Sends the posts waiting under `prefix`, oldest first, to `chat`, until one cannot be sent. Throws if the database
-// fails.
-async function deliver(chat: string | null, now: Date, prefix: string): Promise<Delivery> {
+// Sends the posts waiting under `prefix`, oldest first, to `chat`, until one cannot be sent, or until less than a
+// request's 10 s is left before `by` (a time, in ms). A request cut shorter could post without Telegram saying so, and
+// that post would never be sent again, so the rest wait for the next delivery. Throws if the database fails.
+async function deliver(chat: string | null, now: Date, prefix: string, by = Infinity): Promise<Delivery> {
   let posted = 0;
-  while (chat && posted < MAX_PER_DELIVERY) {
+  while (chat && posted < MAX_PER_DELIVERY && Date.now() + TIMEOUT_MS <= by) {
     const one = await deliverOne(chat, now, prefix);
     if (!one) break;
     if (one.failed) return { posted, failed: one.failed };
@@ -173,8 +174,8 @@ async function deliver(chat: string | null, now: Date, prefix: string): Promise<
   return { posted, failed: null };
 }
 
-// The posts waiting for the Club's group, alerts never among them.
-export const deliverPosts = (now: Date) => deliver(groupId(), now, "");
+// The posts waiting for the Club's group, alerts never among them, those that fit before `by` if it is given.
+export const deliverPosts = (now: Date, by?: number) => deliver(groupId(), now, "", by);
 
 // The alerts waiting for the Organiser, to their own chat. An alert claimed more than 15 minutes before `now` and not
 // sent, whose delivery died or which Telegram may have taken without saying, is given back and sent again: it goes to the

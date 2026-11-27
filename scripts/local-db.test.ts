@@ -330,7 +330,9 @@ describe("the Postgres db:start runs", () => {
 });
 
 // Every temporary repository below, whose leftovers afterAll stops should a test fail part-way, and every process a
-// test started itself. Then every temporary folder is removed, and a run that leaves one fails.
+// test started itself. Then every temporary folder is removed, and a run that leaves one fails. That is a stop-all for
+// each of some 24 repositories and some 40 folders removed, Postgres's among them: 3 s on a laptop, and more than the
+// 10 s a hook is given by default on a busy CI runner. One that takes over 60 s still fails.
 const repositories: string[] = [];
 const children: ChildProcess[] = [];
 afterAll(() => {
@@ -338,7 +340,7 @@ afterAll(() => {
   for (const root of repositories) tool(root, "stop-all", "--all");
   for (const dir of temporary) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   expect(temporary.filter((dir) => existsSync(dir))).toEqual([]);
-});
+}, 60_000);
 
 const tool = (root: string, ...args: string[]) => run(process.execPath, [join(root, "scripts/local-db.mjs"), ...args]);
 const git = (dir: string, ...args: string[]) =>

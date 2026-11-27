@@ -720,9 +720,10 @@
     text-align: left;
   }
 
+  /* The descenders of "people" end about 1.11 times its size below its top: 1.3 leaves air under them at any size */
   .meetText {
     position: absolute;
-    top: calc(150px + 64px + 1.08 * var(--size));
+    top: calc(150px + 64px + 1.3 * var(--size));
     left: calc(50% + 180px);
     width: min(27em, 32vw, 50% - 180px - var(--gutter));
     padding: 0;

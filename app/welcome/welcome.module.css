@@ -65,7 +65,6 @@
 
 .stepNumber {
   font: 500 32px/0.9 var(--font-display);
-  font-optical-sizing: auto;
   letter-spacing: -0.02em;
   font-variant-numeric: lining-nums;
 }
@@ -179,7 +178,6 @@
   width: 100%;
   margin-bottom: 4px;
   font: 500 30px/1.06 var(--font-display);
-  font-optical-sizing: auto;
   letter-spacing: -0.015em;
 }
 

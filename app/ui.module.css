@@ -27,11 +27,10 @@
   opacity: 0.55;
 }
 
-/* The display voice: the serif at a size that fills its section, its hairlines drawn for that size */
+/* The display voice: the serif at a size that fills its section */
 .display {
   font-family: var(--font-display);
   font-weight: 500;
-  font-optical-sizing: auto;
   letter-spacing: -0.025em;
   line-height: 0.86;
 }

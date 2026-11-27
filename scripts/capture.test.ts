@@ -7,9 +7,10 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join, relative } from "node:path";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { address, browserFor, chosen, inventory, inventoryPage, wholePage } from "./capture";
+import { address, browserFor, chosen, inventory, inventoryPage, joined, wholePage } from "./capture";
 import { root, SCENARIOS } from "./check.mjs";
 
 const states = inventory.pages.flatMap((page) => page.states);
@@ -140,6 +141,74 @@ describe("capture's browser", () => {
       site.close();
     }
   }, 30_000);
+
+  it("refuses a page that grows taller or wider while it is photographed, rather than join two layouts or cut it short", async () => {
+    // A page 6,000 px tall, taken in two parts, that grows 10 px every 10 ms, downwards or sideways.
+    const site = createServer((req, res) =>
+      res
+        .setHeader("content-type", "text/html")
+        .end(
+          `<meta name="viewport" content="width=device-width, initial-scale=1"><body style="margin:0"><div id="grows" style="width:390px;height:6000px"></div><script>setInterval(() => (grows.style.${req.url!.slice(1)} = parseInt(grows.style.${req.url!.slice(1)}) + 10 + "px"), 10)</script>`,
+        ),
+    );
+    await new Promise((done) => site.listen(0, "127.0.0.1", () => done(null)));
+    const context = await browserFor(browser, addressOf(site), "phone");
+    try {
+      for (const [side, changed] of [["height", /from 390 x 6\d{3} to 390 x \d{4}$/], ["width", /from \d{3,4} x 6000 to \d{3,4} x 6000$/]] as const) {
+        const page = await context.newPage();
+        await page.goto(`${addressOf(site)}/${side}`);
+        await expect(wholePage(page)).rejects.toThrow(changed);
+        await page.close();
+      }
+    } finally {
+      await context.close();
+      site.close();
+    }
+  }, 30_000);
+});
+
+// Chrome's PNGs are not chosen here, so these are made by hand: rows of RGB bytes, the first stored by its difference from
+// a row of zeros (the filter named, 0 to 4: None, Sub, Up, Average, Paeth) and the rest as they are, and IHDR bytes 8-12
+// as given (8-bit RGB, not interlaced, by default).
+function png(rows: number[][], filter: number, kind = [8, 2, 0, 0, 0]) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(rows[0].length / 3, 0);
+  header.writeUInt32BE(rows.length, 4);
+  header.set(kind, 8);
+  // Over zeros, each filter takes away nothing, the byte a pixel to the left, or half of it.
+  const left = (row: number[], x: number) => (x < 3 ? 0 : row[x - 3]);
+  const stored = rows.flatMap((row, y) => (y ? [0, ...row] : [filter, ...row.map((byte, x) => (byte - [0, left(row, x), 0, left(row, x) >> 1, left(row, x)][filter]) & 255)]));
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const [length, checksum] = [Buffer.alloc(4), Buffer.alloc(4)];
+    length.writeUInt32BE(data.length);
+    checksum.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, checksum]);
+  };
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(Buffer.from(stored))), chunk("IEND", Buffer.alloc(0))]);
+}
+
+describe("the parts of a tall page's image, joined", () => {
+  // Four rows three pixels wide, their bytes all different, many over 127.
+  const rows = [0, 1, 2, 3].map((y) => Array.from({ length: 9 }, (_, x) => (y * 67 + x * 41 + 200) % 256));
+
+  it("are one image, one under the other, whichever filter the second part's first row was stored with", () => {
+    for (const filter of [0, 1, 2, 3, 4]) {
+      const image = joined([png(rows.slice(0, 2), 0), png(rows.slice(2), filter)]);
+      // Its IHDR, then its one IDAT: each row stored as it is.
+      expect([image.readUInt32BE(16), image.readUInt32BE(20), image.toString("latin1", 37, 41)]).toEqual([3, 4, "IDAT"]);
+      expect([...inflateSync(image.subarray(41, 41 + image.readUInt32BE(33)))]).toEqual(rows.flatMap((row) => [0, ...row]));
+    }
+  });
+
+  it("are refused, saying which part and what it is, unless each is as wide as the first, 8-bit RGB and not interlaced", () => {
+    const rgb = png(rows.slice(0, 2), 0);
+    expect(() => joined([rgb, png(rows.slice(2).map((row) => row.slice(3)), 0)])).toThrow(
+      "Part 2 of 2 is 2 px wide, its IHDR 8,2,0,0,0: only parts 3 px wide, 8-bit RGB and not interlaced (8,2,0,0,0), can be joined",
+    );
+    for (const kind of [[8, 6, 0, 0, 0], [16, 2, 0, 0, 0], [8, 2, 0, 0, 1]])
+      expect(() => joined([rgb, rgb, png(rows.slice(2), 0, kind)])).toThrow(`Part 3 of 3 is 3 px wide, its IHDR ${kind.join()}:`);
+  });
 });
 
 describe("the clock capture moves", () => {

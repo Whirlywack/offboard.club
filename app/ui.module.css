@@ -193,6 +193,14 @@
   transform: translateY(1px);
 }
 
+/* Forced colours drop the fill and the shadow, so the outline is a border there, in the text's colour */
+@media (forced-colors: active) {
+  .button,
+  .quiet {
+    border: 1px solid;
+  }
+}
+
 /* A row of actions, wrapping onto a second line on a phone */
 .actions {
   display: flex;

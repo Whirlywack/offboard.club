@@ -279,13 +279,6 @@
   grid-column: 1 / -1;
 }
 
-.telegram a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
-  font-weight: 500;
-}
-
 /* A Member's way into the Matchday's tournament, once it is on Lichess: the block's one action, an ink block */
 .statusLink {
   margin-top: 18px;
@@ -579,6 +572,11 @@
   .actions {
     display: flex;
     gap: 12px;
+  }
+
+  /* The Telegram group's button: the panel's width on a phone, as the row above it is, and its own on a desktop */
+  .telegram {
+    justify-self: start;
   }
 
   /* With the database down, the way to sign in takes the whole row */

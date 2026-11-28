@@ -20,7 +20,7 @@
 
 import { db } from "./db";
 import { done, failed, JOB_DEADLINE_MS, runJob, sentence, skipped, type JobRun } from "./jobs";
-import { getSwiss, timeLimit } from "./lichess";
+import { getSwiss, limitBy, NO_TIME_LEFT } from "./lichess";
 import { ingestTournament, matchdayOn } from "./matchdays";
 import { postRecap } from "./post-to-telegram";
 import { addDays, latestSunday, matchdayStart, ZONE } from "./schedule";
@@ -29,11 +29,15 @@ export const JOB = "collect-results";
 
 // Lichess marks a tournament finished as the last Game ends, a moment before it has counted that Game into the
 // standings, and waits 10 s itself before announcing the final ranking (lila, SwissApi.finishGame and doFinish). The
-// standings are read no sooner.
+// standings are read no sooner, and the pause ends with the run's time.
 export const SETTLE_MS = 10_000;
 
-// One run of the job at `now`: what it did and why. Throws only if the database cannot record the run.
-export const collectResults = (now: Date) => runJob(JOB, () => collect(now));
+// One run of the job at `now`: what it did and why. It gives up on Lichess JOB_DEADLINE_MS after its first line, and
+// starts no post to Telegram that would end after then. Throws only if the database cannot record the run.
+export const collectResults = (now: Date) => {
+  const by = Date.now() + JOB_DEADLINE_MS;
+  return runJob(JOB, () => collect(now, by));
+};
 
 // When runs stop looking after the Matchday of `date`: as the next Sunday's starts.
 export const lastTryAt = (date: string) => matchdayStart(addDays(date, 7));
@@ -68,7 +72,7 @@ const day = (date: string) =>
 const moment = (at: Date) =>
   whole(at.toLocaleString("en-GB", { timeZone: ZONE, weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }));
 
-async function collect(now: Date): Promise<JobRun> {
+async function collect(now: Date, by: number): Promise<JobRun> {
   const date = latestSunday(now);
   const sunday = day(date);
   const matchday = await matchdayOn(date);
@@ -88,19 +92,26 @@ async function collect(now: Date): Promise<JobRun> {
       `Couldn't collect the results of ${sunday}: ${sentence(why)}. The site keeps trying until ${lastTry}. If it hasn't worked by then, run pnpm ingest ${id}.`,
       date,
     );
-  const deadline = timeLimit(JOB_DEADLINE_MS, `Lichess took more than ${JOB_DEADLINE_MS / 60_000} minutes`);
+  // The same words however long the run's reads took, so that a failure that stands is recorded once (runJob).
+  const deadline = limitBy(by, Infinity, `Lichess didn't answer within the run's ${JOB_DEADLINE_MS / 1000} s`);
+  if (!deadline) return cannot(NO_TIME_LEFT);
+  const { signal } = deadline;
   try {
-    const swiss = await getSwiss(id, deadline.signal);
+    const swiss = await getSwiss(id, signal);
     // lila deletes a Swiss tournament that has not had two players an hour after its start, and its creator can delete
     // one before it starts. Either way there is nothing to collect, now or later, and nothing for the Organiser to do.
     if (!swiss) return skipped(`Lichess deleted the tournament for ${sunday}, so it has no results.`, date);
     if (swiss.status !== "finished") return skipped(`The tournament for ${sunday} hasn't finished yet.`, date);
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
-    const ingestion = await ingestTournament(id, { signal: deadline.signal });
+    await new Promise((resolve, reject) => {
+      setTimeout(resolve, SETTLE_MS);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    const ingestion = await ingestTournament(id, { signal });
     if (ingestion.outcome === "unchanged") return collected; // by `pnpm ingest`, in the meantime
     if (ingestion.outcome === "refused") return refusal(ingestion.problem);
-    // To the Telegram group; how that went is Posting to Telegram's to report, which tries again what failed.
-    await postRecap(date, now);
+    // To the Telegram group, if it fits in the run's time; how that went is Posting to Telegram's to report, which
+    // posts what is left and tries again what failed.
+    await postRecap(date, now, by);
     return done(
       `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
       date,

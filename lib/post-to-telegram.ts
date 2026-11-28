@@ -84,13 +84,14 @@ async function queueRecap(date: string) {
 }
 
 // For Collecting results and pnpm ingest, once they have stored the results of the Matchday of `date`: posts its Recap
-// now, and says how that went. Never throws: a failure to post leaves the results as they are, and the post, once
-// queued, for the next run, which tries a refused one again and reports one Telegram may have posted.
-export async function postRecap(date: string, now: Date): Promise<string> {
+// now, if it fits before `by` (deliverPosts), and says how that went. Never throws: a failure to post leaves the results
+// as they are, and the post, once queued, for the next run, which tries a refused one again and reports one Telegram
+// may have posted.
+export async function postRecap(date: string, now: Date, by?: number): Promise<string> {
   if (!postingSetUp()) return "Telegram isn't set up, so the Recap wasn't posted.";
   try {
     await queueRecap(date);
-    return outcome(await deliverPosts(now), null).detail;
+    return outcome(await deliverPosts(now, by), null).detail;
   } catch (error) {
     const why = error instanceof Error ? error.message : "unknown error";
     console.error("Posting the Recap failed:", why);

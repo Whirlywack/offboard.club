@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maxDuration as collectingMaxDuration } from "@/app/api/jobs/collect-results/route";
 import { GET as cronRequest } from "@/app/api/jobs/post-to-telegram/route";
 import { addCompany, addPerson, db, jobFailures, matchdays, people, resetDb, results, scheduledJobs, seasons, skippedSundays, telegramPosts } from "@/lib/fake-db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
@@ -350,6 +351,39 @@ describe("the Recap", () => {
     db.query.mockImplementation(answer);
     await runAt(at("2026-11-29T20:07:00Z"));
     expect(posted()).toEqual([RECAP]);
+  });
+
+  // Every wait as long as it can be: the run's hold on the job and its record each take 20 s, as a connection to the
+  // database tried twice may (lib/db.ts), Lichess takes until 230 s for the Games, and Telegram 9.9 s a post, with nine
+  // posts waiting before the Recap. Collecting results starts no post once less than its 10 s is left of its 240 s, so
+  // only the first goes out.
+  it("is left, with what else does not fit in Collecting results' 240 s, to the next run, which posts each once", async () => {
+    for (let n = 1; n <= 9; n++) await queuePost({ key: `post ${n}`, text: `Post ${n}`, until: matchdayStart("2026-12-06") });
+    const answer = db.query.getMockImplementation()!;
+    db.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (/^(insert into|update) "scheduledJob"/.test(sql)) await new Promise((resolve) => setTimeout(resolve, 20_000));
+      return answer(sql, params);
+    });
+    const fakes = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const wait = url.origin === "https://api.telegram.org" ? 9_900 : url.pathname.endsWith("/games") ? 200_000 : 0;
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      return fakes(input, init);
+    });
+    vi.setSystemTime(OVER);
+    let ended = 0;
+    const running = collectResults(OVER).then((run) => ((ended = Date.now() - OVER.getTime()), run));
+    await vi.advanceTimersByTimeAsync(400_000);
+    expect(await running).toMatchObject({ outcome: "done", detail: expect.stringMatching(/^Collected the results of .*The Recap is public\.$/) });
+    expect(ended).toBe(259_900);
+    expect(ended).toBeLessThanOrEqual(collectingMaxDuration * 1000);
+    expect(posted()).toEqual(["Post 1"]);
+
+    db.query.mockImplementation(answer);
+    vi.stubGlobal("fetch", fakes);
+    expect((await runAt(at("2026-11-29T20:07:00Z"))).detail).toBe("Posted 9 messages to the Telegram group.");
+    expect(posted()).toEqual([...Array.from({ length: 9 }, (_, i) => `Post ${i + 1}`), RECAP]);
   });
 
   it("is posted by the next run when its results were stored where Telegram is not set up, until the next Matchday starts", async () => {

@@ -1,8 +1,8 @@
 import { backUp } from "@/lib/backup";
 import { fromVercelCron } from "@/lib/cron";
 
-// The run ends at 240 s (JOB_DEADLINE_MS) whatever the store is doing, with time left to record why, and holds the job for
-// 15 minutes, so this must stay between the two.
+// The run stops waiting for the dump and the store 240 s (JOB_DEADLINE_MS) after its first line, with time left to record
+// why, and holds the job for 15 minutes, so this must stay between the two.
 export const maxDuration = 300;
 
 // Vercel's Cron Job, every night (vercel.json): dumps the database to the private Blob store. Anyone else is refused

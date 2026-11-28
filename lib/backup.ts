@@ -194,15 +194,20 @@ function madeAt(pathname: string): Date | null {
 // A run deletes the dumps made more than 13 days before it, so that, run nightly, each is gone within 14.
 const DELETE_AFTER_MS = 13 * 86_400_000;
 
-// One run of the job at `now`: what it did and why. Throws only if the database cannot record the run.
-export const backUp = (now: Date) => runJob(JOB, () => backUpNow(now));
+// One run of the job at `now`: what it did and why. It stops waiting for the dump and the store JOB_DEADLINE_MS after
+// its first line. Throws only if the database cannot record the run.
+export const backUp = (now: Date) => {
+  const by = Date.now() + JOB_DEADLINE_MS;
+  return runJob(JOB, () => backUpNow(now, by));
+};
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const reason = (error: unknown) => (error instanceof Error ? error.message : "unknown error");
 
-async function backUpNow(now: Date): Promise<JobRun> {
+async function backUpNow(now: Date, by: number): Promise<JobRun> {
   const token = storeToken();
   if (!token) return skipped(backupProblem()!);
+  if (Date.now() >= by) return failed("The backup failed: there was no time left to make it.");
   // The run ends at its deadline whatever @vercel/blob is doing: the SDK tries a request again, with growing waits, for
   // up to 17 minutes, and has no documented way to try fewer times, so the run stops waiting for it instead, and records
   // why within its route's maxDuration. The abort has no reason, which the SDK (2.9.0, requestApi) takes as the end the
@@ -213,7 +218,7 @@ async function backUpNow(now: Date): Promise<JobRun> {
     timer = setTimeout(() => {
       deadline.abort();
       reject(new Error(`it took more than ${JOB_DEADLINE_MS / 1000} s`));
-    }, JOB_DEADLINE_MS);
+    }, by - Date.now());
   });
   const inTime = <T>(work: Promise<T>) => Promise.race([work, late]);
   const options = { token, abortSignal: deadline.signal };

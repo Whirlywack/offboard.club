@@ -2,7 +2,8 @@ import { collectResults } from "@/lib/collect-results";
 import { fromVercelCron } from "@/lib/cron";
 import { fakeLichessUrl } from "@/lib/lichess";
 
-// The run gives up on Lichess after 240 s (JOB_DEADLINE_MS) and holds the job for 15 minutes, so this must stay below.
+// The run gives up on Lichess 240 s (JOB_DEADLINE_MS) after its first line, starts no post to Telegram that would end
+// after then, and holds the job for 15 minutes, so this must stay between the two.
 export const maxDuration = 300;
 
 // Vercel's Cron Job, every five minutes on Sunday evenings and every hour otherwise (vercel.json): collects the latest

@@ -32,17 +32,15 @@ export async function currentCompany(personId: string): Promise<Pick<Company, "d
   return rows[0] ?? null;
 }
 
-// The Company for a website typed on a person's Profile form: its domain, after creating the Company if nobody has
-// given that website before. A null domain, for no website, clears the person's Company. The person is not linked
-// here: the caller saves the domain with the rest of their Profile, so a refused form changes nothing. At most one
-// fetch of the website happens per call.
-export async function companyForWebsite(
+// The Company for the domain of a website typed on a person's Profile form (companyDomain gives it): its domain, after
+// creating the Company if nobody has given that website before. A null domain, for no website, clears the person's
+// Company. The person is not linked here: the caller saves the domain with the rest of their Profile, so a refused
+// form changes nothing. At most one fetch of the website happens per call.
+export async function companyForDomain(
   personId: string,
-  website: string | null,
+  domain: string | null,
 ): Promise<{ domain: string | null } | { problem: string }> {
-  if (!website) return { domain: null };
-  const domain = companyDomain(website);
-  if (!domain) return { problem: "That doesn't look like a public website address. Try one like vinted.com." };
+  if (!domain) return { domain: null };
 
   if ((await db.query(`select 1 from "company" where "domain" = $1`, [domain])).rowCount) {
     // A Company whose website gave nothing but the domain is tried again, at most once a minute and FETCH_ATTEMPTS

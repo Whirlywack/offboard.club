@@ -3,13 +3,14 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth, getSession, linkedInConfigured, requireSignedUp, requireWelcomed, SIGN_IN_FAILED } from "@/lib/auth";
-import { companyForWebsite } from "@/lib/companies";
+import { companyForDomain } from "@/lib/companies";
+import { companyDomain } from "@/lib/company";
 import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect-lichess";
 import { consentProblem, mustWelcome } from "@/lib/consent";
 import { db } from "@/lib/db";
 import { removeMember } from "@/lib/leaving";
 import { mustConnectLichess, NEW_MEMBER_HOME } from "@/lib/members";
-import { readProfileForm } from "@/lib/profile";
+import { readProfileForm, type ProfileProblems } from "@/lib/profile";
 import { noticeLater } from "@/lib/request-failures";
 
 // What the sign-in form says, and how many of its presses have come back, so that a press that fails as the last one
@@ -67,9 +68,10 @@ export async function connectLichess(): Promise<string> {
   redirect(url);
 }
 
-// After a submission that could not be saved: why, and what was typed, so the form can show it again.
+// After a submission that could not be saved: what is wrong with each wrong field, and what was typed, so the form can
+// show both.
 export type ProfileFormState = {
-  problem: string;
+  problems: ProfileProblems;
   typed: Record<"companyWebsite" | "position" | "linkedInUrl" | "openTo", string>;
 } | null;
 
@@ -77,19 +79,22 @@ export type ProfileFormState = {
 // says whose Profile it is: the row changed is always the caller's own.
 export async function saveProfile(_previous: ProfileFormState, form: FormData): Promise<ProfileFormState> {
   const { id } = await requireSignedUp();
-  const refuse = (problem: string): ProfileFormState => {
+  const refuse = (problems: ProfileProblems): ProfileFormState => {
     const typed = (name: string) => {
       const value = form.get(name);
       return typeof value === "string" ? value : "";
     };
     const [companyWebsite, position, linkedInUrl, openTo] = ["companyWebsite", "position", "linkedInUrl", "openTo"].map(typed);
-    return { problem, typed: { companyWebsite, position, linkedInUrl, openTo } };
+    return { problems, typed: { companyWebsite, position, linkedInUrl, openTo } };
   };
-  const fields = readProfileForm(form);
-  if (typeof fields === "string") return refuse(fields);
-  // Only once everything else is accepted, as it may create a Company and fetch its website.
-  const company = await companyForWebsite(id, fields.companyWebsite);
-  if ("problem" in company) return refuse(company.problem);
+  const { fields, problems } = readProfileForm(form);
+  const domain = fields.companyWebsite ? companyDomain(fields.companyWebsite) : null;
+  if (fields.companyWebsite && !domain)
+    problems.companyWebsite = "That doesn't look like a public website address. Try one like vinted.com.";
+  if (Object.keys(problems).length) return refuse(problems);
+  // Only once every field is accepted, as it may create a Company and fetch its website.
+  const company = await companyForDomain(id, domain);
+  if ("problem" in company) return refuse({ companyWebsite: company.problem });
   await db.query(
     `update "user" set "companyDomain" = $2, "position" = $3, "linkedInUrl" = $4, "openTo" = $5, "updatedAt" = now()
      where id = $1`,

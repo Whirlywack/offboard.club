@@ -1,28 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, type KeyboardEvent } from "react";
+import { useActionState, useEffect, useRef, type KeyboardEvent } from "react";
 import { saveProfile, type ProfileFormState } from "../actions";
 import ui from "../ui.module.css";
 import styles from "./profile.module.css";
 import { NEW_MEMBER_HOME } from "@/lib/members";
-import { OPEN_TO_MAX, POSITION_MAX, readProfileForm, type Profile } from "@/lib/profile";
+import { OPEN_TO_MAX, POSITION_MAX, type Profile } from "@/lib/profile";
 
 type Field = keyof NonNullable<ProfileFormState>["typed"];
-
-// Which field a refusal is about, so it can be shown, and announced, beside that field. readProfileForm (the same
-// check the server makes) is asked about each field on its own; a refusal none of them gives is about the Company
-// website, which only the server can check.
-function fieldOf(state: NonNullable<ProfileFormState>): Field {
-  for (const field of ["position", "openTo", "linkedInUrl"] as const) {
-    if (readProfileForm({ get: (name) => (name === field ? state.typed[field] : null) }) === state.problem) return field;
-  }
-  return "companyWebsite";
-}
 
 // The optional Profile fields, used by the step after the welcome step and by the edit page.
 export function ProfileForm({ saved, welcome = false }: { saved: Profile | null; welcome?: boolean }) {
   const [state, action, pending] = useActionState(saveProfile, null);
+  const form = useRef<HTMLFormElement>(null);
+  // The answer the page came with: a form posted before the page's scripts loaded comes back with its messages, and by
+  // the time the scripts run the person may be typing in another field.
+  const loadedWith = useRef(state);
+  // Once a save is refused, the first wrong field from the top takes the focus, and the screen shows that field whole,
+  // its label and what is wrong with it included: focus alone would bring only its box into view.
+  useEffect(() => {
+    if (state === loadedWith.current) return;
+    const wrong = form.current?.querySelector<HTMLElement>("[aria-invalid]");
+    wrong?.focus({ preventScroll: true });
+    wrong?.parentElement?.scrollIntoView({ block: "nearest" });
+  }, [state]);
   // After a refused submission the form shows what was typed rather than what is saved.
   const shown = state?.typed ?? {
     companyWebsite: saved?.company?.domain ?? "",
@@ -30,19 +32,20 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
     linkedInUrl: saved?.linkedInUrl ?? "",
     openTo: saved?.openTo ?? "",
   };
-  const wrong = state ? fieldOf(state) : null;
+  // An answer from before #111, given across a deploy or a rollback, has no problems.
+  const problem = (field: Field) => state?.problems?.[field];
   // The props that tie a field to its hint and, after a refusal, to the message saying what is wrong with it.
   const describe = (field: Field, hint?: string) => ({
     id: field,
     name: field,
     defaultValue: shown[field],
-    "aria-invalid": wrong === field || undefined,
-    "aria-describedby": [hint, wrong === field && `${field}-error`].filter(Boolean).join(" ") || undefined,
+    "aria-invalid": !!problem(field) || undefined,
+    "aria-describedby": [hint, problem(field) && `${field}-error`].filter(Boolean).join(" ") || undefined,
   });
   const error = (field: Field) =>
-    wrong === field && (
+    problem(field) && (
       <p id={`${field}-error`} role="alert" className={ui.alert}>
-        {state?.problem}
+        {problem(field)}
       </p>
     );
   // Enter in the open-to box saves the form, as it did when the box was one line, rather than start a line that would
@@ -55,7 +58,7 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
   };
 
   return (
-    <form action={action} className={styles.form}>
+    <form ref={form} action={action} className={styles.form}>
       {welcome && <input type="hidden" name="next" value="home" />}
 
       <div className={styles.field}>

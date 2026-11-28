@@ -148,71 +148,86 @@ describe("readProfileForm", () => {
         }),
       ),
     ).toEqual({
-      // The website is only tidied here; lib/companies.ts turns it into a Company.
-      companyWebsite: "https://www.Vinted.com/careers",
-      position: "Backend engineer",
-      linkedInUrl: "https://www.linkedin.com/in/jonas",
-      openTo: "coffee chats",
+      fields: {
+        // The website is only tidied here; saveProfile (app/actions.ts) checks it.
+        companyWebsite: "https://www.Vinted.com/careers",
+        position: "Backend engineer",
+        linkedInUrl: "https://www.linkedin.com/in/jonas",
+        openTo: "coffee chats",
+      },
+      problems: {},
     });
   });
 
   it("treats empty and whitespace-only fields as cleared", () => {
     expect(readProfileForm(form({ companyWebsite: " ", position: "", linkedInUrl: "  ", openTo: "\n\t" }))).toEqual({
-      companyWebsite: null,
-      position: null,
-      linkedInUrl: null,
-      openTo: null,
+      fields: { companyWebsite: null, position: null, linkedInUrl: null, openTo: null },
+      problems: {},
     });
   });
 
   it("treats missing fields as cleared", () => {
-    expect(readProfileForm(form({}))).toEqual({ companyWebsite: null, position: null, linkedInUrl: null, openTo: null });
+    expect(readProfileForm(form({}))).toEqual({
+      fields: { companyWebsite: null, position: null, linkedInUrl: null, openTo: null },
+      problems: {},
+    });
   });
 
   it("makes each run of whitespace or control characters inside a field one space", () => {
-    expect(readProfileForm(form({ position: "Data\n\n  engineer\u0000at\tnight" }))).toMatchObject({
+    expect(readProfileForm(form({ position: "Data\n\n  engineer\u0000at\tnight" })).fields).toMatchObject({
       position: "Data engineer at night",
     });
   });
 
   it("keeps text as typed, markup included, for the page to show as text", () => {
-    expect(readProfileForm(form({ openTo: "<b>pairing</b> & \"talks\"" }))).toMatchObject({
+    expect(readProfileForm(form({ openTo: "<b>pairing</b> & \"talks\"" })).fields).toMatchObject({
       openTo: "<b>pairing</b> & \"talks\"",
     });
   });
 
   it(`accepts a position of ${POSITION_MAX} characters and refuses one more`, () => {
-    expect(readProfileForm(form({ position: "p".repeat(POSITION_MAX) }))).toMatchObject({ position: "p".repeat(80) });
-    expect(readProfileForm(form({ position: "p".repeat(POSITION_MAX + 1) }))).toMatch(/80 characters/);
+    expect(readProfileForm(form({ position: "p".repeat(POSITION_MAX) }))).toEqual({
+      fields: expect.objectContaining({ position: "p".repeat(80) }),
+      problems: {},
+    });
+    expect(readProfileForm(form({ position: "p".repeat(POSITION_MAX + 1) })).problems).toEqual({ position: expect.stringMatching(/80 characters/) });
   });
 
   it(`accepts an "open to" line of ${OPEN_TO_MAX} characters and refuses one more`, () => {
-    expect(readProfileForm(form({ openTo: "o".repeat(OPEN_TO_MAX) }))).toMatchObject({ openTo: "o".repeat(140) });
-    expect(readProfileForm(form({ openTo: "o".repeat(OPEN_TO_MAX + 1) }))).toMatch(/140 characters/);
+    expect(readProfileForm(form({ openTo: "o".repeat(OPEN_TO_MAX) }))).toEqual({
+      fields: expect.objectContaining({ openTo: "o".repeat(140) }),
+      problems: {},
+    });
+    expect(readProfileForm(form({ openTo: "o".repeat(OPEN_TO_MAX + 1) })).problems).toEqual({ openTo: expect.stringMatching(/140 characters/) });
   });
 
   it("counts characters, not UTF-16 units, so letters such as ž and emoji count as one", () => {
-    expect(readProfileForm(form({ position: "ž".repeat(POSITION_MAX) }))).not.toBeTypeOf("string");
-    expect(readProfileForm(form({ position: "🙂".repeat(POSITION_MAX) }))).not.toBeTypeOf("string");
-    expect(readProfileForm(form({ openTo: "🙂".repeat(OPEN_TO_MAX + 1) }))).toBeTypeOf("string");
+    expect(readProfileForm(form({ position: "ž".repeat(POSITION_MAX) })).problems).toEqual({});
+    expect(readProfileForm(form({ position: "🙂".repeat(POSITION_MAX) })).problems).toEqual({});
+    expect(readProfileForm(form({ openTo: "🙂".repeat(OPEN_TO_MAX + 1) })).problems).toHaveProperty("openTo");
   });
 
   it("measures length after trimming", () => {
-    expect(readProfileForm(form({ position: ` ${"p".repeat(POSITION_MAX)} ` }))).not.toBeTypeOf("string");
+    expect(readProfileForm(form({ position: ` ${"p".repeat(POSITION_MAX)} ` })).problems).toEqual({});
   });
 
   it("refuses a link that is not a LinkedIn profile address with a plain message", () => {
-    expect(readProfileForm(form({ linkedInUrl: "https://evil.com/in/x" }))).toMatch(
-      /^That isn't a LinkedIn profile address\./,
-    );
-    expect(readProfileForm(form({ linkedInUrl: "javascript:alert(1)" }))).toBeTypeOf("string");
+    expect(readProfileForm(form({ linkedInUrl: "https://evil.com/in/x" })).problems).toEqual({
+      linkedInUrl: expect.stringMatching(/^That isn't a LinkedIn profile address\./),
+    });
+    expect(readProfileForm(form({ linkedInUrl: "javascript:alert(1)" })).problems).toHaveProperty("linkedInUrl");
+  });
+
+  it("says what is wrong with every wrong field at once", () => {
+    const wrong = form({ position: "p".repeat(POSITION_MAX + 1), linkedInUrl: "my linkedin", openTo: "o".repeat(OPEN_TO_MAX + 1) });
+    expect(Object.keys(readProfileForm(wrong).problems).sort()).toEqual(["linkedInUrl", "openTo", "position"]);
   });
 
   it.each(["200B", "200C", "200E", "200F", "202A", "202B", "202C", "202D", "202E", "2066", "2067", "2068", "2069", "FEFF"])(
     "removes the invisible character U+%s",
     (hex) => {
       const char = String.fromCodePoint(parseInt(hex, 16));
-      expect(readProfileForm(form({ position: `Back${char}end ${char}engineer${char}` }))).toMatchObject({
+      expect(readProfileForm(form({ position: `Back${char}end ${char}engineer${char}` })).fields).toMatchObject({
         position: "Backend engineer",
       });
     },
@@ -220,21 +235,19 @@ describe("readProfileForm", () => {
 
   it("treats a field of nothing but invisible characters as cleared", () => {
     expect(readProfileForm(form({ companyWebsite: "​", position: "​​​", openTo: "‍﻿ ‍" }))).toEqual({
-      companyWebsite: null,
-      position: null,
-      linkedInUrl: null,
-      openTo: null,
+      fields: { companyWebsite: null, position: null, linkedInUrl: null, openTo: null },
+      problems: {},
     });
   });
 
   it("stops a right-to-left override from showing text reversed", () => {
-    expect(readProfileForm(form({ openTo: "jobs ‮serif on‬ please" }))).toMatchObject({
+    expect(readProfileForm(form({ openTo: "jobs ‮serif on‬ please" })).fields).toMatchObject({
       openTo: "jobs serif on please",
     });
   });
 
   it("removes the Arabic letter mark, a bidirectional control", () => {
-    expect(readProfileForm(form({ position: "؜CTO؜" }))).toMatchObject({ position: "CTO" });
+    expect(readProfileForm(form({ position: "؜CTO؜" })).fields).toMatchObject({ position: "CTO" });
   });
 
   // One pass takes about eight times as long for eight times the text; a pass that went back over it for each character
@@ -242,14 +255,14 @@ describe("readProfileForm", () => {
   it("tidies spaces and joiners in turn in one pass", async () => {
     const inside = (n: number) => "x" + " ‍".repeat(n) + "y";
     const after = (n: number) => "CTO" + " ‍".repeat(n);
-    expect(readProfileForm(form({ position: inside(20_000) }))).toMatch(/80 characters/);
-    expect(readProfileForm(form({ position: after(20_000) }))).toMatchObject({ position: "CTO" });
+    expect(readProfileForm(form({ position: inside(20_000) })).problems.position).toMatch(/80 characters/);
+    expect(readProfileForm(form({ position: after(20_000) })).fields).toMatchObject({ position: "CTO" });
     for (const make of [inside, after]) expect(await growth((position) => readProfileForm(form({ position })), make, 2_500)).toBeLessThan(24);
   }, 30_000);
 
   it("keeps the zero-width joiner inside emoji", () => {
-    expect(readProfileForm(form({ position: "‍👩‍💻 engineer, 🏳️‍🌈‍" }))).toMatchObject({
-      position: "👩‍💻 engineer, 🏳️‍🌈",
+    expect(readProfileForm(form({ position: "‍👩‍💻 engineer, 🏳️‍🌈‍" })).fields).toMatchObject({
+      position:"👩‍💻 engineer, 🏳️‍🌈",
     });
   });
 });

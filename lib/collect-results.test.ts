@@ -210,6 +210,28 @@ describe("collecting the results of the Matchday just played", () => {
     expect((await getAllTime()).map((row) => [row.name, row.played])).toEqual([["Member ana", 1]]);
   });
 
+  it("keeps each Game's moves, and collects a Game whose moves are not in their shape without them, saying how many (#105)", async () => {
+    tournament.games = lines([
+      game("Pretend01", "ana", "ben", "white", "mate", 31),
+      { ...game("Pretend03", "ben", "cora", null, "draw", 80), moves: "1. Nf3 Nf3" },
+      // Nobody moved: its moves, none, are kept.
+      game("Pretend04", "cora", "ana", "black", "outoftime", 0),
+    ]);
+    expect(await runAt(OVER)).toMatchObject({
+      outcome: "done",
+      detail: `Collected the results of ${DAY}: 3 Members played 3 Games. The Recap is public. The moves of 1 Game were not kept.`,
+    });
+    expect([...games.values()].map((g) => [g.lichessGameId, g.moves])).toEqual([
+      ["Pretend01", Array(31).fill("Nf3").join(" ")],
+      ["Pretend03", null],
+      ["Pretend04", ""],
+    ]);
+    // Each run's detail replaces the last on the Organiser page, so every later run says it again.
+    const again = `The Recap of ${DAY} is public. The moves of 1 Game were not kept.`;
+    expect(await runAt(after(95))).toEqual({ outcome: "skipped", detail: again, matchdayDate: DATE });
+    expect(scheduledJobs.get(JOB)).toMatchObject({ lastOutcome: "skipped", lastDetail: again });
+  });
+
   it("looks at nothing before the Matchday starts, and says so of a Sunday without a tournament", async () => {
     // A minute before 20:00 the latest Sunday is the one before, which had none.
     expect(await runAt(after(-1))).toEqual({

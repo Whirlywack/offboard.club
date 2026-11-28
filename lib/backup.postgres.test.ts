@@ -182,9 +182,9 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
         [`ana "${HARD}"`],
       );
       await client.query(
-        `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
-         values ('Pretend01', '2026-11-29', $1, 'ben', 'white', 'mate', 31, 1500, 1550, 4200, '2026-11-29 19:10:00.999999+00'),
-                ('Pretend02', '2026-11-29', null, 'ben', null, 'draw', 80, 1500, 1550, null, '2026-11-29 19:30:00+00')`,
+        `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
+         values ('Pretend01', '2026-11-29', $1, 'ben', 'white', 'mate', 7, 1500, 1550, 4200, '2026-11-29 19:10:00.999999+00', 'e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#'),
+                ('Pretend02', '2026-11-29', null, 'ben', null, 'draw', 80, 1500, 1550, null, '2026-11-29 19:30:00+00', null)`,
         [`ana "${HARD}"`],
       );
       await client.query(
@@ -237,6 +237,10 @@ describe.skipIf(process.env.ALLOW_DB_TESTS !== "1" || !process.env.DATABASE_URL)
     for (const table of Object.keys(LEFT_OUT)) expect(tables).toHaveProperty(table);
     expect(dump.tables).toHaveProperty("everyType");
     expect(dump.tables.everyType.columns).not.toContain("shout");
+    // Each Game's moves (#105), and none for a Game without them.
+    const { columns, rows } = dump.tables.game;
+    const moves = (id: string) => rows.find((row) => row[columns.indexOf("lichessGameId")] === id)?.[columns.indexOf("moves")];
+    expect([moves("Pretend01"), moves("Pretend02")]).toEqual(["e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#", null]);
     expect(JSON.stringify(dump)).not.toContain("a-pretend-session-token");
     expect(JSON.stringify(dump)).not.toContain("a-pretend-state");
     expect(dump.migrations).toEqual((await on(source, (c) => c.query(`select name from schema_migrations order by name`))).rows.map((r) => r.name));

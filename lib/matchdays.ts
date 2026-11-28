@@ -3,7 +3,7 @@
 
 import { db, type Queryable } from "./db";
 import { getPublicAccounts, getSwiss, SWISS_ID, swissGames, swissResults, teamHasSwiss, type PublicAccount } from "./lichess";
-import { ingestMatchday, type Game, type MemberRef, type Score } from "./matchday";
+import { ingestMatchday, type IngestedGame, type MemberRef, type Score } from "./matchday";
 import { MEMBER_SQL } from "./members";
 import { isSunday, vilniusDate } from "./schedule";
 import { postgres } from "./seasons";
@@ -29,9 +29,11 @@ export async function registerTournament(date: string, tournamentId: string, q: 
   }
 }
 
-// `participants` counts everyone in the tournament's results, `members` those of them who are Members.
+// `participants` counts everyone in the tournament's results, `members` those of them who are Members, `games` the Games
+// between Members fetched this time, and `withoutMoves` those of them whose moves Lichess sent in no shape the site
+// keeps (lib/matchday.ts), which are stored without them.
 export type Ingestion =
-  | { outcome: "ingested"; date: string; participants: number; members: number; games: number; redone: boolean }
+  | { outcome: "ingested"; date: string; participants: number; members: number; games: number; withoutMoves: number; redone: boolean }
   | { outcome: "unchanged"; date: string }
   | { outcome: "refused"; problem: string };
 
@@ -39,8 +41,8 @@ const refused = (problem: string): Ingestion => ({ outcome: "refused", problem }
 
 // Ingests a finished Swiss tournament on the Club's Lichess team as the Matchday of the Vilnius day it started on,
 // which must be a Sunday that is not skipped: each
-// participating Member's result with their Company at this moment, every Game between two Members, and each such
-// Member's blitz rating and marks as Lichess shows them now. Participants who are not Members are left out.
+// participating Member's result with their Company at this moment, every Game between two Members with its moves, and
+// each such Member's blitz rating and marks as Lichess shows them now. Participants who are not Members are left out.
 //
 // A tournament already ingested is not fetched again, and nothing changes: the stored Matchday is the record of that
 // night. A tournament that is unknown, not the Club's, not finished, played by no Member, or at odds with a Matchday
@@ -112,7 +114,10 @@ export async function ingestTournament(
     const now = await matchdayOf(tournamentId);
     return refused(`Tournament ${tournamentId} became the Matchday of ${now?.date ?? "another day"} while it was being ingested.`);
   }
-  if (stored) return { outcome: "ingested", date, participants, members: scores.length, games: games.length, redone };
+  if (stored) {
+    const withoutMoves = games.filter((g) => g.moves === null).length;
+    return { outcome: "ingested", date, participants, members: scores.length, games: games.length, withoutMoves, redone };
+  }
   // Another run ingested it first, or the Matchday of that date changed while this one was fetching.
   const now = await matchdayOf(tournamentId);
   return now?.ingested && !redo
@@ -201,13 +206,13 @@ async function storeResults(q: Queryable, date: string, scores: Score[]) {
 
 // A Game a redo kept, against someone who has left, stays as it is, even if they have since come back with the same
 // Lichess account as a new Member: leaving took the Game from them.
-async function storeGames(q: Queryable, date: string, games: Game[]) {
-  const column = <T>(value: (g: Game) => T) => games.map(value);
+async function storeGames(q: Queryable, date: string, games: IngestedGame[]) {
+  const column = <T>(value: (g: IngestedGame) => T) => games.map(value);
   await q.query(
-    `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
-     select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt"
-     from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[])
-       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
+    `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
+     select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt", g."moves"
+     from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[], $12::text[])
+       as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
      on conflict ("lichessGameId") do nothing`,
     [
       date,
@@ -221,6 +226,7 @@ async function storeGames(q: Queryable, date: string, games: Game[]) {
       column((g) => g.ratings.black),
       column((g) => g.winnerClockCentis),
       column((g) => new Date(g.finishedAt).toISOString()),
+      column((g) => g.moves),
     ],
   );
 }

@@ -73,7 +73,7 @@ describe("the privacy and terms page", () => {
 
   it("says what is kept, from LinkedIn, Lichess, Matchdays and the Profile", () => {
     const kept = section(privacyPage(), "kept");
-    for (const fact of ["your name, a link to your photo, your email address", "your account's id, username and blitz rating", "marked or closed", "Company", "position", "LinkedIn profile", "open to", "Games", "IP address", "user agent"])
+    for (const fact of ["your name, a link to your photo, your email address", "your account's id, username and blitz rating", "marked or closed", "Company", "position", "LinkedIn profile", "open to", "your Games against other Members, with their moves", "IP address", "user agent"])
       expect(kept).toContain(markup(fact));
   });
 
@@ -110,6 +110,7 @@ describe("the privacy and terms page", () => {
     expect(leaving).toContain("results and acceptances at once");
     expect(leaving).toContain("The site asks Lichess to remove your Lichess account from the Club");
     expect(leaving).toContain(markup("Your Games stay in your opponents' histories"));
+    expect(leaving).toContain(markup("with the Game's Lichess id, its moves and both ratings"));
     expect(leaving).toContain("its Game is no longer shown");
     expect(section(html, "rights")).toContain("a copy of your data");
     expect(section(html, "complaints")).toContain('href="https://vdai.lrv.lt/en"');
@@ -148,7 +149,7 @@ describe("the privacy and terms page", () => {
   // Every fact the page stated before its words were shortened (#74), and the nine added then, numbered as the privacy
   // deck lists them: a phrase of each, as the page reads now.
   const FACTS = [
-    "Last changed 26 November 2026.",
+    "Last changed 28 November 2026.",
     "Offboard is run by one volunteer, the Organiser,",
     "responsible for what the site keeps (its “controller”, in GDPR terms)",
     "The welcome step shows their name before you agree to anything.",
@@ -167,7 +168,7 @@ describe("the privacy and terms page", () => {
     "That deletes your account, Profile, Lichess connection, results and acceptances at once",
     "signs you out and takes you off every Leaderboard, Recap and Award",
     "The site asks Lichess to remove your Lichess account from the Club's team.",
-    "Your Games stay in your opponents' histories, against “a former member”, with the Game's Lichess id and both ratings.",
+    "Your Games stay in your opponents' histories, against “a former member”, with the Game's Lichess id, its moves and both ratings.",
     "An Award someone won against you stays theirs",
     "but its Game is no longer shown",
     "Your Lichess account, its Games and Recaps already posted to the Telegram group stay as they are.",
@@ -274,7 +275,7 @@ describe("the privacy and terms page", () => {
     expect(FACTS).toHaveLength(119);
     const text = words(privacyPage());
     expect(FACTS.map((fact, i) => [i + 1, fact]).filter(([, fact]) => !text.includes(fact as string))).toEqual([]);
-    expect(privacyPage()).toContain('<time dateTime="2026-11-26">');
+    expect(privacyPage()).toContain('<time dateTime="2026-11-28">');
   });
 
   it("states the terms of membership: 18 or over, public listing, and the house rules accepted on the welcome step", async () => {

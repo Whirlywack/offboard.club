@@ -49,7 +49,7 @@ export default function PrivacyPage() {
       <div className={styles.head}>
         <h1>Privacy and terms</h1>
         <p className={styles.changed}>
-          Last changed <time dateTime="2026-11-26">26 November 2026</time>.
+          Last changed <time dateTime="2026-11-28">28 November 2026</time>.
         </p>
       </div>
 
@@ -118,8 +118,8 @@ export default function PrivacyPage() {
         </p>
         <p>
           Your Games stay in your opponents&apos; histories, against &ldquo;a former member&rdquo;, with the Game&apos;s
-          Lichess id and both ratings. An Award someone won against you stays theirs, but its Game is no longer shown. Your
-          Lichess account, its Games and Recaps already posted to the Telegram group stay as they are.
+          Lichess id, its moves and both ratings. An Award someone won against you stays theirs, but its Game is no
+          longer shown. Your Lichess account, its Games and Recaps already posted to the Telegram group stay as they are.
         </p>
       </Section>
 
@@ -136,7 +136,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>From each Matchday you play, as Lichess records it:</strong> your place, points and rating that night,
-            your Company at the time, and your Games against other Members.
+            your Company at the time, and your Games against other Members, with their moves.
           </li>
           <li>
             <strong>From your Profile, all optional:</strong> your Company&apos;s website, from which the site fetches its

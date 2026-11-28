@@ -24,12 +24,23 @@ export type Game = {
   finishedAt: number; // Lichess lastMoveAt, ms since epoch
 };
 
+// A Game as ingestion stores it, with its moves as Lichess sent them, or null when they are not text of their shape
+// and length (MOVES).
+export type IngestedGame = Game & { moves: string | null };
+
 export type Award = { kind: "biggestUpset" | "leastTimeLeft" | "fastestCheckmate"; memberId: string; lichessGameId: string; value: number };
 
 const parseNdjson = (text: string) =>
   text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
 
 const other = (c: Colour): Colour => (c === "white" ? "black" : "white");
+
+// Lichess sends a Game's moves as its half-moves in SAN with one space between each, "e4 e5 Nf3", or as "" when
+// nobody moved (lila: GameApiV2 and scalachess's Dumper). A half-move is at most 7 characters ("exd8=Q+", "Qa1xb2#"),
+// and Lichess ends a Game at its 600th (lila: Game.maxPlies), so no Game it sends is longer than MOVES_MAX.
+const SAN = String.raw`(?:[NBRQK][a-h]?[1-8]?x?[a-h][1-8]|[a-h](?:x[a-h])?[1-8](?:=[NBRQ])?|O-O(?:-O)?)[+#]?`;
+const MOVES = new RegExp(`^(?:${SAN}(?: ${SAN})*)?$`);
+const MOVES_MAX = 600 * 8 - 1;
 
 export function ingestMatchday(resultsNdjson: string, gamesNdjson: string, members: MemberRef[]) {
   const byLichess = new Map(members.map((m) => [m.lichessId.toLowerCase(), m.memberId]));
@@ -43,12 +54,14 @@ export function ingestMatchday(resultsNdjson: string, gamesNdjson: string, membe
     })
     .map((s, i) => ({ ...s, rank: i + 1 }));
 
-  const games: Game[] = parseNdjson(gamesNdjson).flatMap((g) => {
+  const games: IngestedGame[] = parseNdjson(gamesNdjson).flatMap((g) => {
     const white = byLichess.get(g.players.white.user?.id);
     const black = byLichess.get(g.players.black.user?.id);
     if (!white || !black) return [];
     const winner: Colour | null = g.winner ?? null;
     const clocks: number[] = g.clocks ?? [];
+    // Moves that are not text count as none. Text too long or not of their shape is counted, but not kept.
+    const sent: string | null = typeof g.moves === "string" ? g.moves : null;
     // Clocks alternate white, black, one per half-move, plus a final entry for the side to move
     // when the Game ends without a move (resignation, time, agreed draw). Either way the
     // winner's last entry is their time left.
@@ -60,10 +73,11 @@ export function ingestMatchday(resultsNdjson: string, gamesNdjson: string, membe
       black,
       winner,
       status: g.status,
-      plies: g.moves ? g.moves.split(" ").length : 0,
+      plies: sent ? sent.split(" ").length : 0,
       ratings: { white: g.players.white.rating, black: g.players.black.rating },
       winnerClockCentis: winner && winnerClocks.length ? winnerClocks[winnerClocks.length - 1] : null,
       finishedAt: g.lastMoveAt,
+      moves: sent !== null && sent.length <= MOVES_MAX && MOVES.test(sent) ? sent : null,
     }];
   });
 

@@ -124,6 +124,13 @@ describe("a Member's Profile seen by another Member", () => {
     expect(text(links[0][2])).toBe("Game against Ben Kazlauskas on Lichess (opens in a new tab)");
   });
 
+  it("shows no Game's moves, which are kept for a later replay (#105)", async () => {
+    games.get("Game0004")!.moves = "e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#";
+    const html = await open("ana");
+    expect(rows(html)).toContain("Lost to Ben Kazlauskas");
+    expect(html).not.toContain("Qh5");
+  });
+
   it("does not link a Game against someone who has left to Lichess, whose page would name their account", async () => {
     const html = await open("ana");
     expect(html).toContain("<li><p>Won against a former member</p></li>");

@@ -3,7 +3,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
-import { uncollected } from "./collect-results";
+import { collectResults, uncollected } from "./collect-results";
 import { ingestTournament, registerTournament } from "./matchdays";
 import { getRecap, recapDates } from "./recaps";
 
@@ -39,6 +39,12 @@ const TOURNAMENT = "PRETEND1";
 // The recorded exports, their people invented (lib/matchday.test.ts says how), standing for the Matchday of Sunday 22
 // November.
 const DATE = "2026-11-22";
+const sent = fixture("games.ndjson").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+const movesSent = (id: string): string => sent.find((g) => g.id === id).moves;
+// The recorded Games, but with Pretend119's first move a square off the board, as Lichess never sends one.
+const exported = sent
+  .map((g) => `${JSON.stringify(g.id === "Pretend119" ? { ...g, moves: g.moves.replace(/^e4 /, "e9 ") } : g)}\n`)
+  .join("");
 
 describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")("ingestion and the Recap in Postgres", () => {
   const client = (db as unknown as { client: pg.Client }).client;
@@ -57,7 +63,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
         status: "finished",
         startsAt: "2026-11-22T18:00:00Z",
         results: fixture("results.ndjson"),
-        games: fixture("games.ndjson"),
+        games: exported,
       },
     ],
   });
@@ -109,6 +115,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       participants: 65,
       members: 3,
       games: 2,
+      withoutMoves: 1,
       redone: false,
     });
     expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "unchanged", date: DATE });
@@ -121,9 +128,9 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       { userId: "ingest-test-ben", rank: 2, points: 8, rating: 1803, companyDomain: null },
       { userId: "ingest-test-cora", rank: 3, points: 5, rating: 1584, companyDomain: null },
     ]);
-    expect(await select(`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "winnerClockCentis" is not null as "clock" from "game" order by "finishedAt"`)).toEqual([
-      { lichessGameId: "Pretend100", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true },
-      { lichessGameId: "Pretend119", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true },
+    expect(await select(`select "lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "winnerClockCentis" is not null as "clock", "moves" from "game" order by "finishedAt"`)).toEqual([
+      { lichessGameId: "Pretend100", whiteId: "ingest-test-ben", blackId: "ingest-test-ana", winner: "black", status: "mate", plies: 148, clock: true, moves: movesSent("Pretend100") },
+      { lichessGameId: "Pretend119", whiteId: "ingest-test-ben", blackId: "ingest-test-cora", winner: "white", status: "mate", plies: 79, clock: true, moves: null },
     ]);
     expect(await select(`select id, "lichessBlitzRating", "lichessMarked", "lichessClosed" from "user" where id like 'ingest-test-%' order by id`)).toEqual([
       { id: "ingest-test-ana", lichessBlitzRating: 1930, lichessMarked: false, lichessClosed: false },
@@ -236,5 +243,34 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" from "matchday"`)).toEqual([
       { date: "2026-11-15", ingestedAt: null },
     ]);
+  }, 60_000);
+
+  it("has each run of Collecting results after a Matchday is in say how many of its Games are stored without their moves", async () => {
+    await client.query(`delete from "game"`);
+    await client.query(`delete from "matchdayResult"`);
+    await client.query(`delete from "matchday"`);
+    await client.query(`insert into "matchday" ("date", "lichessTournamentId", "ingestedAt") values ($1, $2, now()), ('2026-11-15', 'EARLIER1', now())`, [DATE, TOURNAMENT]);
+    // Two of its Games without moves, one with, and one nobody moved in, whose moves, none, are kept; and one of the
+    // Sunday before without.
+    const games: [string, string, string | null][] = [
+      ["Kept0001", DATE, "e4 e5"],
+      ["Nobody01", DATE, ""],
+      ["Lost0001", DATE, null],
+      ["Lost0002", DATE, null],
+      ["Earlier1", "2026-11-15", null],
+    ];
+    for (const [id, date, moves] of games)
+      await client.query(
+        `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
+         values ($1, $2, null, null, 'white', 'resign', 2, 1500, 1500, null, now(), $3)`,
+        [id, date, moves],
+      );
+    // 22:00 that Sunday in Vilnius.
+    const run = await collectResults(new Date("2026-11-22T20:00:00Z"));
+    expect({ ...run, detail: run.detail.replaceAll(" ", " ") }).toEqual({
+      outcome: "skipped",
+      detail: "The Recap of Sunday 22 November is public. The moves of 2 Games were not kept.",
+      matchdayDate: DATE,
+    });
   }, 60_000);
 });

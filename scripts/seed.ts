@@ -48,6 +48,7 @@ import { GAMES_SHOWN, getHistory } from "@/lib/history";
 import { lastFailure, lastRun } from "@/lib/jobs";
 import { getAllTime, getSeason, newChampions, readLeaderboards, seasonOfMatchday } from "@/lib/leaderboards";
 import { removeMember, teamRemovals } from "@/lib/leaving";
+import { ingestMatchday } from "@/lib/matchday";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
@@ -191,6 +192,10 @@ const face = (background: string) =>
 
 type Game = [id: string, date: string, white: string, black: string, winner: "white" | "black" | null, status: string,
   plies: number, whiteRating: number, blackRating: number, winnerClock: number | null, finishedAt: Date];
+
+// A Game's moves as Lichess sends them (lib/matchday.ts): knights going out and back, as many as the Game had.
+const KNIGHTS = ["Nf3", "Nf6", "Ng1", "Ng8"];
+const movesOf = (plies: number) => Array.from({ length: plies }, (_, i) => KNIGHTS[i % 4]).join(" ");
 
 // A Swiss-like evening: five rounds of pairings by the circle method, a bye (a point, no Game) for an odd one out.
 // Games follow ratings, except that the Season 1 champion beats everyone in Season 1 and the two who share Season 2
@@ -358,8 +363,8 @@ async function seed(name: string) {
     for (const game of games)
       await client.query(
         `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating",
-           "blackRating", "winnerClockCentis", "finishedAt") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        game,
+           "blackRating", "winnerClockCentis", "finishedAt", "moves") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [...game, movesOf(game[6])],
       );
     await client.query("commit");
   } catch (error) {
@@ -383,16 +388,17 @@ async function seed(name: string) {
   }
   console.log("Sign in as any of them but the one who left with the cookies pnpm seed:cookies writes:");
   for (const p of people) console.log(`  ${p.id.padEnd(10)} ${p.name.padEnd(40)} ${p.about ?? "a Member who plays some Sundays"}`);
+  return waiting?.swiss ?? null;
 }
 
 // A Matchday's tournament as Lichess exports it (lib/fixtures/fake-lichess.ts): its standings and its Games, as ndjson,
-// with only the fields ingestion reads besides those that say what each line is. The moves are knights going out and
-// back, as many as the Game had; every clock entry is the winner's time left.
+// with only the fields ingestion reads besides those that say what each line is; every clock entry is the winner's time
+// left. The first Game's first move is a square off the board, as Lichess never sends one, so that collecting it keeps
+// that Game without its moves and says so.
 function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[]): FakeSwiss {
   const person = (id: string) => PEOPLE.find((p) => p.id === id)!;
   const player = (id: string, rating: number) => ({ user: { name: lichessName(person(id)), id: lichessId(person(id)) }, rating });
   const ndjson = (lines: object[]) => lines.map((line) => `${JSON.stringify(line)}\n`).join("");
-  const knights = ["Nf3", "Nf6", "Ng1", "Ng8"];
   return {
     id: WAITING,
     teamId: process.env.LICHESS_TEAM_ID!,
@@ -402,7 +408,7 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
     createdBy: lichessId(person(ORGANISER)),
     results: ndjson(rows.map((r) => ({ rank: r.rank, points: r.points, rating: r.rating, username: lichessName(person(r.id)) }))),
     games: ndjson(
-      played.map(([id, , white, black, winner, status, plies, whiteRating, blackRating, clock, finishedAt]) => ({
+      played.map(([id, , white, black, winner, status, plies, whiteRating, blackRating, clock, finishedAt], i) => ({
         id,
         rated: true,
         variant: "standard",
@@ -411,7 +417,7 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
         lastMoveAt: finishedAt.getTime(),
         players: { white: player(white, whiteRating), black: player(black, blackRating) },
         ...(winner && { winner }),
-        moves: Array.from({ length: plies }, (_, i) => knights[i % 4]).join(" "),
+        moves: i === 0 ? movesOf(plies).replace("Nf3", "Nf9") : movesOf(plies),
         clocks: Array(plies).fill(clock ?? 18_000),
         swissTour: { id: WAITING },
       })),
@@ -480,8 +486,9 @@ async function organiser(name: string) {
   return [texts(true), texts(false)];
 }
 
-// What each scenario promises, asked of the database through the same code the pages use.
-async function check(name: string) {
+// What each scenario promises, asked of the database through the same code the pages use; `waiting`, the tournament
+// the seed left on the fake Lichess, through the code that will collect it.
+async function check(name: string, waiting: FakeSwiss | null) {
   const people = peopleOf(name).filter((p) => !p.leaves);
   const signIn = async (p: Person) => {
     const { name: cookieName, value } = cookie(p);
@@ -540,6 +547,10 @@ async function check(name: string) {
       ...[s1, s2, s3].flatMap((s) => s?.leaderboard.map((row) => row.memberId) ?? []),
     ]);
     const [ana, plain, newbie] = await Promise.all(["ana", "plain", "newbie"].map(getProfile));
+    // Nothing the site shows reads a Game's moves yet (#105), so they are counted here.
+    const { rows: [moves] } = await db.query<{ games: number; kept: number }>(
+      `select count(*)::int as "games", count(*) filter (where cardinality(string_to_array("moves", ' ')) = "plies")::int as "kept" from "game"`,
+    );
     const company = (id: string, rows: { memberId: string; company: { domain: string } | null }[]) =>
       rows.find((row) => row.memberId === id)?.company?.domain;
     promises.push(
@@ -554,6 +565,7 @@ async function check(name: string) {
       ["a marked and a closed Lichess account, which played but are on no Leaderboard",
         ["marked", "closed"].every((id) => histories.get(id)!.played > 0 && !onLeaderboards.has(id))],
       ["Games against a former member", [...histories.values()].some((h) => h.games.some((g) => g.opponent === null))],
+      ["every Game with its moves, one for each half-move, for a replay", moves.games > 0 && moves.kept === moves.games],
       ["the one who left is in no Recap, on no Leaderboard and has no Profile",
         !onLeaderboards.has(gone.id) && !recaps.some((r) => r.awards.some((a) => a.memberId === gone.id)) && (await getProfile(gone.id)) === null],
       ["an Award won against a former member, whose Game is shown to nobody", recaps.some((r) => r.awards.some((a) => a.opponentLeft))],
@@ -571,6 +583,9 @@ async function check(name: string) {
         ["its tournament finished on Lichess, waiting for Collecting results, which has never run, and listed on the Organiser page",
           (await matchdayOn(s2!.matchdays![0].date))?.lichessTournamentId === WAITING && collecting === null &&
             JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![0].date, lichessTournamentId: WAITING }])],
+        ["one of its Games with moves Lichess would not send, which ingestion would not keep",
+          !!waiting && ingestMatchday(waiting.results, waiting.games, people.map((p) => ({ memberId: p.id, lichessId: lichessId(p) })))
+            .games.filter((g) => g.moves === null).length === 1],
         ["the Organiser's permission has expired, and the job's failure is recorded",
           !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
         ["Posting to Telegram has not run; the skip's notice is all the group was sent",
@@ -676,8 +691,7 @@ async function main(args: string[]) {
   if (!(await madeByDbStart(db))) throw new Error("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
   if (args.includes("--cookies")) return cookies().then(() => true);
   const name = args[0] ?? "club";
-  await seed(name);
-  return check(name);
+  return check(name, await seed(name));
 }
 
 main(process.argv.slice(2))

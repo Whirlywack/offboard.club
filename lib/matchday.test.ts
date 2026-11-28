@@ -51,6 +51,15 @@ describe("ingestMatchday: scores", () => {
   });
 });
 
+describe("ingestMatchday: moves", () => {
+  it("keeps every recorded Game's moves as Lichess sent them, castling, promotions and Games nobody moved in included", () => {
+    const sent = gamesNdjson.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line).moves);
+    expect(sent.filter((moves) => moves === "")).toHaveLength(6);
+    for (const move of [" O-O-O+ ", " exf8=Q+ ", " Rgxc1+ "]) expect(sent.join(" ")).toContain(move);
+    expect(ingestMatchday(resultsNdjson, gamesNdjson, everyone).games.map((g) => g.moves)).toEqual(sent);
+  });
+});
+
 describe("ingestMatchday: participants who are not Members", () => {
   const members = ["Pretend--Ada", "pretend--bruno", "Pretend--Ines", "Pretend--Boris"].map(member);
   const { scores, games, awards } = ingestMatchday(resultsNdjson, gamesNdjson, members);

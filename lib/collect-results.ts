@@ -60,6 +60,18 @@ export async function uncollected(now: Date): Promise<Uncollected[]> {
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+// The sentence that tells the Organiser how many Games are stored without their moves, as Lichess sent them in no shape
+// the site keeps (lib/matchday.ts), with the space before it; nothing when there are none. It is not a failure: the rest
+// of the Matchday is stored.
+export const movesNotKept = (games: number) => (games ? ` The moves of ${count(games, "Game", "Games")} were not kept.` : "");
+
+// How many of the Games of the Matchday of `date` are stored without their moves. A Game nobody moved in has its moves,
+// none, as "".
+async function gamesWithoutMoves(date: string): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(`select count(*)::int as "n" from "game" where "matchdayDate" = $1 and "moves" is null`, [date]);
+  return rows[0].n;
+}
+
 // Dates as the Organiser page writes them, a Matchday as "Sunday 29 November" and an instant as "Sunday 6 December at
 // 20:00", each kept on one line as the Season page keeps its dates.
 const whole = (text: string) => text.replaceAll(" ", " ");
@@ -76,7 +88,8 @@ async function collect(now: Date): Promise<JobRun> {
   // A skipped Sunday, a Sunday before Season 1 or between two Seasons, or one whose tournament was never created.
   if (!id) return skipped(`No Matchday on ${sunday}.`, date);
   const collected = skipped(`The Recap of ${sunday} is public.`, date);
-  if (matchday.ingested) return collected;
+  // Each run's detail replaces the last, so every later run says again whose moves were not kept.
+  if (matchday.ingested) return skipped(collected.detail + movesNotKept(await gamesWithoutMoves(date)), date);
 
   // The same words for the same cause, so that a failure that stands is recorded once (runJob). A refusal would be
   // refused by `pnpm ingest` in the same way, so only a failure that may pass is told what to do if it does not: runs
@@ -102,7 +115,8 @@ async function collect(now: Date): Promise<JobRun> {
     // To the Telegram group; how that went is Posting to Telegram's to report, which tries again what failed.
     await postRecap(date, now);
     return done(
-      `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
+      `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.` +
+        movesNotKept(ingestion.withoutMoves),
       date,
     );
   } catch (error) {

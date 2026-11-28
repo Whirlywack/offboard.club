@@ -14,9 +14,13 @@ type Field = keyof NonNullable<ProfileFormState>["typed"];
 export function ProfileForm({ saved, welcome = false }: { saved: Profile | null; welcome?: boolean }) {
   const [state, action, pending] = useActionState(saveProfile, null);
   const form = useRef<HTMLFormElement>(null);
+  // The answer the page came with: a form posted before the page's scripts loaded comes back with its messages, and by
+  // the time the scripts run the person may be typing in another field.
+  const loadedWith = useRef(state);
   // Once a save is refused, the first wrong field from the top takes the focus, and the screen shows that field whole,
   // its label and what is wrong with it included: focus alone would bring only its box into view.
   useEffect(() => {
+    if (state === loadedWith.current) return;
     const wrong = form.current?.querySelector<HTMLElement>("[aria-invalid]");
     wrong?.focus({ preventScroll: true });
     wrong?.parentElement?.scrollIntoView({ block: "nearest" });
@@ -28,7 +32,8 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
     linkedInUrl: saved?.linkedInUrl ?? "",
     openTo: saved?.openTo ?? "",
   };
-  const problem = (field: Field) => state?.problems[field];
+  // An answer from before #111, given across a deploy or a rollback, has no problems.
+  const problem = (field: Field) => state?.problems?.[field];
   // The props that tie a field to its hint and, after a refusal, to the message saying what is wrong with it.
   const describe = (field: Field, hint?: string) => ({
     id: field,

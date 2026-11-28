@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { chromium } from "playwright-core";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveProfile, type ProfileFormState } from "./actions";
 import styles from "./profile/profile.module.css";
 import { ProfileForm } from "./profile/profile-form";
@@ -19,13 +19,29 @@ import { fetchCompanyMeta } from "@/lib/company";
 import { addPerson, db, people, resetDb } from "@/lib/fake-db";
 import { OPEN_TO_MAX, POSITION_MAX } from "@/lib/profile";
 
-// What the form's hooks give it, the save's answer and whether it is under way, and the script it runs once shown.
-const returned = vi.hoisted(() => ({ state: null as ProfileFormState, pending: false, effects: [] as (() => void)[] }));
+// The form's hooks as React runs them for one form on a page: the save's answer and whether one is under way; what each
+// later hook keeps from one drawing of the form to the next, a ref or an effect's dependencies, in the order they are
+// called, from useActionState, the first; and the effects due once a drawing is on the page, as React runs an effect
+// when the form first shows and again only when its dependencies change.
+const hooks = vi.hoisted(() => ({
+  state: null as ProfileFormState,
+  pending: false,
+  kept: [] as unknown[],
+  next: 0,
+  due: [] as (() => void)[],
+}));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
-  useActionState: () => [returned.state, () => {}, returned.pending],
-  useEffect: (effect: () => void) => void returned.effects.push(effect),
-  useRef: () => ({ current: null }),
+  useActionState: () => {
+    hooks.next = 0;
+    return [hooks.state, () => {}, hooks.pending];
+  },
+  useRef: (initial: unknown) => (hooks.kept[hooks.next++] ??= { current: initial }),
+  useEffect: (effect: () => void, deps?: unknown[]) => {
+    const before = hooks.kept[hooks.next] as unknown[] | undefined;
+    hooks.kept[hooks.next++] = deps;
+    if (!deps || !before || deps.some((dep, i) => !Object.is(dep, before[i]))) hooks.due.push(effect);
+  },
 }));
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock("better-auth", () => ({ betterAuth: () => ({ api: { getSession } }) }));
@@ -49,23 +65,36 @@ beforeEach(() => {
   resetDb();
   addPerson("ana", { position: "CTO" });
   getSession.mockReset().mockResolvedValue({ user: { ...people.get("ana") } });
-  returned.state = null;
-  returned.pending = false;
-  returned.effects.length = 0;
+  // A page loaded afresh.
+  Object.assign(hooks, { state: null, pending: false, kept: [], due: [] });
 });
 
-// The form after a Member saved `changes`, which the server refused, on the edit page or the sign-up step.
-async function refused(changes: Partial<typeof typed>, welcome = false) {
+// What the server answers a Member who saved `changes`, which it refused.
+async function answer(changes: Partial<typeof typed>) {
   const sent = new FormData();
   for (const [name, value] of Object.entries({ ...typed, ...changes })) sent.set(name, value);
-  returned.state = await saveProfile(null, sent);
-  if (!returned.state) throw new Error("expected a refusal");
-  return { html: renderToStaticMarkup(createElement(ProfileForm, { saved: null, welcome })), problems: returned.state.problems };
+  const state = await saveProfile(null, sent);
+  if (!state) throw new Error("expected a refusal");
+  return state;
+}
+
+// The form given that answer, on the edit page or the sign-up step.
+async function refused(changes: Partial<typeof typed>, welcome = false) {
+  hooks.state = await answer(changes);
+  return { html: renderToStaticMarkup(createElement(ProfileForm, { saved: null, welcome })), problems: hooks.state.problems };
 }
 
 // Each field's control, and what comes just before it.
 const control = (html: string, id: string) => html.match(new RegExp(`(<p[^>]*>[^<]*</p>)?<(input|textarea)[^>]*id="${id}"[^>]*>`))!;
 const text = (html: string) => html.replace(/<[^>]+>/g, "").replaceAll("&#x27;", "'").replaceAll("&quot;", '"');
+
+// An element of the form as its component returns it, found by its type.
+type Drawn = { type: unknown; props: { children?: unknown; onKeyDown?: (event: unknown) => void; ref?: { current: unknown } } };
+const find = (node: unknown, type: string): Drawn | undefined => {
+  if (Array.isArray(node)) return node.map((child) => find(child, type)).find(Boolean);
+  if (!node || typeof node !== "object" || !("props" in node)) return undefined;
+  return (node as Drawn).type === type ? (node as Drawn) : find((node as Drawn).props.children, type);
+};
 
 describe("a refused Profile", () => {
   it.each([
@@ -126,16 +155,28 @@ describe("a refused Profile", () => {
     expect(html).toMatch(/<textarea[^>]*id="openTo"[^>]*rows="4"[^>]*>A coffee &amp; &quot;talks&quot; o+<\/textarea>/);
     expect(html).toContain('value="Backend engineer"');
   });
+
+  // As when the site is deployed, or rolled back, between the page's loading and its save.
+  it("keeps what was typed when the answer has the shape the code before #111 gave it", () => {
+    hooks.state = { problem: "That isn't a LinkedIn profile address.", typed: { ...typed, linkedInUrl: "my linkedin" } } as never;
+    expect(renderToStaticMarkup(createElement(ProfileForm, { saved: null }))).toContain('value="my linkedin"');
+  });
 });
 
-// Where the focus goes once the form is shown again, on the sign-up step on a phone scrolled down to the button, as after
-// a tap on it: the form's own script runs in Google Chrome, on the page as the server builds it, with its own styles.
+// Where the focus goes once the form is drawn again, on the sign-up step on a phone scrolled down to its button, as after
+// a tap on it. The page is the server's, with its own styles, in Google Chrome. The form's script runs as React runs it,
+// given a stand-in for the form element that notes what is read from it and called on it, and from what those give;
+// the same is then done to the form in Chrome.
 describe("the focus after a save", () => {
   let browser: Awaited<ReturnType<typeof chromium.launch>>;
+  let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   beforeAll(async () => {
     vi.stubEnv("TELEGRAM_INVITE_LINK", "https://t.me/+a-pretend-invite");
     browser = await chromium.launch({ channel: "chrome", timeout: 180_000 });
   }, 0);
+  afterEach(async () => {
+    await context?.close();
+  });
   afterAll(async () => {
     vi.unstubAllEnvs();
     await browser?.close();
@@ -160,48 +201,109 @@ describe("the focus after a save", () => {
     return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css.join("\n")}</style>${html}`;
   }
 
-  // The element focused once the form's script has run, whether the screen moved, and whether it shows that field's
-  // label, the message saying what is wrong with it, and its box.
-  async function shown() {
-    const page = await signUpStep();
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    try {
-      const tab = await context.newPage();
-      await tab.setContent(page);
-      const before = await tab.evaluate(() => {
-        scrollTo(0, document.documentElement.scrollHeight);
-        return scrollY;
-      });
-      await tab.evaluate(`((form) => (${returned.effects.at(-1)})())({ current: document.querySelector("form") })`);
-      return await tab.evaluate((before) => {
-        const seen = (element: Element | null) => {
-          const box = element!.getBoundingClientRect();
-          return box.top >= 0 && box.bottom <= innerHeight;
-        };
-        const focused = document.activeElement!;
-        return {
-          focused: focused.id || focused.tagName,
-          moved: scrollY !== before,
-          shows: focused.id ? [document.querySelector(`label[for="${focused.id}"]`), document.getElementById(`${focused.id}-error`), focused].map(seen) : [],
-        };
-      }, before);
-    } finally {
-      await context.close();
-    }
+  // A phone with the sign-up step open. `draw` draws the page with the save's answer, and shows it scrolled down to its
+  // button when it changed (React would change it in place); `run` runs the form's script where React would; `seen` says
+  // what has the focus, whether the screen moved since the page was shown, and whether it shows that field's label,
+  // the message saying what is wrong with it, and its box.
+  async function phone() {
+    context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const tab = await context.newPage();
+    let shown = "";
+    let at = 0;
+    return {
+      tab,
+      async draw(state: ProfileFormState) {
+        hooks.state = state;
+        const page = await signUpStep();
+        if (page === shown) return;
+        shown = page;
+        await tab.setContent(page);
+        at = await tab.evaluate(() => {
+          scrollTo(0, document.documentElement.scrollHeight);
+          return scrollY;
+        });
+      },
+      async run() {
+        type Step = { from: number; get?: string; args?: unknown[] };
+        const steps: Step[] = [];
+        const noted = (from: number): unknown =>
+          new Proxy(() => {}, {
+            get: (_, key) => noted(steps.push({ from, get: String(key) })),
+            apply: (_, __, args) => noted(steps.push({ from, args })),
+          });
+        // React gives the form's ref the form element.
+        find(ProfileForm({ saved: null }), "form")!.props.ref!.current = noted(0);
+        for (const effect of hooks.due.splice(0)) effect();
+        // Each step reads from, or calls, what an earlier one gave, the form first; from nothing it gives nothing, as `?.`.
+        await tab.evaluate((steps) => {
+          const given: unknown[] = [document.querySelector("form")];
+          const from: unknown[] = [null];
+          for (const step of steps) {
+            const value = given[step.from] as Record<string, unknown> & ((...args: unknown[]) => unknown);
+            from.push(value);
+            given.push(value == null ? value : step.get !== undefined ? value[step.get] : value.apply(from[step.from], step.args!));
+          }
+        }, steps);
+      },
+      seen: () =>
+        tab.evaluate((at) => {
+          const inView = (element: Element | null) => {
+            const box = element?.getBoundingClientRect();
+            return !!box && box.top >= 0 && box.bottom <= innerHeight;
+          };
+          const focused = document.activeElement!;
+          return {
+            focused: focused.id || focused.tagName,
+            moved: scrollY !== at,
+            shows: focused.id ? [document.querySelector(`label[for="${focused.id}"]`), document.getElementById(`${focused.id}-error`), focused].map(inView) : [],
+          };
+        }, at),
+    };
+  }
+
+  // The page loaded with the form empty, then the save's answer drawn.
+  async function saved(changes: Partial<typeof typed>) {
+    const step = await phone();
+    await step.draw(null);
+    await step.run();
+    await step.draw(await answer(changes));
+    await step.run();
+    return step;
   }
 
   it("goes to the first wrong field from the top, which a phone then shows with what is wrong with it", async () => {
-    await refused({ companyWebsite: "not a website", linkedInUrl: "my linkedin", openTo: "o".repeat(OPEN_TO_MAX + 1) }, true);
-    expect(await shown()).toEqual({ focused: "companyWebsite", moved: true, shows: [true, true, true] });
+    const step = await saved({ companyWebsite: "not a website", linkedInUrl: "my linkedin", openTo: "o".repeat(OPEN_TO_MAX + 1) });
+    expect(await step.seen()).toEqual({ focused: "companyWebsite", moved: true, shows: [true, true, true] });
   });
 
   it("goes to the one wrong field when there is one", async () => {
-    await refused({ linkedInUrl: "my linkedin" }, true);
-    expect(await shown()).toMatchObject({ focused: "linkedInUrl", shows: [true, true, true] });
+    const step = await saved({ linkedInUrl: "my linkedin" });
+    expect(await step.seen()).toMatchObject({ focused: "linkedInUrl", shows: [true, true, true] });
   });
 
   it("stays where it is on a form not yet saved", async () => {
-    expect(await shown()).toEqual({ focused: "BODY", moved: false, shows: [] });
+    const step = await phone();
+    await step.draw(null);
+    await step.run();
+    expect(await step.seen()).toEqual({ focused: "BODY", moved: false, shows: [] });
+  });
+
+  it("moves once for each answer, not each time the form is drawn again with it", async () => {
+    const step = await saved({ companyWebsite: "not a website", linkedInUrl: "my linkedin" });
+    await step.tab.focus("#position");
+    await step.draw(hooks.state);
+    await step.run();
+    expect((await step.seen()).focused).toBe("position");
+  });
+
+  // A form posted before the page's scripts had loaded comes back drawn by the server with its messages; by the time the
+  // scripts run, the person may be typing in another field.
+  it("stays where it is when the answer came before the page's scripts ran", async () => {
+    const step = await phone();
+    await step.draw(await answer({ companyWebsite: "not a website", linkedInUrl: "my linkedin" }));
+    await step.tab.focus("#position");
+    await step.run();
+    expect((await step.seen()).focused).toBe("position");
   });
 });
 
@@ -209,13 +311,6 @@ describe("the focus after a save", () => {
 // would only be saved as a space. Its key is pressed here as the browser hands it to the form, a phone's return key
 // included, which says so (enterkeyhint).
 describe("Enter in the open-to box", () => {
-  type Element = { type: unknown; props: { children?: unknown; onKeyDown?: (event: unknown) => void } };
-  const find = (node: unknown, type: string): Element | undefined => {
-    if (Array.isArray(node)) return node.map((child) => find(child, type)).find(Boolean);
-    if (!node || typeof node !== "object" || !("props" in node)) return undefined;
-    return (node as Element).type === type ? (node as Element) : find((node as Element).props.children, type);
-  };
-
   function press(key: string, { shiftKey = false, isComposing = false, keyCode = key === "Enter" ? 13 : 65 } = {}) {
     const box = find(ProfileForm({ saved: null }), "textarea")!;
     const requestSubmit = vi.fn();
@@ -238,7 +333,7 @@ describe("Enter in the open-to box", () => {
   });
 
   it("does not save again while a save is under way, as a disabled button stops Enter in a field", () => {
-    returned.pending = true;
+    hooks.pending = true;
     expect(press("Enter")).toEqual({ saved: 0, lineStopped: true });
   });
 });

@@ -244,7 +244,10 @@ How a photograph meets the page is most of this look.
 - The browser's icons (`app/icon.png`, `app/apple-icon.png`) are the black pawn cut-out on the ground colour.
 
 ### Motion
-- Only in answer to the pointer: a colour change on a button, an arrow that leans forward, an underline. 200 to 250ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`. Nothing moves by itself, and reduced motion drops the movement.
+**The Chess Rule.** Things move the way chess moves: one piece at a time, a deliberate move in the way that piece moves, then stillness. Nothing floats, loops, bounces, overshoots, fades in on scroll or follows the cursor, and a change of state is a cut, not a fade. Reduced motion drops the movement and shows where it ends.
+
+- **In answer to the pointer:** a colour change on a button, an arrow that leans forward, an underline. 200 to 250ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`.
+- **A new Member's pawn** (`app/set-down.tsx`, `.arriving` in `app/home.module.css`): once, as they come from the Profile step to the pawn row. The row shows as it was; at 600ms their pawn is set down one square behind the first empty outline; at 1000ms it steps one square straight forward, up the row, in 600ms, `cubic-bezier(0.65, 0, 0.35, 1)`; as it lands, the count is cut to its new number.
 
 ## Do's and Don'ts
 

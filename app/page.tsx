@@ -18,6 +18,7 @@ import queenPhone from "./photos/queen-phone.webp";
 import queen from "./photos/queen.webp";
 import row from "./photos/row.webp";
 import { RuledLinks } from "./ruled-links";
+import { SetDown } from "./set-down";
 import { SignIn } from "./sign-in";
 import { Masthead, Strip } from "./site";
 import site from "./site.module.css";
@@ -77,7 +78,7 @@ export default function Home({ searchParams }: PageProps<"/">) {
 
           <div className={styles.season} id="season">
             <Suspense>
-              <NextMatchday />
+              <NextMatchday searchParams={searchParams} />
             </Suspense>
             <div className={styles.join}>
               <Suspense>
@@ -241,21 +242,49 @@ async function WhatIsNextStrip() {
   );
 }
 
+// How long after someone becomes a Member their arrival from the Profile step still sets their pawn down.
+const JUST_JOINED_MS = 60 * 60_000;
+
+// Whether the viewer comes from the Profile step (`joined`, from NEW_MEMBER_HOME) and became a Member within the hour.
+// Their sign-up time is set when they first connect Lichess and never cleared, so a visitor and anyone part-way through
+// signing up have none, and a Member who signed up earlier has an old one.
+async function justJoined(searchParams: PageProps<"/">["searchParams"]) {
+  if (!("joined" in (await searchParams))) return false;
+  const since = (await viewer()).session?.user.lichessConnectedAt;
+  return !!since && Date.now() - since.getTime() < JUST_JOINED_MS;
+}
+
 // The Season block: what is next, and its picture. Until Season 1's first Matchday, sixteen pawns: one standing for each
 // Member it has and an outline for each it waits for, all standing once it is scheduled. After it, the six pieces of a
 // Season, tallest to shortest. A pawn's file is smaller than any screen asks for, so it goes without `sizes`, and each of
-// the two is fetched once. On a phone the picture comes between the time and what follows it. Exported for
-// app/home.test.ts.
-export async function NextMatchday() {
+// the two is fetched once. On a phone the picture comes between the time and what follows it.
+//
+// While Season 1 waits for Members, someone who has just become one and comes from the Profile step sees their pawn set
+// down (#104): it steps from one square behind into the first empty outline, and the count changes as it lands
+// (`before` is what the block said until then; home.module.css, set-down.tsx). Exported for app/home.test.ts and
+// app/pawn-set-down.test.ts.
+export async function NextMatchday({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   const next = await whatIsNext();
   if (!next) return null;
   const standing = next.pawns;
-  return (
+  const before = "needed" in next && (await justJoined(searchParams)) ? { ...next, needed: next.needed + 1, pawns: next.pawns - 1 } : null;
+  const block = (
     <>
       <div className={styles.left}>
         <p className={`${ui.caps} ${styles.label}`}>{next.label}</p>
         <p className={`${styles.count} ${ui.display}`}>
-          <Value next={next} />
+          {before ? (
+            <>
+              <span className={styles.was} aria-hidden="true">
+                <Value next={before} />
+              </span>
+              <span className={styles.now}>
+                <Value next={next} />
+              </span>
+            </>
+          ) : (
+            <Value next={next} />
+          )}
         </p>
         {"needed" in next ? (
           <p className={styles.starts}>It starts once there are sixteen of us, on the first Sunday at least a week later.</p>
@@ -273,7 +302,8 @@ export async function NextMatchday() {
       ) : (
         <ol className={styles.pawns} aria-hidden="true">
           {Array.from({ length: MEMBERS_TO_START }, (_, place) => (
-            <li key={place}>
+            <li key={place} className={place === before?.pawns ? styles.arriving : undefined}>
+              {place === before?.pawns && <Image src={pawnEmpty} alt="" />}
               <Image src={place < standing ? pawn : pawnEmpty} alt="" />
             </li>
           ))}
@@ -281,6 +311,7 @@ export async function NextMatchday() {
       )}
     </>
   );
+  return before ? <SetDown>{block}</SetDown> : block;
 }
 
 // The Matchday under way that a Member is still shown, with its tournament: until 90 minutes after its start, while

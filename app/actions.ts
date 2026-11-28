@@ -8,7 +8,7 @@ import { lichessConfigured, pendingCookie, startConnection } from "@/lib/connect
 import { consentProblem, mustWelcome } from "@/lib/consent";
 import { db } from "@/lib/db";
 import { removeMember } from "@/lib/leaving";
-import { mustConnectLichess } from "@/lib/members";
+import { mustConnectLichess, NEW_MEMBER_HOME } from "@/lib/members";
 import { readProfileForm } from "@/lib/profile";
 import { noticeLater } from "@/lib/request-failures";
 
@@ -96,7 +96,7 @@ export async function saveProfile(_previous: ProfileFormState, form: FormData): 
     [id, company.domain, fields.position, fields.linkedInUrl, fields.openTo],
   );
   // The step after the welcome step carries on home; the edit page shows the Profile as others see it.
-  redirect(form.get("next") === "home" ? "/" : `/profiles/${id}`);
+  redirect(form.get("next") === "home" ? NEW_MEMBER_HOME : `/profiles/${id}`);
 }
 
 // "Delete my account" on the page that confirms it (app/profile/leave): the caller's own account, and nobody else's,

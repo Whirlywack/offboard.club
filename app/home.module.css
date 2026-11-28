@@ -149,10 +149,11 @@
 }
 
 .pawns {
+  --rank-gap: 10px;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   column-gap: clamp(4px, 1.6vw, 14px);
-  row-gap: 10px;
+  row-gap: var(--rank-gap);
   max-width: 560px;
   margin-top: 18px;
   list-style: none;
@@ -165,6 +166,76 @@
 .pawns img {
   width: 100%;
   height: 100%;
+}
+
+/* A new Member's pawn, set down on their first arrival from the Profile step (page.tsx, set-down.tsx). At rest, as with
+   reduced motion and once it has landed, it stands in its place and the count says the new number. Moving, the row
+   first shows as it was; the pawn is set down one square behind the outline it fills, steps one square straight
+   forward into it, and stands; as it lands, the outline and the old count are cut away and the new count cut in. */
+.setDown {
+  display: contents;
+}
+
+.setDown .count,
+.arriving {
+  display: grid;
+}
+
+.was,
+.now,
+.arriving img {
+  grid-area: 1 / 1;
+}
+
+.was,
+.arriving img:first-child {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .moving {
+    --set-down: 600ms;
+    --step: 1000ms;
+    --landed: 1600ms;
+  }
+
+  .moving .arriving img:last-child {
+    animation-name: unseen, step;
+    animation-duration: var(--set-down), calc(var(--landed) - var(--step));
+    animation-delay: 0ms, var(--step);
+    animation-timing-function: step-end, cubic-bezier(0.65, 0, 0.35, 1);
+    animation-fill-mode: backwards;
+  }
+
+  .moving :where(.was, .now, .arriving img:first-child) {
+    animation-name: shown;
+    animation-duration: var(--landed);
+    animation-timing-function: step-end;
+    animation-fill-mode: backwards;
+  }
+
+  .moving .now {
+    animation-name: unseen;
+  }
+}
+
+/* One square: a pawn's height and the gap between two rows */
+@keyframes step {
+  from {
+    transform: translateY(calc(100% + var(--rank-gap)));
+  }
+}
+
+@keyframes shown {
+  from {
+    visibility: visible;
+  }
+}
+
+@keyframes unseen {
+  from {
+    opacity: 0;
+  }
 }
 
 /* After Season 1's first Matchday: the six pieces of a Season, tallest to shortest (1300 x 400, black with the
@@ -599,8 +670,8 @@
   }
 
   .pawns {
+    --rank-gap: 22px;
     column-gap: 1.4vw;
-    row-gap: 22px;
     max-width: none;
     margin: 0;
   }

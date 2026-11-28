@@ -10,3 +10,7 @@ export const MEMBER_SINCE = `"lichessConnectedAt"`;
 
 // A signed-in person who has finished the welcome step but not connected Lichess is sent to the connect step.
 export const mustConnectLichess = (person: { lichessId?: string | null }) => !person.lichessId;
+
+// Where the Profile step goes, saved or skipped: the home page's pawn row, where a new Member's pawn is set down
+// (app/page.tsx).
+export const NEW_MEMBER_HOME = "/?joined#season";

@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import styles from "./home.module.css";
 
-// Whether a new Member's pawn has been set down since this page was loaded. Next.js can build the home page again from
-// what it fetched for `/?joined`, as on coming Back to it a few pages later, and it must not play again.
+// True after any landing since this page was loaded (land, below), a visitor's included, not only where a pawn was set
+// down. Next.js can build the home page again from what it fetched for `/?joined`, as on coming Back to it a few pages
+// later, and it must not play again.
 let setDownHere = false;
 
 // Once no part of the movement is running (the pawn is set down before it steps): it is dropped, so that coming back

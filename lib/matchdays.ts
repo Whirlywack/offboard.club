@@ -29,8 +29,9 @@ export async function registerTournament(date: string, tournamentId: string, q: 
   }
 }
 
-// `participants` counts everyone in the tournament's results, `members` those of them who are Members, and
-// `withoutMoves` the Games stored without their moves, as Lichess sent them in no shape the site keeps (lib/matchday.ts).
+// `participants` counts everyone in the tournament's results, `members` those of them who are Members, `games` the Games
+// between Members fetched this time, and `withoutMoves` those of them whose moves Lichess sent in no shape the site
+// keeps (lib/matchday.ts), which are stored without them.
 export type Ingestion =
   | { outcome: "ingested"; date: string; participants: number; members: number; games: number; withoutMoves: number; redone: boolean }
   | { outcome: "unchanged"; date: string }

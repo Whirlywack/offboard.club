@@ -573,6 +573,10 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
           .map(({ date, lichessTournamentId }) => ({ date, lichessTournamentId })),
       ),
 
+  // gamesWithoutMoves (lib/collect-results.ts): a row a test makes without moves stands for one stored without them.
+  [`select count(*)::int as "n" from "game" where "matchdayDate" = $1 and "moves" is null`]: (date) =>
+    answer([{ n: [...games.values()].filter((g) => g.matchdayDate === date && (g.moves ?? null) === null).length }]),
+
   // recapDates
   [`select to_char("date", 'YYYY-MM-DD') as "date" from "matchday" where "ingestedAt" is not null order by "date" desc`]: () =>
     answer(

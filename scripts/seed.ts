@@ -583,7 +583,7 @@ async function check(name: string, waiting: FakeSwiss | null) {
         ["its tournament finished on Lichess, waiting for Collecting results, which has never run, and listed on the Organiser page",
           (await matchdayOn(s2!.matchdays![0].date))?.lichessTournamentId === WAITING && collecting === null &&
             JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![0].date, lichessTournamentId: WAITING }])],
-        ["one of its Games with moves Lichess would not send, which collecting it stores without them and counts",
+        ["one of its Games with moves Lichess would not send, which ingestion would not keep",
           !!waiting && ingestMatchday(waiting.results, waiting.games, people.map((p) => ({ memberId: p.id, lichessId: lichessId(p) })))
             .games.filter((g) => g.moves === null).length === 1],
         ["the Organiser's permission has expired, and the job's failure is recorded",

@@ -3,7 +3,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createFakeLichess } from "@/lib/fixtures/fake-lichess";
-import { uncollected } from "./collect-results";
+import { collectResults, uncollected } from "./collect-results";
 import { ingestTournament, registerTournament } from "./matchdays";
 import { getRecap, recapDates } from "./recaps";
 
@@ -243,5 +243,34 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     expect(await select(`select to_char("date", 'YYYY-MM-DD') as "date", "ingestedAt" from "matchday"`)).toEqual([
       { date: "2026-11-15", ingestedAt: null },
     ]);
+  }, 60_000);
+
+  it("has each run of Collecting results after a Matchday is in say how many of its Games are stored without their moves", async () => {
+    await client.query(`delete from "game"`);
+    await client.query(`delete from "matchdayResult"`);
+    await client.query(`delete from "matchday"`);
+    await client.query(`insert into "matchday" ("date", "lichessTournamentId", "ingestedAt") values ($1, $2, now()), ('2026-11-15', 'EARLIER1', now())`, [DATE, TOURNAMENT]);
+    // Two of its Games without moves, one with, and one nobody moved in, whose moves, none, are kept; and one of the
+    // Sunday before without.
+    const games: [string, string, string | null][] = [
+      ["Kept0001", DATE, "e4 e5"],
+      ["Nobody01", DATE, ""],
+      ["Lost0001", DATE, null],
+      ["Lost0002", DATE, null],
+      ["Earlier1", "2026-11-15", null],
+    ];
+    for (const [id, date, moves] of games)
+      await client.query(
+        `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
+         values ($1, $2, null, null, 'white', 'resign', 2, 1500, 1500, null, now(), $3)`,
+        [id, date, moves],
+      );
+    // 22:00 that Sunday in Vilnius.
+    const run = await collectResults(new Date("2026-11-22T20:00:00Z"));
+    expect({ ...run, detail: run.detail.replaceAll(" ", " ") }).toEqual({
+      outcome: "skipped",
+      detail: "The Recap of Sunday 22 November is public. The moves of 2 Games were not kept.",
+      matchdayDate: DATE,
+    });
   }, 60_000);
 });

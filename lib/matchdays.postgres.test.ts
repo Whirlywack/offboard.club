@@ -115,6 +115,7 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
       participants: 65,
       members: 3,
       games: 2,
+      withoutMoves: 1,
       redone: false,
     });
     expect(await ingestTournament(TOURNAMENT)).toEqual({ outcome: "unchanged", date: DATE });

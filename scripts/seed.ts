@@ -48,6 +48,7 @@ import { GAMES_SHOWN, getHistory } from "@/lib/history";
 import { lastFailure, lastRun } from "@/lib/jobs";
 import { getAllTime, getSeason, newChampions, readLeaderboards, seasonOfMatchday } from "@/lib/leaderboards";
 import { removeMember, teamRemovals } from "@/lib/leaving";
+import { ingestMatchday } from "@/lib/matchday";
 import { matchdayOn } from "@/lib/matchdays";
 import { mustConnectLichess } from "@/lib/members";
 import { isOrganiser } from "@/lib/organiser";
@@ -387,11 +388,13 @@ async function seed(name: string) {
   }
   console.log("Sign in as any of them but the one who left with the cookies pnpm seed:cookies writes:");
   for (const p of people) console.log(`  ${p.id.padEnd(10)} ${p.name.padEnd(40)} ${p.about ?? "a Member who plays some Sundays"}`);
+  return waiting?.swiss ?? null;
 }
 
 // A Matchday's tournament as Lichess exports it (lib/fixtures/fake-lichess.ts): its standings and its Games, as ndjson,
 // with only the fields ingestion reads besides those that say what each line is; every clock entry is the winner's time
-// left.
+// left. The first Game's first move is a square off the board, as Lichess never sends one, so that collecting it keeps
+// that Game without its moves and says so.
 function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[]): FakeSwiss {
   const person = (id: string) => PEOPLE.find((p) => p.id === id)!;
   const player = (id: string, rating: number) => ({ user: { name: lichessName(person(id)), id: lichessId(person(id)) }, rating });
@@ -405,7 +408,7 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
     createdBy: lichessId(person(ORGANISER)),
     results: ndjson(rows.map((r) => ({ rank: r.rank, points: r.points, rating: r.rating, username: lichessName(person(r.id)) }))),
     games: ndjson(
-      played.map(([id, , white, black, winner, status, plies, whiteRating, blackRating, clock, finishedAt]) => ({
+      played.map(([id, , white, black, winner, status, plies, whiteRating, blackRating, clock, finishedAt], i) => ({
         id,
         rated: true,
         variant: "standard",
@@ -414,7 +417,7 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
         lastMoveAt: finishedAt.getTime(),
         players: { white: player(white, whiteRating), black: player(black, blackRating) },
         ...(winner && { winner }),
-        moves: movesOf(plies),
+        moves: i === 0 ? movesOf(plies).replace("Nf3", "Nf9") : movesOf(plies),
         clocks: Array(plies).fill(clock ?? 18_000),
         swissTour: { id: WAITING },
       })),
@@ -483,8 +486,9 @@ async function organiser(name: string) {
   return [texts(true), texts(false)];
 }
 
-// What each scenario promises, asked of the database through the same code the pages use.
-async function check(name: string) {
+// What each scenario promises, asked of the database through the same code the pages use; `waiting`, the tournament
+// the seed left on the fake Lichess, through the code that will collect it.
+async function check(name: string, waiting: FakeSwiss | null) {
   const people = peopleOf(name).filter((p) => !p.leaves);
   const signIn = async (p: Person) => {
     const { name: cookieName, value } = cookie(p);
@@ -579,6 +583,9 @@ async function check(name: string) {
         ["its tournament finished on Lichess, waiting for Collecting results, which has never run, and listed on the Organiser page",
           (await matchdayOn(s2!.matchdays![0].date))?.lichessTournamentId === WAITING && collecting === null &&
             JSON.stringify(await uncollected(now)) === JSON.stringify([{ date: s2!.matchdays![0].date, lichessTournamentId: WAITING }])],
+        ["one of its Games with moves Lichess would not send, which collecting it stores without them and counts",
+          !!waiting && ingestMatchday(waiting.results, waiting.games, people.map((p) => ({ memberId: p.id, lichessId: lichessId(p) })))
+            .games.filter((g) => g.moves === null).length === 1],
         ["the Organiser's permission has expired, and the job's failure is recorded",
           !!permission && permission.expiresAt <= now && run?.outcome === "failed" && !!failure?.problem.includes("expired")],
         ["Posting to Telegram has not run; the skip's notice is all the group was sent",
@@ -684,8 +691,7 @@ async function main(args: string[]) {
   if (!(await madeByDbStart(db))) throw new Error("Refusing: this database was not made by pnpm db:start, so the seed leaves it alone.");
   if (args.includes("--cookies")) return cookies().then(() => true);
   const name = args[0] ?? "club";
-  await seed(name);
-  return check(name);
+  return check(name, await seed(name));
 }
 
 main(process.argv.slice(2))

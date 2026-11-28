@@ -102,7 +102,8 @@ async function collect(now: Date): Promise<JobRun> {
     // To the Telegram group; how that went is Posting to Telegram's to report, which tries again what failed.
     await postRecap(date, now);
     return done(
-      `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.`,
+      `Collected the results of ${sunday}: ${count(ingestion.members, "Member", "Members")} played ${count(ingestion.games, "Game", "Games")}. The Recap is public.` +
+        (ingestion.withoutMoves ? ` The moves of ${count(ingestion.withoutMoves, "Game", "Games")} were not kept.` : ""),
       date,
     );
   } catch (error) {

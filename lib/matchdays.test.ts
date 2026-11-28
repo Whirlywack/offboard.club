@@ -91,6 +91,7 @@ describe("ingesting a finished tournament", () => {
       participants: 65,
       members: 6,
       games: 3,
+      withoutMoves: 0,
       redone: false,
     });
     expect([...matchdays.values()]).toEqual([{ date: DATE, lichessTournamentId: TOURNAMENT, ingestedAt: expect.any(Date) }]);
@@ -212,7 +213,7 @@ describe("each Game's moves (#105)", () => {
     // Pretend075 ended before either of them moved.
     addPerson("ivo", { lichessId: "pretend--ivo" });
     addPerson("gustav", { lichessId: "pretend--gustav" });
-    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", games: 4 });
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", games: 4, withoutMoves: 0 });
     expect([...games.values()].map((g) => [g.lichessGameId, g.moves])).toEqual([
       ["Pretend066", movesSent("Pretend066")],
       ["Pretend075", ""],
@@ -237,9 +238,11 @@ describe("each Game's moves (#105)", () => {
     ["numbered", "1. e4 e5", 3],
     ["in another notation", "e2e4 e7e5", 2],
     ["mixed with something else", "e4 <b>e5</b>", 2],
+    ["moving a piece chess has not", "e4 Zf6", 2],
+    ["promoting to a king", "e4 e5 e8=K", 3],
   ])("are not kept when they are %s, and the Game and the Matchday are stored all the same", async (_, moves, plies) => {
     lichess.tournaments.set(TOURNAMENT, recorded({ games: withMoves(moves) }));
-    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", members: 6, games: 3 });
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", members: 6, games: 3, withoutMoves: 1 });
     expect(games.get("Pretend066")).toMatchObject({ whiteId: "dan", blackId: "cora", winner: "black", plies, moves: null });
     expect(games.get("Pretend100")?.moves).toBe(movesSent("Pretend100"));
   });
@@ -262,6 +265,7 @@ describe("a redo", () => {
       participants: 65,
       members: 6,
       games: 3,
+      withoutMoves: 0,
       redone: true,
     });
     expect(requests()).toContain(`GET /api/swiss/${TOURNAMENT}/games`);

@@ -29,9 +29,10 @@ export async function registerTournament(date: string, tournamentId: string, q: 
   }
 }
 
-// `participants` counts everyone in the tournament's results, `members` those of them who are Members.
+// `participants` counts everyone in the tournament's results, `members` those of them who are Members, and
+// `withoutMoves` the Games stored without their moves, as Lichess sent them in no shape the site keeps (lib/matchday.ts).
 export type Ingestion =
-  | { outcome: "ingested"; date: string; participants: number; members: number; games: number; redone: boolean }
+  | { outcome: "ingested"; date: string; participants: number; members: number; games: number; withoutMoves: number; redone: boolean }
   | { outcome: "unchanged"; date: string }
   | { outcome: "refused"; problem: string };
 
@@ -112,7 +113,10 @@ export async function ingestTournament(
     const now = await matchdayOf(tournamentId);
     return refused(`Tournament ${tournamentId} became the Matchday of ${now?.date ?? "another day"} while it was being ingested.`);
   }
-  if (stored) return { outcome: "ingested", date, participants, members: scores.length, games: games.length, redone };
+  if (stored) {
+    const withoutMoves = games.filter((g) => g.moves === null).length;
+    return { outcome: "ingested", date, participants, members: scores.length, games: games.length, withoutMoves, redone };
+  }
   // Another run ingested it first, or the Matchday of that date changed while this one was fetching.
   const now = await matchdayOf(tournamentId);
   return now?.ingested && !redo

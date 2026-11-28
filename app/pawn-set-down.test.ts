@@ -73,7 +73,7 @@ async function saving(form: string) {
   const sent = new FormData();
   for (const [, name, value] of form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)) sent.set(name, value);
   return saveProfile(null, sent).then(
-    (refused) => `refused: ${refused?.problem}`,
+    (refused) => `refused: ${JSON.stringify(refused?.problems)}`,
     (error: Error) => error.message.replace(/^redirect /, ""),
   );
 }

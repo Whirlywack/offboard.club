@@ -123,7 +123,7 @@ describe("giving a Company website", () => {
       addPerson("ana", { companyDomain: "vinted.com", position: "CTO" });
       signedInAs("ana");
       await expect(save({ companyWebsite: website, position: "Engineer" })).resolves.toEqual({
-        problem: notAWebsite,
+        problems: { companyWebsite: notAWebsite },
         typed: { companyWebsite: website, position: "Engineer", linkedInUrl: "", openTo: "" },
       });
       expect(db.query).not.toHaveBeenCalled();
@@ -132,12 +132,12 @@ describe("giving a Company website", () => {
     },
   );
 
-  it("creates no Company and fetches nothing when another field is refused", async () => {
+  it("creates no Company and fetches nothing when another field is refused, and says nothing of the website", async () => {
     addPerson("ana");
     signedInAs("ana");
-    await expect(save({ companyWebsite: "vinted.com", position: "p".repeat(81) })).resolves.toMatchObject({
-      problem: expect.stringMatching(/80 characters/),
-      typed: { companyWebsite: "vinted.com" },
+    await expect(save({ companyWebsite: "vinted.com", position: "p".repeat(81) })).resolves.toEqual({
+      problems: { position: expect.stringMatching(/80 characters/) },
+      typed: { companyWebsite: "vinted.com", position: "p".repeat(81), linkedInUrl: "", openTo: "" },
     });
     expect(db.query).not.toHaveBeenCalled();
     expect(fetchMeta).not.toHaveBeenCalled();
@@ -291,7 +291,7 @@ describe("the daily limit on new Companies", () => {
 
     vi.setSystemTime(new Date("2026-11-24T09:00:30Z"));
     await expect(save({ companyWebsite: "company6.com", position: "CTO" })).resolves.toMatchObject({
-      problem: expect.stringMatching(/already added 5 new Companies today/),
+      problems: { companyWebsite: expect.stringMatching(/already added 5 new Companies today/) },
     });
     expect(fetchMeta).toHaveBeenCalledTimes(NEW_COMPANIES_PER_DAY);
     expect(companies.has("company6.com")).toBe(false);
@@ -304,7 +304,7 @@ describe("the daily limit on new Companies", () => {
 
     // Still refused at the very end of the UTC day; the next day starts a new count.
     vi.setSystemTime(new Date("2026-11-24T23:59:59Z"));
-    await expect(save({ companyWebsite: "company6.com" })).resolves.toMatchObject({ problem: expect.any(String) });
+    await expect(save({ companyWebsite: "company6.com" })).resolves.toMatchObject({ problems: { companyWebsite: expect.any(String) } });
     vi.setSystemTime(new Date("2026-11-25T00:00:01Z"));
     await expect(save({ companyWebsite: "company6.com" })).rejects.toThrow(saved("ana"));
     expect(people.get("ana")).toMatchObject({ companyDomain: "company6.com", companiesCreatedThatDay: 1 });

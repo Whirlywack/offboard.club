@@ -987,6 +987,28 @@
           "seed": "club",
           "as": "plain",
           "path": "/welcome/profile"
+        },
+        {
+          "name": "welcome-profile-several-refused",
+          "label": "Two fields refused at once",
+          "seed": "club",
+          "as": "plain",
+          "path": "/welcome/profile",
+          "steps": [
+            {
+              "fill": "#companyWebsite",
+              "value": "not a website"
+            },
+            {
+              "fill": "#linkedInUrl",
+              "value": "my linkedin"
+            },
+            {
+              "click": "button:has-text('Save and continue')",
+              "waitFor": "#companyWebsite-error"
+            }
+          ],
+          "note": "Added with #111: a wrong Company website and a wrong LinkedIn link saved together, each refusal above its own field, the Company website focused."
         }
       ]
     },

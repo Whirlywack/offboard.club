@@ -148,12 +148,21 @@
   text-wrap: balance;
 }
 
-/* Every count takes as many lines as every other, so nothing moves as one is cut to the next (below). Under 377px wide,
-   where the longest, "10 more Members to go", no longer fits on one line at the size above, every count takes two: 7em
-   is narrower than any count on one line and wider than "Members to go", so balance breaks each after "more". */
+/* On a phone, the count of Members takes as many lines whatever its number, so nothing moves as one is cut to the next
+   (below). Under 377px wide, where the longest, "10 more Members to go", no longer fits on one line at the size above,
+   each takes two: 7em is narrower than any count on one line and wider than "Members to go", so balance breaks each
+   after "more". From 377px each takes one, by rule, as a browser can measure the longest a little wider than the
+   space. A Matchday's date, shown in its place, is left as it is. */
 @media (width < 377px) {
-  .season .count {
+  .season .count:not(:has(time)) {
     max-width: 7em;
+  }
+}
+
+@media (377px <= width < 900px) {
+  .season .count:not(:has(time)) {
+    min-width: 0;
+    white-space: nowrap;
   }
 }
 
@@ -180,7 +189,9 @@
 /* A new Member's pawn, set down on their first arrival from the Profile step (page.tsx, set-down.tsx). At rest, as with
    reduced motion and once it has landed, it stands in its place and the count says the new number. Moving, the row
    first shows as it was; the pawn is set down one square behind the outline it fills, steps one square straight
-   forward into it, and stands; as it lands, the outline and the old count are cut away and the new count cut in. */
+   forward into it, and stands; as it lands, the outline and the old count are cut away and the new count cut in. The
+   old count has room only while it shows: where its words take a line more than the new ones, as on a desktop about
+   2100 to 2300px wide, what follows moves up by that line as the pawn lands. */
 .setDown {
   display: contents;
 }
@@ -199,6 +210,10 @@
 .was,
 .arriving img:first-child {
   visibility: hidden;
+}
+
+.was {
+  max-height: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -238,6 +253,7 @@
 @keyframes shown {
   from {
     visibility: visible;
+    max-height: none;
   }
 }
 

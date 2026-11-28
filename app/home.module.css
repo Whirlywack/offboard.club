@@ -171,7 +171,9 @@
 /* A new Member's pawn, set down on their first arrival from the Profile step (page.tsx, set-down.tsx). At rest, as with
    reduced motion and once it has landed, it stands in its place and the count says the new number. Moving, the row
    first shows as it was; the pawn is set down one square behind the outline it fills, steps one square straight
-   forward into it, and stands; as it lands, the outline and the old count are cut away and the new count cut in. */
+   forward into it, and stands; as it lands, the outline and the old count are cut away and the new count cut in. The
+   old count has room only while it shows: where its words take a line more than the new ones, what follows moves up by
+   that line as the pawn lands. */
 .setDown {
   display: contents;
 }
@@ -190,6 +192,10 @@
 .was,
 .arriving img:first-child {
   visibility: hidden;
+}
+
+.was {
+  max-height: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -229,6 +235,7 @@
 @keyframes shown {
   from {
     visibility: visible;
+    max-height: none;
   }
 }
 

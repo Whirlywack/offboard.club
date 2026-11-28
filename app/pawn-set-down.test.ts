@@ -66,17 +66,26 @@ const row = (html: string) =>
 const places = (standing: number, arriving?: number) =>
   Array.from({ length: 16 }, (_, place) => (place === arriving ? "outline under pawn, set down" : place < standing ? "pawn" : "outline"));
 
-// Where each way on from the Profile step leads: saving it, and skipping it.
-async function waysOn() {
-  const form = new FormData();
-  form.set("next", "home");
-  const saved = await saveProfile(null, form).then(
+// The Profile form, on the step after signing up or on the edit page, and where saving it as it is leads: the form sends
+// its hidden fields and the fields left empty.
+const profileForm = (welcome: boolean) => renderToStaticMarkup(createElement(ProfileForm, { saved: null, welcome }));
+async function saving(form: string) {
+  const sent = new FormData();
+  for (const [, name, value] of form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)) sent.set(name, value);
+  return saveProfile(null, sent).then(
     (refused) => `refused: ${refused?.problem}`,
     (error: Error) => error.message.replace(/^redirect /, ""),
   );
-  const skip = renderToStaticMarkup(createElement(ProfileForm, { saved: null, welcome: true })).match(/<a [^>]*href="([^"]+)"[^>]*>Skip for now<\/a>/)![1];
-  return [saved, skip];
 }
+
+// Where each way on from the Profile step leads: saving it, and skipping it.
+async function waysOn() {
+  const form = profileForm(true);
+  return [await saving(form), form.match(/<a [^>]*href="([^"]+)"[^>]*>Skip for now<\/a>/)![1]];
+}
+
+// The block as it stands, without what takes `joined` out of the address where nothing moves.
+const still = (html: string) => html.replace(new RegExp(`^<div class="${home.setDown}">([\\s\\S]*)</div>$`), "$1");
 
 describe("a new Member's pawn on the home page", () => {
   it("is set down for them as they come from the Profile step, saved or skipped, at the part of the page with the pawn row", async () => {
@@ -103,6 +112,14 @@ describe("a new Member's pawn on the home page", () => {
     }
   });
 
+  it("is not where saving the Profile edit page leads", async () => {
+    club(13);
+    signedIn = "new";
+    const edit = profileForm(false);
+    expect(edit).not.toContain('name="next"');
+    expect(await saving(edit)).toBe("/profiles/new");
+  });
+
   it("keeps the row hidden from assistive technology, and gives it the count once, with its new number", async () => {
     club(0);
     signedIn = "new";
@@ -124,7 +141,9 @@ describe("a new Member's pawn on the home page", () => {
     signedIn = "new";
     for (const address of ["/#season", "/"]) expect(await arrive(address)).toBe(standing);
     vi.setSystemTime(Date.now() + 60 * 60_000);
-    expect(await arrive("/?joined#season")).toBe(standing);
+    const late = await arrive("/?joined#season");
+    expect(still(late)).toBe(standing);
+    expect(late).not.toBe(standing); // what takes `joined` out of the address is there all the same
   });
 
   it("is never set down for a Member who signed up earlier, a visitor or someone part-way through signing up", async () => {
@@ -133,7 +152,9 @@ describe("a new Member's pawn on the home page", () => {
     const standing = await arrive("/");
     for (const who of ["earlier0", null, "partway"]) {
       signedIn = who;
-      expect(await arrive("/?joined#season")).toBe(standing);
+      const html = await arrive("/?joined#season");
+      expect(still(html)).toBe(standing);
+      expect(html).toMatch(new RegExp(`^<div class="${home.setDown}">`));
     }
   });
 
@@ -145,13 +166,15 @@ describe("a new Member's pawn on the home page", () => {
     const scheduled = await arrive("/?joined#season");
     expect(scheduled).toContain("Next Matchday");
     expect(row(scheduled)).toEqual(places(16));
-    expect(scheduled).not.toContain(home.setDown);
+    expect(scheduled).not.toContain(home.moving);
+    expect(scheduled).toMatch(new RegExp(`^<div class="${home.setDown}">`)); // `joined` is taken out of the address
     // ...and the six pieces of a Season after it.
     vi.setSystemTime(new Date("2026-11-30T12:00:00Z"));
     people.get("new")!.lichessConnectedAt = new Date(Date.now() - 5 * 60_000);
     const later = await arrive("/?joined#season");
     expect(later).toMatch(/%2Frow\.webp/);
-    expect(later).not.toContain(home.setDown);
+    expect(later).not.toContain(home.moving);
+    expect(later).toMatch(new RegExp(`^<div class="${home.setDown}">`));
   });
 });
 
@@ -179,12 +202,13 @@ describe("the pawn being set down", () => {
     return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css.join("\n")}</style><main><div class="${home.season}">${block}</div></main>`;
   };
 
-  type Moment = { pawn: boolean; behind: number; across: number; outline: boolean; count: string[] };
+  type Moment = { pawn: boolean; behind: number; across: number; outline: boolean; count: string[]; lines: [number, number] };
 
   // How the arriving pawn stands at each moment (ms): whether it is shown, how far behind its place it is and how far to
-  // one side, whether the outline it fills is shown, and the count's words as seen. Also one square's depth, how many
-  // animations there are, and how wide the page is.
-  async function play(width: number, reducedMotion: "reduce" | "no-preference", block: string, moments: number[]) {
+  // one side, whether the outline it fills is shown, the count's words as seen, and how many lines those words take
+  // beside how many lines of room the count has. Also one square's depth, how many animations there are, and how wide
+  // the page is. `narrow` makes the count as wide as the old words take two lines and the new ones one.
+  async function play(width: number, reducedMotion: "reduce" | "no-preference", block: string, moments: number[], narrow = false) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900, reducedMotion });
     try {
       const tab = await context.newPage();
@@ -197,7 +221,7 @@ describe("the pawn being set down", () => {
       });
       await tab.goto("http://offboard.test/");
       return await tab.evaluate(
-        ({ moments, names }) => {
+        ({ moments, names, narrow }) => {
           const animations = document.getAnimations();
           for (const animation of animations) animation.pause();
           const ranks = document.querySelectorAll("ol > li");
@@ -207,20 +231,42 @@ describe("the pawn being set down", () => {
             const style = getComputedStyle(element);
             return style.visibility === "visible" && style.opacity === "1";
           };
+          const words = [`.${names.was}`, `.${names.now}`].map((name) => document.querySelector<HTMLElement>(name)!);
+          const count = words[0].parentElement!;
+          const text = (element: Element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            return range;
+          };
+          if (narrow) {
+            const [old, now] = words.map((element) => {
+              element.style.whiteSpace = "nowrap";
+              const { width } = text(element).getBoundingClientRect();
+              element.style.whiteSpace = "";
+              return width;
+            });
+            count.style.width = `${(old + now) / 2}px`;
+          }
+          const lines = (element: Element) => new Set([...text(element).getClientRects()].map((line) => Math.round(line.top))).size;
           const at = moments.map((time): Moment => {
             for (const animation of animations) animation.currentTime = time;
             const [to, from] = [outline.getBoundingClientRect(), pawn.getBoundingClientRect()];
+            const shown = words.filter(seen);
             return {
               pawn: seen(pawn),
               behind: Math.round((from.top - to.top) * 100) / 100,
               across: Math.round((from.left - to.left) * 100) / 100,
               outline: seen(outline),
-              count: [`.${names.was}`, `.${names.now}`].map((name) => document.querySelector(name)!).filter(seen).map((words) => words.textContent!),
+              count: shown.map((element) => element.textContent!),
+              lines: [
+                Math.max(...shown.map(lines)),
+                Math.round(count.getBoundingClientRect().height / parseFloat(getComputedStyle(count).lineHeight)),
+              ],
             };
           });
           return { square: Math.round(square * 100) / 100, animations: animations.length, wide: document.documentElement.scrollWidth, at };
         },
-        { moments, names: { arriving: home.arriving, was: home.was, now: home.now } },
+        { moments, names: { arriving: home.arriving, was: home.was, now: home.now }, narrow },
       );
     } finally {
       await context.close();
@@ -247,7 +293,7 @@ describe("the pawn being set down", () => {
       expect(animations).toBe(5);
       expect(wide).toBe(width);
       const [start, unset, setDown, held] = at;
-      const [landing, landed, still] = at.slice(-3);
+      const [landing, landed, later] = at.slice(-3);
       // The row as it was.
       for (const moment of [start, unset]) expect(moment).toMatchObject({ pawn: false, outline: true, count: [before] });
       // The pawn set down one square behind, a pawn's depth and the gap between two rows, and held there.
@@ -265,14 +311,24 @@ describe("the pawn being set down", () => {
       expect(stepping[12].behind).toBeCloseTo(square / 2, 0); // halfway at the middle of the step
       expect(landing).toMatchObject({ pawn: true, outline: true, count: [before] });
       // It lands: the outline and the old count are cut away, and the new count cut in. Then nothing moves.
-      for (const moment of [landed, still]) expect(moment).toEqual({ pawn: true, behind: 0, across: 0, outline: false, count: [after] });
+      for (const moment of [landed, later]) expect(moment).toMatchObject({ pawn: true, behind: 0, across: 0, outline: false, count: [after] });
+      // The count has room for the words it shows, and no more, throughout.
+      for (const { lines } of at) expect(lines[1]).toBe(lines[0]);
     });
 
     it(`stands in its place from the start with reduced motion, the count saying the new number, ${width} wide`, async () => {
       const after = count(15 - earlier);
       const { animations, at } = await play(width, "reduce", await block(earlier), [0]);
       expect(animations).toBe(0);
-      expect(at[0]).toEqual({ pawn: true, behind: 0, across: 0, outline: false, count: [after] });
+      expect(at[0]).toEqual({ pawn: true, behind: 0, across: 0, outline: false, count: [after], lines: [at[0].lines[0], at[0].lines[0]] });
     });
   }
+
+  // As the pawn lands, what follows the count moves up by the line the old words no longer need: the one way to leave no
+  // room under the count without the old words running over what follows it.
+  it("leaves no room under the count once the pawn has landed, where the old words took a line more than the new", async () => {
+    const { at } = await play(390, "no-preference", await block(14), [0, 999, 1599, 1600, 3000], true);
+    for (const moment of at.slice(0, 3)) expect(moment).toMatchObject({ count: [count(2)], lines: [2, 2] });
+    for (const moment of at.slice(3)) expect(moment).toMatchObject({ count: [count(1)], lines: [1, 1] });
+  });
 });

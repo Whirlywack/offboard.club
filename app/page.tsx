@@ -245,11 +245,10 @@ async function WhatIsNextStrip() {
 // How long after someone becomes a Member their arrival from the Profile step still sets their pawn down.
 const JUST_JOINED_MS = 60 * 60_000;
 
-// Whether the viewer comes from the Profile step (`joined`, from NEW_MEMBER_HOME) and became a Member within the hour.
-// Their sign-up time is set when they first connect Lichess and never cleared, so a visitor and anyone part-way through
-// signing up have none, and a Member who signed up earlier has an old one.
-async function justJoined(searchParams: PageProps<"/">["searchParams"]) {
-  if (!("joined" in (await searchParams))) return false;
+// Whether the viewer became a Member within the hour. Their sign-up time is set when they first connect Lichess and never
+// cleared, so a visitor and anyone part-way through signing up have none, and a Member who signed up earlier has an old
+// one.
+async function justJoined() {
   const since = (await viewer()).session?.user.lichessConnectedAt;
   return !!since && Date.now() - since.getTime() < JUST_JOINED_MS;
 }
@@ -259,15 +258,16 @@ async function justJoined(searchParams: PageProps<"/">["searchParams"]) {
 // Season, tallest to shortest. A pawn's file is smaller than any screen asks for, so it goes without `sizes`, and each of
 // the two is fetched once. On a phone the picture comes between the time and what follows it.
 //
-// While Season 1 waits for Members, someone who has just become one and comes from the Profile step sees their pawn set
-// down (#104): it steps from one square behind into the first empty outline, and the count changes as it lands
-// (`before` is what the block said until then; home.module.css, set-down.tsx). Exported for app/home.test.ts and
-// app/pawn-set-down.test.ts.
+// While Season 1 waits for Members, someone who has just become one and comes from the Profile step (`joined`, from
+// NEW_MEMBER_HOME) sees their pawn set down (#104): it steps from one square behind into the first empty outline, and the
+// count changes as it lands (`before` is what the block said until then; home.module.css). SetDown takes `joined` out of
+// the address again, whether or not anything moves. Exported for app/home.test.ts and app/pawn-set-down.test.ts.
 export async function NextMatchday({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   const next = await whatIsNext();
   if (!next) return null;
   const standing = next.pawns;
-  const before = "needed" in next && (await justJoined(searchParams)) ? { ...next, needed: next.needed + 1, pawns: next.pawns - 1 } : null;
+  const joined = "joined" in (await searchParams);
+  const before = "needed" in next && joined && (await justJoined()) ? { ...next, needed: next.needed + 1, pawns: next.pawns - 1 } : null;
   const block = (
     <>
       <div className={styles.left}>
@@ -311,7 +311,7 @@ export async function NextMatchday({ searchParams }: Pick<PageProps<"/">, "searc
       )}
     </>
   );
-  return before ? <SetDown>{block}</SetDown> : block;
+  return joined ? <SetDown moving={before !== null}>{block}</SetDown> : block;
 }
 
 // The Matchday under way that a Member is still shown, with its tournament: until 90 minutes after its start, while

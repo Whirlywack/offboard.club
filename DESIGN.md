@@ -199,6 +199,7 @@ The pieces several pages share, and where they live:
 - **Quiet:** the choice beside it, `ui.quiet` on a `<button>` or a link: the same size, no fill, a 1px outline in `--line-strong`; under the pointer a faint wash of ink and the outline in ink.
 - **Hover / Focus / Active:** a lighter ink (`--button-hover`) under the pointer; the focus ring is 2px of ink, 3px out; pressed, it drops 1px (not with reduced motion). The `<button>` rule's hover is no more specific than `button` itself, so a button with a class of its own (`ui.quiet`, a text button) keeps its own background under the pointer.
 - **On black:** a paper block with black text, by the Turned-Over Rule; a quiet one keeps paper text on black.
+- **In forced colours** (Windows' high contrast), which drop the fill and the shadow: every `<button>`, `ui.button` and `ui.quiet`, and the other blocks drawn as buttons (joining the Matchday on Lichess, Replay the Game), has a 1px border in its text's colour instead. Sign out stays underlined text.
 - **In the header:** 44px tall, 20px either side, 14px.
 
 ### Alert

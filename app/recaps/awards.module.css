@@ -111,6 +111,13 @@
   transform: translateY(1px);
 }
 
+/* Forced colours drop the fill, so the outline is a border there, as on ui.button */
+@media (forced-colors: active) {
+  .replay > summary {
+    border: 1px solid;
+  }
+}
+
 .chevron {
   flex: none;
   transition: transform var(--duration-hover) var(--ease-out);

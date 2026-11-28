@@ -254,6 +254,7 @@
 .signOut button {
   min-height: var(--tap);
   padding: 0 0 0 var(--space-2);
+  border: 0; /* text, so not boxed in forced colours as other buttons are (globals.css) */
   background: transparent;
   color: var(--muted);
   font-size: var(--text-sm);
@@ -300,6 +301,13 @@
 @media (hover: hover) and (pointer: fine) {
   .statusLink a:hover {
     background: var(--button-hover);
+  }
+}
+
+/* Forced colours drop the fill, so the outline is a border there, as on ui.button */
+@media (forced-colors: active) {
+  .statusLink a {
+    border: 1px solid;
   }
 }
 

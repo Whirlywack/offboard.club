@@ -55,11 +55,12 @@ async function page() {
   return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><main>${html}</main>`;
 }
 
-// Chrome can take longer than a test's ten seconds to start on a busy machine, as capture's test allows for.
+// Started outside the tests' time limits, as capture's test (scripts/capture.test.ts) starts it: on a shared runner
+// Chrome has taken more than 30 s to start. Its one limit is Playwright's, 3 minutes; the hook has none of its own (0).
 let browser: Awaited<ReturnType<typeof chromium.launch>>;
 beforeAll(async () => {
-  browser = await chromium.launch({ channel: "chrome" });
-}, 30_000);
+  browser = await chromium.launch({ channel: "chrome", timeout: 180_000 });
+}, 0);
 afterAll(async () => {
   await browser?.close();
 });

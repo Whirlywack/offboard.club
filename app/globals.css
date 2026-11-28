@@ -234,6 +234,13 @@ button:disabled {
   cursor: progress;
 }
 
+/* Forced colours drop the fill, so the outline is a border there, as on ui.button */
+@media (forced-colors: active) {
+  button {
+    border: 1px solid;
+  }
+}
+
 /* Text fields, and choices from a list: a plain box with a border strong enough to find */
 
 input:not([type="checkbox"], [type="radio"], [type="hidden"]),

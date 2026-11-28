@@ -28,7 +28,7 @@ let signedIn: string | null;
 
 // The next Matchday as the viewer gets it: what the home page streams into its Next Matchday panel.
 async function nextMatchday() {
-  const shown = await NextMatchday();
+  const shown = await NextMatchday({ searchParams: Promise.resolve({}) });
   return shown ? renderToStaticMarkup(shown as ReactElement) : "";
 }
 

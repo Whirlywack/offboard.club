@@ -39,7 +39,7 @@ async function page() {
   const html = [
     await as("member", you),
     await as(null, you),
-    await as("member", NextMatchday),
+    await as("member", () => NextMatchday({ searchParams: Promise.resolve({}) })),
     renderToStaticMarkup(createElement(Awards, { awards: [award], showGames: true })),
   ].join("");
   vi.useRealTimers();

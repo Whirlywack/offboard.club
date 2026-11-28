@@ -5,6 +5,7 @@ import { useActionState, type KeyboardEvent } from "react";
 import { saveProfile, type ProfileFormState } from "../actions";
 import ui from "../ui.module.css";
 import styles from "./profile.module.css";
+import { NEW_MEMBER_HOME } from "@/lib/members";
 import { OPEN_TO_MAX, POSITION_MAX, readProfileForm, type Profile } from "@/lib/profile";
 
 type Field = keyof NonNullable<ProfileFormState>["typed"];
@@ -116,7 +117,7 @@ export function ProfileForm({ saved, welcome = false }: { saved: Profile | null;
       <div className={`${ui.actions} ${styles.formActions}`}>
         <button disabled={pending}>{pending ? "Saving…" : welcome ? "Save and continue" : "Save changes"}</button>
         {welcome && (
-          <Link className={ui.quiet} href="/">
+          <Link className={ui.quiet} href={NEW_MEMBER_HOME}>
             Skip for now
           </Link>
         )}

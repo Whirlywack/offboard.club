@@ -192,21 +192,14 @@ describe("the pawn being set down", () => {
   });
 
   // Season blocks with the styles they are shown with: globals.css, then ui.module.css and home.module.css with each
-  // class named as the rendering names it. The serif next/font names (app/layout.tsx) is not here: Arial stands in for
-  // it (Liberation Sans, with Arial's widths, on Linux), a little narrower, so a count fits on one line wherever the
-  // serif's does.
-  const page = (...blocks: string[]) => {
+  // class named as the rendering names it, then any of the test's own.
+  const page = (blocks: string[], own = "") => {
     const named = (file: string, classes: Record<string, string>) =>
       readFileSync(join(__dirname, file), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/url\([^)]*\)/g, "none")
         .replace(/\.([a-zA-Z][\w-]*)/g, (whole, name: string) => (classes[name] ? `.${classes[name]}` : whole));
-    const css = [
-      readFileSync(join(__dirname, "globals.css"), "utf8"),
-      named("ui.module.css", ui),
-      named("home.module.css", home),
-      ':root { --font-bodoni: Arial, "Liberation Sans"; }',
-    ];
+    const css = [readFileSync(join(__dirname, "globals.css"), "utf8"), named("ui.module.css", ui), named("home.module.css", home), own];
     const seasons = blocks.map((block) => `<div class="${home.season}">${block}</div>`).join("");
     return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css.join("\n")}</style><main>${seasons}</main>`;
   };
@@ -233,7 +226,7 @@ describe("the pawn being set down", () => {
   async function play(width: number, reducedMotion: "reduce" | "no-preference", block: string, moments: number[]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900, reducedMotion });
     try {
-      const tab = await show(context, page(block));
+      const tab = await show(context, page([block]));
       return await tab.evaluate(
         ({ moments, names }) => {
           const animations = document.getAnimations();
@@ -332,7 +325,10 @@ describe("the pawn being set down", () => {
   // Each count cut to the next, 16 to 15 down to 2 to 1, at every width from 300 to 430 (#109), in one page beside each
   // count as a reload shows it. Just before the pawn lands a block is laid out as the old count is at rest, and just
   // after as a reload, so nothing below the count moves. A count at rest has room for its words and no more: two lines
-  // under 377 wide, broken after "more", and one line from 377, where the longest fits in the serif.
+  // under 377 wide, broken after "more", and one line from 377, where the longest fits in the serif. The serif next/font
+  // names (app/layout.tsx) is not here: Arial stands in for it (Liberation Sans, with Arial's widths, on Linux), a
+  // little narrower, so a count fits on one line wherever the serif's does. The movement is paused from the start, so
+  // that it is there to be set to each moment however long the page takes to load.
   it("keeps the count's lines as the pawn lands, for every count at every width from 300 to 430", async () => {
     const cut: string[] = [];
     const reloaded = [await arrive("/")]; // nobody yet: 16
@@ -346,8 +342,9 @@ describe("the pawn being set down", () => {
     }
     const context = await browser.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, reducedMotion: "no-preference" });
     try {
-      const tab = await show(context, page(...cut, ...reloaded));
-      const movement = await tab.evaluateHandle(() => document.getAnimations().map((animation) => (animation.pause(), animation)));
+      const own = ':root { --font-bodoni: Arial, "Liberation Sans"; } * { animation-play-state: paused !important; }';
+      const tab = await show(context, page([...cut, ...reloaded], own));
+      const movement = await tab.evaluateHandle(() => document.getAnimations());
       for (let width = 300; width <= 430; width++) {
         await tab.setViewportSize({ width, height: 900 });
         const [held, landed, reload] = await tab.evaluate(

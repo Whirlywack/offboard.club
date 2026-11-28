@@ -1,8 +1,8 @@
 // A new Member's pawn set down on the home page (#104): who sees it, where, and only once; then the movement itself, in
 // Google Chrome with the page's own styles, at a phone's width and a desktop's, and with reduced motion; and the count
-// keeping its lines as it changes, for every count at every phone width (#109). Faked: the session and the database
-// (lib/fake-db.ts), and in Chrome the serif. Everything else is the app's own code, and in Chrome the pictures are the
-// files themselves.
+// keeping its lines as it changes, for every count at every phone width and the desktop's first (#109). Faked: the
+// session and the database (lib/fake-db.ts), and in Chrome the serif. Everything else is the app's own code, and in
+// Chrome the pictures are the files themselves.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, type ReactElement } from "react";
@@ -343,16 +343,17 @@ describe("the pawn being set down", () => {
     for (const moment of at.slice(3)) expect(moment).toMatchObject({ count: [count(1)], lines: [1, 1] });
   });
 
-  // Each count cut to the next, 16 to 15 down to 2 to 1, at every width from 300 to 430 and three wider (#109), in one
-  // page beside each count as a reload shows it, and a Matchday's date. Just before the pawn lands a block is laid out as
-  // the old count is at rest, and just after as a reload, so nothing below the count moves. A count at rest has room for
-  // its words and no more: two lines under 377 wide, broken after "more", and one from 377. It never widens its column,
-  // and the page never scrolls sideways. The date has the whole column and stays inside it, as before.
+  // Each count cut to the next, 16 to 15 down to 2 to 1, at every width from 300 to 430, three wider phones and the
+  // desktop's first widths (#109), in one page beside each count as a reload shows it, and a Matchday's date. Just
+  // before the pawn lands a block is laid out as the old count is at rest, and just after as a reload, so nothing below
+  // the count moves. A count at rest has room for its words and no more: two lines under 377 wide, broken after "more",
+  // one from 377, and two again on a desktop. It never widens its column, and the page never scrolls sideways. The date
+  // has the whole column and stays inside it, as before.
   // The serif next/font names (app/layout.tsx) is not here. next/font's own fallback for it stands in, the face the page
   // shows until the serif has loaded: Times New Roman (Liberation Serif, with its widths, on Linux) made larger, as wide
   // as the serif or wider in each count on one line and in "Members to go". The movement is paused from the start, so
   // that it is there to be set to each moment however long the page takes to load.
-  it("keeps the count's lines as the pawn lands, for every count at every phone width", async () => {
+  it("keeps the count's lines as the pawn lands, for every count at every phone width and the desktop's first", async () => {
     const cut: string[] = [];
     const reloaded = [await arrive("/")]; // nobody yet: 16
     for (let needed = 15; needed >= 1; needed--) {
@@ -376,7 +377,7 @@ describe("the pawn being set down", () => {
       const tab = await show(context, page([...cut, ...reloaded, scheduled], own));
       expect(await tab.evaluate(() => document.fonts.load('30px "Bodoni Moda Fallback"').then((faces) => faces.length))).toBe(1);
       const movement = await tab.evaluateHandle(() => document.getAnimations());
-      for (const width of [...Array.from({ length: 131 }, (_, i) => 300 + i), 449, 600, 899]) {
+      for (const width of [...Array.from({ length: 131 }, (_, i) => 300 + i), 449, 600, 899, 900, 901, 999]) {
         await tab.setViewportSize({ width, height: 900 });
         const { held, landed, reload, date, column, wide } = await tab.evaluate(
           ({ movement, names }) => {
@@ -424,7 +425,7 @@ describe("the pawn being set down", () => {
               reload: blocks.slice(15, 31).map(laid),
               date: { wide: round(date.getBoundingClientRect().width), past: round(words.getBoundingClientRect().right - date.getBoundingClientRect().right) },
               column: round(parseFloat(getComputedStyle(blocks[31]).gridTemplateColumns)),
-              wide: document.documentElement.scrollWidth - innerWidth,
+              wide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             };
           },
           { movement, names: { season: home.season, count: home.count, starts: home.starts } },
@@ -438,7 +439,7 @@ describe("the pawn being set down", () => {
         for (const [i, { lines, room, wide }] of reload.entries()) {
           const words = count(16 - i);
           const more = words.slice(0, words.indexOf(" more") + 5);
-          expect(lines, `${width} wide, ${words}`).toEqual(width < 377 ? [more, words.slice(more.length + 1)] : [words]);
+          expect(lines, `${width} wide, ${words}`).toEqual(width < 377 || width >= 900 ? [more, words.slice(more.length + 1)] : [words]);
           expect(room, `${width} wide, ${words}`).toBe(lines.length);
           expect(wide, `${width} wide, ${words}: wider than its column`).toBeLessThanOrEqual(column);
         }

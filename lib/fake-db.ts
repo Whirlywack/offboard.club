@@ -59,6 +59,8 @@ export type GameRow = {
   blackRating: number;
   winnerClockCentis: number | null;
   finishedAt: Date;
+  // Null for a Game stored before migrations/013, as a row a test makes by hand may stand for, leaving it out.
+  moves?: string | null;
 };
 
 export type SeasonRow = { number: number; start: string };
@@ -467,10 +469,10 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
     },
 
   // storeGames: a Game already stored under the same id is left as it is.
-  [`insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt") select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt" from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[]) as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt") on conflict ("lichessGameId") do nothing`]:
+  [`insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves") select g."lichessGameId", $1::date, g."whiteId", g."blackId", g."winner", g."status", g."plies", g."whiteRating", g."blackRating", g."winnerClockCentis", g."finishedAt", g."moves" from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::integer[], $8::integer[], $9::integer[], $10::integer[], $11::timestamptz[], $12::text[]) as g ("lichessGameId", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves") on conflict ("lichessGameId") do nothing`]:
     (...params) => {
-      const [date, ids, whiteIds, blackIds, winners, statuses, plies, whiteRatings, blackRatings, clocks, finishedAt] =
-        given<[string, string[], string[], string[], GameRow["winner"][], string[], number[], number[], number[], (number | null)[], string[]]>(params);
+      const [date, ids, whiteIds, blackIds, winners, statuses, plies, whiteRatings, blackRatings, clocks, finishedAt, moves] =
+        given<[string, string[], string[], string[], GameRow["winner"][], string[], number[], number[], number[], (number | null)[], string[], (string | null)[]]>(params);
       if (!matchdays.has(date)) throw violation("23503", "game_matchdayDate_fkey");
       const proposed: GameRow[] = ids.map((lichessGameId, i) => ({
         lichessGameId,
@@ -484,6 +486,7 @@ const statements: Record<string, (...params: Params) => ReturnType<typeof answer
         blackRating: blackRatings[i],
         winnerClockCentis: clocks[i],
         finishedAt: new Date(finishedAt[i]),
+        moves: moves[i],
       }));
       // A row whose id is stored already, or comes earlier in the same statement, is not inserted.
       const rows = proposed.filter((row, i) => !games.has(row.lichessGameId) && !proposed.slice(0, i).some((r) => r.lichessGameId === row.lichessGameId));

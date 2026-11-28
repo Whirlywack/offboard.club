@@ -244,10 +244,13 @@ describe("a Recap's Awards", () => {
         blackRating: g.ratings.black,
         winnerClockCentis: g.winnerClockCentis,
         finishedAt: new Date(g.finishedAt),
+        moves: g.moves,
       });
 
     asMember();
     const html = await open(date);
+    // The moves are kept, and shown to nobody yet (#105).
+    for (const g of ingested.games) expect(html).not.toContain(g.moves!.slice(0, 20));
     expect(awardsIn(html)).toEqual([
       // Pretend--Ines (1579), with Black, beat Pretend--Boris (1694) on time with 2.78 seconds left: the clock
       // showed 2.7.
@@ -264,6 +267,7 @@ describe("a Recap's Awards", () => {
     const [upset, , checkmate] = (await getRecap(date))!.awards;
     expect(boardOf(upset)).toContain('src="https://lichess.org/embed/game/Pretend066/black?theme=brown&amp;bg=system#110"');
     expect(boardOf(checkmate)).toContain('src="https://lichess.org/embed/game/Pretend119/white?theme=brown&amp;bg=system#79"');
+    for (const board of [upset, checkmate].map(boardOf)) for (const g of ingested.games) expect(board).not.toContain(g.moves!.slice(0, 20));
   });
 
   it("gives each Award to the right Game, and counts seconds as the clock does", async () => {

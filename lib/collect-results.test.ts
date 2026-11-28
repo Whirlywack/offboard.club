@@ -210,6 +210,18 @@ describe("collecting the results of the Matchday just played", () => {
     expect((await getAllTime()).map((row) => [row.name, row.played])).toEqual([["Member ana", 1]]);
   });
 
+  it("keeps each Game's moves, and collects a Game whose moves are not in their shape without them (#105)", async () => {
+    tournament.games = lines([
+      game("Pretend01", "ana", "ben", "white", "mate", 31),
+      { ...game("Pretend03", "ben", "cora", null, "draw", 80), moves: "1. Nf3 Nf3" },
+    ]);
+    expect(await runAt(OVER)).toMatchObject({ outcome: "done", detail: `Collected the results of ${DAY}: 3 Members played 2 Games. The Recap is public.` });
+    expect([...games.values()].map((g) => [g.lichessGameId, g.moves])).toEqual([
+      ["Pretend01", Array(31).fill("Nf3").join(" ")],
+      ["Pretend03", null],
+    ]);
+  });
+
   it("looks at nothing before the Matchday starts, and says so of a Sunday without a tournament", async () => {
     // A minute before 20:00 the latest Sunday is the one before, which had none.
     expect(await runAt(after(-1))).toEqual({

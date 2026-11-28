@@ -27,6 +27,9 @@ const recorded = (more: Partial<FakeSwiss> = {}): FakeSwiss => ({
   games: fixture("games.ndjson"),
   ...more,
 });
+// The recorded Games, each line as Lichess sent it, and a Game's moves there.
+const sentGames = () => fixture("games.ndjson").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+const movesSent = (id: string): string => sentGames().find((g) => g.id === id).moves;
 
 // Six of the 65 participants are Members. The expected values below were read from the ndjson by a separate script.
 // Lichess's final ranks: ana 1 (9.5 points, a late-join half point included), ben 2 (8), cora 9 (5), eve 23 (2, a
@@ -111,6 +114,7 @@ describe("ingesting a finished tournament", () => {
       blackRating: 1579,
       winnerClockCentis: 278, // fetched with clock times
       finishedAt: new Date(1795529563281),
+      moves: movesSent("Pretend066"),
     });
     expect([...games.values()].map((g) => [g.lichessGameId, g.whiteId, g.blackId, g.winner, g.status, g.plies])).toEqual([
       ["Pretend066", "dan", "cora", "black", "outoftime", 110],
@@ -192,6 +196,52 @@ describe("ingesting a finished tournament", () => {
     });
     expect(tables()).toEqual(before);
     expect(requests()).not.toContain("POST /api/users");
+  });
+});
+
+describe("each Game's moves (#105)", () => {
+  // The recorded Games, with `moves` as Pretend066's moves, or none at all when it is undefined.
+  const withMoves = (moves: unknown) =>
+    sentGames().map((g) => `${JSON.stringify(g.id === "Pretend066" ? { ...g, moves } : g)}\n`).join("");
+  // 600 half-moves of 7 characters, the longest a half-move is: the longest moves of a Game Lichess plays.
+  const longest = `${"Qa1xb2+ ".repeat(599)}Qa1xb2+`;
+  // One character more.
+  const tooLong = `${"Qa1xb2+ ".repeat(599)}e4 Nxf3+`;
+
+  it("are kept as Lichess sent them, as an empty string for a Game in which nobody moved", async () => {
+    // Pretend075 ended before either of them moved.
+    addPerson("ivo", { lichessId: "pretend--ivo" });
+    addPerson("gustav", { lichessId: "pretend--gustav" });
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", games: 4 });
+    expect([...games.values()].map((g) => [g.lichessGameId, g.moves])).toEqual([
+      ["Pretend066", movesSent("Pretend066")],
+      ["Pretend075", ""],
+      ["Pretend100", movesSent("Pretend100")],
+      ["Pretend119", movesSent("Pretend119")],
+    ]);
+  });
+
+  it("are kept for a Game as long as Lichess plays", async () => {
+    expect([longest.length, tooLong.length]).toEqual([4799, 4800]);
+    lichess.tournaments.set(TOURNAMENT, recorded({ games: withMoves(longest) }));
+    await ingestTournament(TOURNAMENT);
+    expect(games.get("Pretend066")).toMatchObject({ plies: 600, moves: longest });
+  });
+
+  it.each([
+    ["missing", undefined, 0],
+    ["not text", ["e4", "e5"], 0],
+    ["a character longer than any Game Lichess plays", tooLong, 601],
+    ["two spaces apart", "e4  e5", 3],
+    ["followed by a space", "e4 e5 ", 3],
+    ["numbered", "1. e4 e5", 3],
+    ["in another notation", "e2e4 e7e5", 2],
+    ["mixed with something else", "e4 <b>e5</b>", 2],
+  ])("are not kept when they are %s, and the Game and the Matchday are stored all the same", async (_, moves, plies) => {
+    lichess.tournaments.set(TOURNAMENT, recorded({ games: withMoves(moves) }));
+    expect(await ingestTournament(TOURNAMENT)).toMatchObject({ outcome: "ingested", members: 6, games: 3 });
+    expect(games.get("Pretend066")).toMatchObject({ whiteId: "dan", blackId: "cora", winner: "black", plies, moves: null });
+    expect(games.get("Pretend100")?.moves).toBe(movesSent("Pretend100"));
   });
 });
 

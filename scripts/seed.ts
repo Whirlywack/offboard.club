@@ -192,6 +192,10 @@ const face = (background: string) =>
 type Game = [id: string, date: string, white: string, black: string, winner: "white" | "black" | null, status: string,
   plies: number, whiteRating: number, blackRating: number, winnerClock: number | null, finishedAt: Date];
 
+// A Game's moves as Lichess sends them (lib/matchday.ts): knights going out and back, as many as the Game had.
+const KNIGHTS = ["Nf3", "Nf6", "Ng1", "Ng8"];
+const movesOf = (plies: number) => Array.from({ length: plies }, (_, i) => KNIGHTS[i % 4]).join(" ");
+
 // A Swiss-like evening: five rounds of pairings by the circle method, a bye (a point, no Game) for an odd one out.
 // Games follow ratings, except that the Season 1 champion beats everyone in Season 1 and the two who share Season 2
 // beat everyone else in Season 2 and draw with each other. The warm-up is all draws, so it has no Awards; Season 2's
@@ -358,8 +362,8 @@ async function seed(name: string) {
     for (const game of games)
       await client.query(
         `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating",
-           "blackRating", "winnerClockCentis", "finishedAt") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        game,
+           "blackRating", "winnerClockCentis", "finishedAt", "moves") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [...game, movesOf(game[6])],
       );
     await client.query("commit");
   } catch (error) {
@@ -386,13 +390,12 @@ async function seed(name: string) {
 }
 
 // A Matchday's tournament as Lichess exports it (lib/fixtures/fake-lichess.ts): its standings and its Games, as ndjson,
-// with only the fields ingestion reads besides those that say what each line is. The moves are knights going out and
-// back, as many as the Game had; every clock entry is the winner's time left.
+// with only the fields ingestion reads besides those that say what each line is; every clock entry is the winner's time
+// left.
 function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[]): FakeSwiss {
   const person = (id: string) => PEOPLE.find((p) => p.id === id)!;
   const player = (id: string, rating: number) => ({ user: { name: lichessName(person(id)), id: lichessId(person(id)) }, rating });
   const ndjson = (lines: object[]) => lines.map((line) => `${JSON.stringify(line)}\n`).join("");
-  const knights = ["Nf3", "Nf6", "Ng1", "Ng8"];
   return {
     id: WAITING,
     teamId: process.env.LICHESS_TEAM_ID!,
@@ -411,7 +414,7 @@ function onLichess(date: string, rows: ReturnType<typeof evening>, played: Game[
         lastMoveAt: finishedAt.getTime(),
         players: { white: player(white, whiteRating), black: player(black, blackRating) },
         ...(winner && { winner }),
-        moves: Array.from({ length: plies }, (_, i) => knights[i % 4]).join(" "),
+        moves: movesOf(plies),
         clocks: Array(plies).fill(clock ?? 18_000),
         swissTour: { id: WAITING },
       })),
@@ -540,6 +543,10 @@ async function check(name: string) {
       ...[s1, s2, s3].flatMap((s) => s?.leaderboard.map((row) => row.memberId) ?? []),
     ]);
     const [ana, plain, newbie] = await Promise.all(["ana", "plain", "newbie"].map(getProfile));
+    // Nothing the site shows reads a Game's moves yet (#105), so they are counted here.
+    const { rows: [moves] } = await db.query<{ games: number; kept: number }>(
+      `select count(*)::int as "games", count(*) filter (where cardinality(string_to_array("moves", ' ')) = "plies")::int as "kept" from "game"`,
+    );
     const company = (id: string, rows: { memberId: string; company: { domain: string } | null }[]) =>
       rows.find((row) => row.memberId === id)?.company?.domain;
     promises.push(
@@ -554,6 +561,7 @@ async function check(name: string) {
       ["a marked and a closed Lichess account, which played but are on no Leaderboard",
         ["marked", "closed"].every((id) => histories.get(id)!.played > 0 && !onLeaderboards.has(id))],
       ["Games against a former member", [...histories.values()].some((h) => h.games.some((g) => g.opponent === null))],
+      ["every Game with its moves, one for each half-move, for a replay", moves.games > 0 && moves.kept === moves.games],
       ["the one who left is in no Recap, on no Leaderboard and has no Profile",
         !onLeaderboards.has(gone.id) && !recaps.some((r) => r.awards.some((a) => a.memberId === gone.id)) && (await getProfile(gone.id)) === null],
       ["an Award won against a former member, whose Game is shown to nobody", recaps.some((r) => r.awards.some((a) => a.opponentLeft))],

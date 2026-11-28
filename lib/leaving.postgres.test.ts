@@ -96,8 +96,8 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     for (const [id, rank] of [[GONE, 1], [STAYS, 2]] as const)
       await run(`insert into "matchdayResult" ("matchdayDate", "userId", "rank", "points", "rating") values ('2099-12-06', $1, $2, 1, 1500)`, [id, rank]);
     await run(
-      `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt")
-       values ('leavtst1', '2099-12-06', $1, $2, 'white', 'resign', 40, 1500, 1500, 600, now())`,
+      `insert into "game" ("lichessGameId", "matchdayDate", "whiteId", "blackId", "winner", "status", "plies", "whiteRating", "blackRating", "winnerClockCentis", "finishedAt", "moves")
+       values ('leavtst1', '2099-12-06', $1, $2, 'white', 'resign', 4, 1500, 1500, 600, now(), 'e4 e5 Qh5 Nc6')`,
       [GONE, STAYS],
     );
 
@@ -107,7 +107,10 @@ describe.skipIf(!process.env.DATABASE_URL || process.env.ALLOW_DB_TESTS !== "1")
     const theirs = (table: string, column = "userId") => count(`select 1 from "${table}" where "${column}" = $1`, [GONE]);
     expect(await count(`select 1 from "user" where id = $1`, [GONE])).toBe(0);
     for (const table of ["session", "account", "matchdayResult", "organiserLichess"]) expect(await theirs(table)).toBe(0);
-    expect((await run(`select "whiteId", "blackId" from "game" where "lichessGameId" = 'leavtst1'`)).rows).toEqual([{ whiteId: null, blackId: STAYS }]);
+    // With its Lichess id, ratings and moves, as /privacy says.
+    expect((await run(`select "whiteId", "blackId", "whiteRating", "blackRating", "moves" from "game" where "lichessGameId" = 'leavtst1'`)).rows).toEqual([
+      { whiteId: null, blackId: STAYS, whiteRating: 1500, blackRating: 1500, moves: "e4 e5 Qh5 Nc6" },
+    ]);
     // The other person, and everything of theirs, is as it was.
     expect(await count(`select 1 from "user" where id = $1`, [STAYS])).toBe(1);
     for (const table of ["session", "account", "matchdayResult"])

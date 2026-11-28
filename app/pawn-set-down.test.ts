@@ -1,13 +1,14 @@
 // A new Member's pawn set down on the home page (#104): who sees it, where, and only once; then the movement itself, in
-// Google Chrome with the page's own styles, at a phone's width and a desktop's, and with reduced motion. Faked: the
-// session and the database (lib/fake-db.ts). Everything else is the app's own code, and in Chrome the pictures are the
+// Google Chrome with the page's own styles, at a phone's width and a desktop's, and with reduced motion; and the count
+// keeping its lines as it changes, for every count at every phone width (#109). Faked: the session and the database
+// (lib/fake-db.ts), and in Chrome the serif. Everything else is the app's own code, and in Chrome the pictures are the
 // files themselves.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { prerenderToNodeStream } from "react-dom/static";
-import { chromium } from "playwright-core";
+import { chromium, type BrowserContext } from "playwright-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveProfile } from "./actions";
 import home from "./home.module.css";
@@ -190,38 +191,51 @@ describe("the pawn being set down", () => {
     await browser?.close();
   });
 
-  // The Season block with the styles it is shown with: globals.css, then ui.module.css and home.module.css with each
-  // class named as the rendering names it.
-  const page = (block: string) => {
+  // Season blocks with the styles they are shown with: globals.css, then ui.module.css and home.module.css with each
+  // class named as the rendering names it. The serif next/font names (app/layout.tsx) is not here: Arial stands in for
+  // it (Liberation Sans, with Arial's widths, on Linux), a little narrower, so a count fits on one line wherever the
+  // serif's does.
+  const page = (...blocks: string[]) => {
     const named = (file: string, classes: Record<string, string>) =>
       readFileSync(join(__dirname, file), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/url\([^)]*\)/g, "none")
         .replace(/\.([a-zA-Z][\w-]*)/g, (whole, name: string) => (classes[name] ? `.${classes[name]}` : whole));
-    const css = [readFileSync(join(__dirname, "globals.css"), "utf8"), named("ui.module.css", ui), named("home.module.css", home)];
-    return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css.join("\n")}</style><main><div class="${home.season}">${block}</div></main>`;
+    const css = [
+      readFileSync(join(__dirname, "globals.css"), "utf8"),
+      named("ui.module.css", ui),
+      named("home.module.css", home),
+      ':root { --font-bodoni: Arial, "Liberation Sans"; }',
+    ];
+    const seasons = blocks.map((block) => `<div class="${home.season}">${block}</div>`).join("");
+    return `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css.join("\n")}</style><main>${seasons}</main>`;
   };
+
+  // A tab showing a page, its pictures the files themselves.
+  async function show(context: BrowserContext, html: string) {
+    const tab = await context.newPage();
+    await tab.route("http://offboard.test/**", (route) => {
+      const photo = new URL(route.request().url()).searchParams.get("url");
+      return photo
+        ? route.fulfill({ contentType: "image/webp", body: readFileSync(join(__dirname, photo)) })
+        : route.fulfill({ contentType: "text/html", body: html });
+    });
+    await tab.goto("http://offboard.test/");
+    return tab;
+  }
 
   type Moment = { pawn: boolean; behind: number; across: number; outline: boolean; count: string[]; lines: [number, number] };
 
   // How the arriving pawn stands at each moment (ms): whether it is shown, how far behind its place it is and how far to
   // one side, whether the outline it fills is shown, the count's words as seen, and how many lines those words take
   // beside how many lines of room the count has. Also one square's depth, how many animations there are, and how wide
-  // the page is. `narrow` makes the count as wide as the old words take two lines and the new ones one.
-  async function play(width: number, reducedMotion: "reduce" | "no-preference", block: string, moments: number[], narrow = false) {
+  // the page is.
+  async function play(width: number, reducedMotion: "reduce" | "no-preference", block: string, moments: number[]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900, reducedMotion });
     try {
-      const tab = await context.newPage();
-      const html = page(block);
-      await tab.route("http://offboard.test/**", (route) => {
-        const photo = new URL(route.request().url()).searchParams.get("url");
-        return photo
-          ? route.fulfill({ contentType: "image/webp", body: readFileSync(join(__dirname, photo)) })
-          : route.fulfill({ contentType: "text/html", body: html });
-      });
-      await tab.goto("http://offboard.test/");
+      const tab = await show(context, page(block));
       return await tab.evaluate(
-        ({ moments, names, narrow }) => {
+        ({ moments, names }) => {
           const animations = document.getAnimations();
           for (const animation of animations) animation.pause();
           const ranks = document.querySelectorAll("ol > li");
@@ -238,15 +252,6 @@ describe("the pawn being set down", () => {
             range.selectNodeContents(element);
             return range;
           };
-          if (narrow) {
-            const [old, now] = words.map((element) => {
-              element.style.whiteSpace = "nowrap";
-              const { width } = text(element).getBoundingClientRect();
-              element.style.whiteSpace = "";
-              return width;
-            });
-            count.style.width = `${(old + now) / 2}px`;
-          }
           const lines = (element: Element) => new Set([...text(element).getClientRects()].map((line) => Math.round(line.top))).size;
           const at = moments.map((time): Moment => {
             for (const animation of animations) animation.currentTime = time;
@@ -266,7 +271,7 @@ describe("the pawn being set down", () => {
           });
           return { square: Math.round(square * 100) / 100, animations: animations.length, wide: document.documentElement.scrollWidth, at };
         },
-        { moments, names: { arriving: home.arriving, was: home.was, now: home.now }, narrow },
+        { moments, names: { arriving: home.arriving, was: home.was, now: home.now } },
       );
     } finally {
       await context.close();
@@ -324,11 +329,80 @@ describe("the pawn being set down", () => {
     });
   }
 
-  // As the pawn lands, what follows the count moves up by the line the old words no longer need: the one way to leave no
-  // room under the count without the old words running over what follows it.
-  it("leaves no room under the count once the pawn has landed, where the old words took a line more than the new", async () => {
-    const { at } = await play(390, "no-preference", await block(14), [0, 999, 1599, 1600, 3000], true);
-    for (const moment of at.slice(0, 3)) expect(moment).toMatchObject({ count: [count(2)], lines: [2, 2] });
-    for (const moment of at.slice(3)) expect(moment).toMatchObject({ count: [count(1)], lines: [1, 1] });
-  });
+  // Each count cut to the next, 16 to 15 down to 2 to 1, at every width from 300 to 430 (#109), in one page beside each
+  // count as a reload shows it. Just before the pawn lands a block is laid out as the old count is at rest, and just
+  // after as a reload, so nothing below the count moves. A count at rest has room for its words and no more: two lines
+  // under 377 wide, broken after "more", and one line from 377, where the longest fits in the serif.
+  it("keeps the count's lines as the pawn lands, for every count at every width from 300 to 430", async () => {
+    const cut: string[] = [];
+    const reloaded = [await arrive("/")]; // nobody yet: 16
+    for (let needed = 15; needed >= 1; needed--) {
+      resetDb();
+      club(15 - needed);
+      signedIn = null;
+      reloaded.push(await arrive("/"));
+      signedIn = "new";
+      cut.push(await arrive("/?joined#season"));
+    }
+    const context = await browser.newContext({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true, reducedMotion: "no-preference" });
+    try {
+      const tab = await show(context, page(...cut, ...reloaded));
+      const movement = await tab.evaluateHandle(() => document.getAnimations().map((animation) => (animation.pause(), animation)));
+      for (let width = 300; width <= 430; width++) {
+        await tab.setViewportSize({ width, height: 900 });
+        const [held, landed, reload] = await tab.evaluate(
+          ({ movement, names }) => {
+            const seen = (element: Element) => {
+              const style = getComputedStyle(element);
+              return style.visibility === "visible" && style.opacity === "1";
+            };
+            // A block's count as seen, line by line; the lines of room it has; and how far below its top the row and the
+            // words under it start and the block ends.
+            const laid = (block: Element) => {
+              const count = block.querySelector(`.${names.count}`)!;
+              const text = ([...count.querySelectorAll("span")].find(seen) ?? count).firstChild as Text;
+              const lines: string[] = [];
+              let [top, at] = [-Infinity, 0];
+              for (const word of text.data.split(" ")) {
+                const range = document.createRange();
+                range.setStart(text, at);
+                range.setEnd(text, at + word.length);
+                const y = range.getBoundingClientRect().top;
+                lines.push(y > top + 1 ? word : `${lines.pop()} ${word}`);
+                [top, at] = [y, at + word.length + 1];
+              }
+              const from = count.getBoundingClientRect();
+              const below = (y: number) => Math.round((y - from.top) * 100) / 100;
+              return {
+                lines,
+                room: Math.round(from.height / parseFloat(getComputedStyle(count).lineHeight)),
+                below: [block.querySelector("ol")!, block.querySelector(`.${names.starts}`)!].map((element) => below(element.getBoundingClientRect().top)).concat(below(block.getBoundingClientRect().bottom)),
+              };
+            };
+            const blocks = [...document.querySelectorAll(`.${names.season}`)];
+            const at = (time: number) => {
+              for (const animation of movement) animation.currentTime = time;
+              return blocks.slice(0, 15).map(laid);
+            };
+            return [at(1599), at(1600), blocks.slice(15).map(laid)];
+          },
+          { movement, names: { season: home.season, count: home.count, starts: home.starts } },
+        );
+        for (let i = 0; i < 15; i++) {
+          const pair = `${width} wide, ${16 - i} to ${15 - i}`;
+          expect(landed[i].below, `${pair}: what follows the count moves`).toEqual(held[i].below);
+          expect(held[i], `${pair}, before landing`).toEqual(reload[i]);
+          expect(landed[i], `${pair}, landed`).toEqual(reload[i + 1]);
+        }
+        for (const [i, { lines, room }] of reload.entries()) {
+          const words = count(16 - i);
+          const more = words.slice(0, words.indexOf(" more") + 5);
+          expect(lines, `${width} wide, ${words}`).toEqual(width < 377 ? [more, words.slice(more.length + 1)] : [words]);
+          expect(room, `${width} wide, ${words}`).toBe(lines.length);
+        }
+      }
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 });

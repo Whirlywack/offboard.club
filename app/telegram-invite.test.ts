@@ -1,10 +1,13 @@
 // The Telegram group's invite link (#13), which Members only are given: on the home page, beside their Profile, and on the
-// welcome step that follows signing up; never to a visitor or anyone part-way through, nor in the part of the home page
-// built ahead of any request. Faked: the session and the database (lib/fake-db.ts). Everything else is the app's own
-// code.
+// welcome step that follows signing up, each a quiet button (#101); never to a visitor or anyone part-way through, nor in
+// the part of the home page built ahead of any request. Faked: the session and the database (lib/fake-db.ts).
+// Everything else is the app's own code.
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import home from "./home.module.css";
+import ui from "./ui.module.css";
+import welcome from "./welcome/welcome.module.css";
 import { addPerson, people, resetDb } from "@/lib/fake-db";
 import Home, { You } from "./page";
 import { Step as AfterSignUp } from "./welcome/profile/page";
@@ -44,22 +47,37 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("the Telegram group's invite link", () => {
-  it("is on a Member's home page and on the step after signing up", async () => {
+  // A quiet button that opens the invite in a new tab and says so, as every link to another site does (ExternalLink).
+  const button = (classes: string, words: string) =>
+    `<a href="${INVITE}" class="${classes}" target="_blank" rel="noopener noreferrer">${words}<span class="visually-hidden"> (opens in a new tab)</span></a>`;
+
+  it("is a quiet button on a Member's home page, after their own two", async () => {
     signedIn = "member";
-    const link = `<a href="${INVITE}" target="_blank" rel="noopener noreferrer">`;
-    expect(await render(you)).toContain(`${link}Telegram group`);
-    expect(await render(AfterSignUp)).toContain(`${link}Join the Telegram group`);
+    expect(await render(you)).toContain(`Edit your Profile</a></div>${button(`${ui.quiet} ${home.telegram}`, "Telegram group")}</section>`);
+  });
+
+  // The form's "Save and continue" stays the step's one ink block: the join button is the quiet one, and outside the
+  // form, so it cannot send it or clear it.
+  it("is, after signing up, a part of its own above the Profile form: what the group is for, then a quiet button", async () => {
+    signedIn = "member";
+    const html = await render(AfterSignUp);
+    expect(html).toContain(
+      `<div class="${welcome.telegram}"><p class="${welcome.text}">Members talk in the Club&#x27;s Telegram group.</p>` +
+        `${button(ui.quiet, "Join the Telegram group")}</div><form`,
+    );
+    expect(html).toContain("<button>Save and continue</button>");
+    expect(html.match(/<form[\s\S]*<\/form>/)?.[0]).not.toContain("t.me");
   });
 
   it("comes, after signing up, with what the bot posts there only once the bot is set up", async () => {
     signedIn = "member";
     let html = await render(AfterSignUp);
-    expect(html).toContain("Members talk in the Club&#x27;s Telegram group. <a");
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group.</p><a");
     expect(html).not.toContain("bot");
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "a-pretend-telegram-token");
     vi.stubEnv("TELEGRAM_GROUP_ID", "@pretend_group");
     html = await render(AfterSignUp);
-    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts Matchday reminders and Recaps. <a");
+    expect(html).toContain("Members talk in the Club&#x27;s Telegram group, where the bot also posts Matchday reminders and Recaps.</p><a");
   });
 
   it("is given to nobody else: not a visitor, nor anyone part-way through signing up", async () => {

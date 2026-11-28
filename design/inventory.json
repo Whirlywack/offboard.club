@@ -48,7 +48,7 @@
         "The queen plate: 'Sunday chess for people in tech' in the display serif, left of the queen photograph on a desktop and above it on a phone, and the credit 'Free chess Club · Vilnius' at its foot. The first screen is sized by the page's width.",
         "'Working in tech keeps you busy, and busy gets lonely.' in the serif beside the lone pawn and its long shadow, then the rest of the opening paragraph.",
         "The Season block, one of: 'Season 1 · N more Members to go', how Season 1 starts, and sixteen pawns, one standing for each Member and an outline for each place still open; once Season 1 is scheduled and until its first Matchday, 'Next Matchday' with all sixteen standing; after it, 'Next Matchday' (for a Member, 'Matchday under way' and 'Lichess lets you join until round 3 starts.' until 90 minutes after 20:00) with the six pieces of a Season, tallest to shortest. A Member also gets 'Join this Matchday on Lichess', an ink button, once the tournament exists. Left out with the database down.",
-        "Under it, for a visitor: 'Sign in with LinkedIn' and the note that signing in lets Offboard store the LinkedIn name, photo and email, with a 'Privacy and terms' link. For anyone signed in, after a rule: the photo in greyscale (or initials), 'Signed in as' and the name in the serif, 'Sign out'; then 'Finish signing up' (part-way), or 'Your Profile' and 'Edit your Profile' side by side and 'Telegram group' (Member). With the database down and a session cookie: 'Your sign-in can't be checked right now. Please try again in a minute.'",
+        "Under it, for a visitor: 'Sign in with LinkedIn' and the note that signing in lets Offboard store the LinkedIn name, photo and email, with a 'Privacy and terms' link. For anyone signed in, after a rule: the photo in greyscale (or initials), 'Signed in as' and the name in the serif, 'Sign out'; then 'Finish signing up' (part-way), or 'Your Profile' and 'Edit your Profile' side by side and under them 'Telegram group', a quiet button (Member). With the database down and a session cookie: 'Your sign-in can't be checked right now. Please try again in a minute.'",
         "'The chess' on black: the heading across the top with the white king at its end, the paragraph under it.",
         "'Meeting people' on the grey: the two words either side of two knights facing each other, the paragraph under 'people'.",
         "'Leaderboards and Recaps' on black: 'Both are public and show your name.'; from a Season's sixth Matchday until the next Season's first, '<name> is the Season N champion.' (or '<names> share the Season N title.') in the serif after a small square; the three links as a ruled list with arrows. Then the queen over the fallen king, on the grey, and the footer."
@@ -71,10 +71,10 @@
       ],
       "phone_facts": [
         "No sideways scroll in any state (scrollWidth 390, clientWidth 390), measured 26 November 2026 (#77).",
-        "3,849 to 4,115 px tall on a phone (4.6 to 4.9 screens of 844 px); 3,569 px with the database down.",
+        "3,849 to 4,125 px tall on a phone (4.6 to 4.9 screens of 844 px); 3,569 px with the database down.",
         "The strip is one line 44 px tall before Season 1, and two lines 57 px tall in the Matchday states.",
         "'Recaps' is in the ruled list of Leaderboard links, 358 x 68 px.",
-        "'Telegram group' (Members) is 135 x 44 px; 'Privacy and terms' inside the sign-in note (visitors) is 109 x 46 px, in running text.",
+        "'Telegram group' (Members) is a quiet button 358 x 54 px, the panel's width (28 November 2026, #101); 'Privacy and terms' inside the sign-in note (visitors) is 109 x 46 px, in running text.",
         "11 px text, in tracked capitals: the strip's label, the credit 'Free chess Club · Vilnius', the Season block's label ('Season 1', 'Next Matchday', 'Matchday under way') and 'Signed in as'. The footer is 14 px.",
         "'Sign in with LinkedIn', 'Join this Matchday on Lichess', 'Your Profile' and 'Edit your Profile' are 54 px tall; 'Sign out' and every link in the header and footer 44 px."
       ],
@@ -964,7 +964,7 @@
       "on_it_now": [
         "Step indicator, step 3 'Profile (optional)' marked, steps 1 and 2 done.",
         "Heading 'You're a Member', lede 'If you like, tell other Members a little about yourself.'",
-        "'Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps. Join the Telegram group' (when an invite link is set).",
+        "'Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps.' and a quiet button 'Join the Telegram group', above the form and closed off from it by a rule (when an invite link is set).",
         "The same four-field form as /profile, with 'Save and continue' and 'Skip for now'."
       ],
       "leads_from": [
@@ -976,7 +976,7 @@
       ],
       "phone_facts": [
         "No sideways scroll.",
-        "'Join the Telegram group' is a link of 202.5 x 44 px on a line of its own.",
+        "'Join the Telegram group' is a quiet button of 258.7 x 54 px, at its own width (28 November 2026, #101).",
         "No text under 14 px outside the footer."
       ],
       "differs_from_spec": [],

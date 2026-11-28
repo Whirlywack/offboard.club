@@ -381,9 +381,9 @@ export async function You({ searchParams }: Pick<PageProps<"/">, "searchParams">
         )}
       </div>
       {invite && (
-        <p className={styles.telegram}>
-          <ExternalLink href={invite}>Telegram group</ExternalLink>
-        </p>
+        <ExternalLink href={invite} className={`${ui.quiet} ${styles.telegram}`}>
+          Telegram group
+        </ExternalLink>
       )}
     </section>
   );

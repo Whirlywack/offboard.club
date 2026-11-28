@@ -30,19 +30,24 @@ export default function WelcomeProfile() {
   );
 }
 
-// For Members only, like the Telegram group's invite link in it. Exported for app/home.test.ts.
+// For Members only, like the Telegram group's invite link in it: a quiet button above the form, so that the form's
+// "Save and continue" stays the step's one ink block. Exported for app/telegram-invite.test.ts.
 export async function Step() {
   const { id } = await requireSignedUp();
   const invite = inviteLink();
   return (
     <div className={styles.body}>
       {invite && (
-        <p className={styles.text}>
-          {postingSetUp()
-            ? "Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps."
-            : "Members talk in the Club's Telegram group."}{" "}
-          <ExternalLink href={invite}>Join the Telegram group</ExternalLink>
-        </p>
+        <div className={styles.telegram}>
+          <p className={styles.text}>
+            {postingSetUp()
+              ? "Members talk in the Club's Telegram group, where the bot also posts Matchday reminders and Recaps."
+              : "Members talk in the Club's Telegram group."}
+          </p>
+          <ExternalLink href={invite} className={ui.quiet}>
+            Join the Telegram group
+          </ExternalLink>
+        </div>
       )}
       <ProfileForm saved={await getProfile(id)} welcome />
     </div>
